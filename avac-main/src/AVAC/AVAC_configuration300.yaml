@@ -1,0 +1,90 @@
+animation:
+  animation_directory: "/home/ancey/Lac_Lachat/Figures/Vid\xE9os"
+  label_step: 500
+  making_html: false
+  n_out: 150
+  variable: depth
+computation:
+  boundary: extrap
+  cell_size: 2
+  cfl_max: 1
+  cfl_target: 0.5
+  dry_limit: 0.0001
+  force_stop: false
+  initial_mass: true
+  limiter: vanleer
+  mass_frac_stop: 0.01
+  mass_threshold_velocity: 0.01
+  max_iter: 100000
+  nb_simul: 150
+  output_directory: _output
+  refinement: 1
+  t_max: 150
+  topo_dir: /home/ancey/Lac_Lachat/Topo
+  track_mass: true
+dem_extent:
+  cell_size: 2.0
+  nbx: 1951
+  nby: 1601
+  nodata_value: -9999
+  xmax: 971699.0
+  xmin: 967799.0
+  ymax: 6540899.0
+  ymin: 6537699.0
+file_names:
+  initiation_file: init.xyz
+  topo_directory: /home/ancey/Lac_Lachat/Topo
+  topo_source: real_world
+  topofile: topography.asc
+  type_dem: 3
+  type_init: 1
+gauges:
+  gauge_recording: true
+  gauges:
+  - - 1
+    - 968900.0
+    - 6539700.0
+output:
+  Language: French
+  delta_t: 1
+  output_directory: _output300
+  output_format: binary32
+  verbosity: 0
+refinement:
+  delta_t: 1
+  fine_dict:
+    cell_size: 1.000256344527147
+    nbx: 331
+    nby: 367
+    nodata_value: -9999
+    xmax: 969066.3247885158
+    xmin: 968735.2399384773
+    ymax: 6539897.666087189
+    ymin: 6539530.572008748
+  finer_dem: fine_topography.asc
+  topo_refinement: true
+release:
+  correction_elevation: true
+  correction_slope: true
+  d0: 1.75
+  gradient_hypso: 0.03
+  nu: 0.2
+  period_return: 300
+  theta_cr: 30
+  z_ref: 1300
+rheology:
+  C:
+  - 100
+  - 0
+  beta: 0.0
+  model: cohesive_Voellmy
+  mu:
+  - 0.3
+  - 0.225
+  rho: 300
+  u_cr: 0
+  xi:
+  - 600
+  - 1200
+  z_breaks:
+  - 1680

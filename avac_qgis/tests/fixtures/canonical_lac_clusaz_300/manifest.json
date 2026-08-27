@@ -1,0 +1,97 @@
+{
+  "fixture_format": 1,
+  "name": "Lac Clusaz known-input 300-year AVAC regression",
+  "source": {
+    "dem": {
+      "path_identifier": "Lac_Clusaz/Topo/topo1m_simple.asc",
+      "sha256": "163dc650681ef450a225bea198824d66693c2f717415959403f058c770116d43",
+      "rows": 1999,
+      "columns": 2999,
+      "resolution_m": 1.0,
+      "crs_assignment": "EPSG:2154 (explicit QGIS project assignment; ESRI ASCII source carries no CRS)"
+    },
+    "release_dataset": {
+      "path_identifier": "Lac_Clusaz/Topo/ZA.shp",
+      "sha256": "df92df28f6bd0ba37bf478f032bb47a7caac386b80b34e7a5648d691530d6e98",
+      "sidecar_sha256": {
+        "ZA.dbf": "b90d1a49be173fcdf97065f3b6442c24d7aacd0619d3fe59543190bee64c96bc",
+        "ZA.shx": "86cb48e03bc4936bf109aa74e2c7e4972455108bf9760f7d206b61477eb72eaf"
+      }
+    },
+    "configuration": {
+      "path_identifier": "Lac_Clusaz/AVAC/AVAC_configuration300.yaml",
+      "sha256": "a0e5324e3252f6c61766db35650dd39c87746d22f13191747116a71dcf3527a6"
+    }
+  },
+  "release": {
+    "period_return_years": 300,
+    "d0_m": 1.75,
+    "theta_cr_degrees": 30,
+    "gradient_hypso_percent_per_100m": 0.03,
+    "z_ref_m": 1300,
+    "nu": 0.2,
+    "correction_elevation": true,
+    "correction_slope": true
+  },
+  "rheology": {
+    "model": "Voellmy",
+    "rho_kg_m3": 300,
+    "mu": 0.225,
+    "xi": 1200,
+    "C": 0,
+    "beta": 0.0,
+    "u_cr": 0
+  },
+  "computation": {
+    "cell_size_m": 2.0,
+    "t_max_s": 120,
+    "solver_output_count": 120,
+    "fgout_count": 120,
+    "output_format": "binary32",
+    "max_result_interval_s": 1,
+    "computational_nx": 1499,
+    "computational_ny": 999
+  },
+  "expected_preprocessing": {
+    "release_mask_cells": 242416,
+    "initial_depth_nonzero_cells": 241453,
+    "initial_depth_min_nonzero_m": 0.668066803542,
+    "initial_depth_max_m": 2.70263000764,
+    "initial_depth_sum_m": 354454.638921,
+    "initial_depth_volume_m3": 354454.638921,
+    "init_xyz_rows": 5995001,
+    "topography_asc_sha256": "4cc7c0d6c54a1f7b4e60ec676ff57295110f2b0002086b110792ab13be70af18",
+    "init_xyz_sha256": "31edc5f938b6467b13359e1e7932d0752363110f64196a5cee9a735282884e56",
+    "prepared_yaml_normalized_sha256": "9f24155d9b11fab70fde2a5c0268cbd1cd2bf9f1e8f2e95571cf711bb476ecb1",
+    "prepared_yaml_normalization": "Replace computation.topo_dir and file_names.topo_directory with <RUN_LOCAL_TOPO_DIRECTORY> before safe_dump(sort_keys=False) and hashing."
+  },
+  "expected_solver_outputs": {
+    "fort_time_files": 121,
+    "fort_solution_files": 121,
+    "fgout_time_files": 120,
+    "fgout_field_sets": 120,
+    "final_simulation_time_s": 120,
+    "full_runtime_vs_make": {
+      "files_each": 871,
+      "scientific_files_sha256_identical": 866,
+      "allowed_non_scientific_differences": ["fort.geo", "qinit.data", "topo.data", "timing.csv", "timing.txt"],
+      "representative_sha256": {
+        "fort.t0000": "c3ce08ba06aa668d2fce80303ce6098232304854e6e1d29ea35a7e4fd87b3839",
+        "fort.q0000": "b03979cc4a98b7be260c5599675c812fa9c3a22c68d95fd579f5a8487600675c",
+        "fort.t0120": "06e6549adb762c9d657c7d865fb913460e3522a557a819a3d6b3d072f73d60ca",
+        "fort.q0120": "b03979cc4a98b7be260c5599675c812fa9c3a22c68d95fd579f5a8487600675c",
+        "fgout0001.t0001": "e1945c74280658d8465bfacf063651d8dd69c5729016a54c1a751d9d830b7665",
+        "fgout0001.b0001": "ee3a1abe8a259ac7e68c1d8689564fc4ca2502bc243976d508a1c2dff8049625",
+        "fgout0001.t0120": "7a7cd5d42786f53a0b815ada9282946a597b02162e861bf037e5d54c3b589e6b",
+        "fgout0001.b0120": "bbe852feb70aaf438259d4486a730d8d8d31d64dbd387a2be8a27d8f603ce3ce",
+        "fgmax0001.txt": "189403119664377318996b27fdf1aaa55db3a5f4f5a61b87f0c9c47a93de5891",
+        "gauge00001.txt": "0e363bfb807be5b696bf0797149feec75f83cd099380266e90d3cd4d0f4dee25"
+      }
+    }
+  },
+  "regeneration": {
+    "reference": "avac_qgis/tests/gui_reference_preprocess.py",
+    "qgis": "avac_qgis/tests/qgis_preprocess_equivalence.py",
+    "environment": "AVAC_QGIS_CANONICAL_CONFIGURATION must point to the documented configuration. Generated raw inputs and solver output are intentionally not committed."
+  }
+}

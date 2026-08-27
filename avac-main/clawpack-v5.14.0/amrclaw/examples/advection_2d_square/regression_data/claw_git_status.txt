@@ -1,0 +1,98 @@
+Clawpack Git Status 
+Diffs can be found in /Users/rjl/clawpack_src/clawpack_master/amrclaw/tests/advection_2d_square/regression_data/claw_git_diffs.txt
+
+Sun, 16 Feb 2020 17:55:54 PST
+$CLAW = /Users/rjl/clawpack_src/clawpack_master
+$FC = gfortran
+
+
+===========
+classic
+===========
+/Users/rjl/clawpack_src/clawpack_master/classic
+
+--- last commit ---
+5546fec Merge pull request #86 from ClimateImpactLab/gitignore
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+amrclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/amrclaw
+
+--- last commit ---
+7ce7cb4 Introduce new flagregions to replace regions
+
+--- branch and status ---
+## flagregions
+ M tests/advection_2d_square/regression_data/claw_git_diffs.txt
+ M tests/advection_2d_square/regression_data/claw_git_status.txt
+ M tests/advection_2d_square/regression_data/gauge00001.txt
+ M tests/advection_2d_square/regression_data/gauge00002.txt
+ M tests/advection_2d_square/setrun.py
+
+
+===========
+clawutil
+===========
+/Users/rjl/clawpack_src/clawpack_master/clawutil
+
+--- last commit ---
+5cd5031 add new rundata object of class amrclaw.FlagRegionData
+
+--- branch and status ---
+## flagregions
+
+
+===========
+pyclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/pyclaw
+
+--- last commit ---
+83f3fe4 Merge pull request #639 from rjleveque/lagrangian_gauges
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+visclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/visclaw
+
+--- last commit ---
+86d82e2 new gridtools.py module for dealing with AMR output
+
+--- branch and status ---
+## gridtools
+
+
+===========
+riemann
+===========
+/Users/rjl/clawpack_src/clawpack_master/riemann
+
+--- last commit ---
+d7b4d72 Merge pull request #158 from ranocha/cubic
+
+--- branch and status ---
+## master...origin/master
+
+
+===========
+geoclaw
+===========
+/Users/rjl/clawpack_src/clawpack_master/geoclaw
+
+--- last commit ---
+842dbde remove un-needed import of reload
+
+--- branch and status ---
+## fgmax_improvements
+ M src/2d/shallow/fgmax_module.f90
+ M src/2d/shallow/fgmax_read.f90
+ M src/python/geoclaw/fgmax_tools.py

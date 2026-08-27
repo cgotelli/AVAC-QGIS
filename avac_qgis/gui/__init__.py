@@ -1,0 +1,1 @@
+"""QGIS dock user interface."""

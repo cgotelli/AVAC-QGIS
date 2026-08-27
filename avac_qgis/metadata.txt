@@ -1,0 +1,13 @@
+[general]
+name=AVAC4QGIS
+description=AVAC avalanche simulation integration for QGIS with managed native runtimes.
+version=0.5.7
+qgisMinimumVersion=3.40
+author=AVAC4QGIS
+email=
+about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using a bundled platform-specific runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS.
+category=Raster
+hasProcessingProvider=no
+
+[experimental]
+experimental=False

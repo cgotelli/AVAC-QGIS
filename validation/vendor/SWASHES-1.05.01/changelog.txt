@@ -1,0 +1,451 @@
+SWASHES - changelog
+###################
+
+###################
+TO DO LIST
+- exceptions to be treated (exit(-1))
+- check in the new classes if the modified variable in the documentation are correct
+
+###################
+CHANGES
+2026-04-09
+- url added for Bodjona13 bibtex entry 
+- READY FOR TAG version 1.05.01 
+
+2026-03-17
+- reference to the HAL version of the bedload note added
+
+2026-03-16
+- correction of typos in the explanations for the bedload cases
+
+2026-03-13
+- addition of explanations for the bedload cases
+- typo in the bedload output parameters 
+
+2026-03-12
+- correction of bibliographic references in the list of available solutions (continued)
+- french word translated in bedload
+- correction of a bug in the savefinalcriticalinit function (used in bedload): too many values were saved, adding a spurious line of 0 at the end of bedload (Exner) solutions
+
+2026-03-05
+- correction of bibliographic references in the list of available solutions
+
+2026-02-20
+- addition of bibliographic references in the list of available solutions
+
+2025-09-01
+- update of the bibtex entry BZ24 and changed into BZ25
+
+2025-05-02
+- add pdf for AppNote-windows
+
+2025-04-23
+- update of the file Doc-NewReleaseHowTo
+
+2025-04-22
+- READY FOR TAG version 1.05.00
+
+2025-04-17
+- update of the bibtex entry DeLu25
+- changes in the domain for the mobile rain: 18000m in each case (only one domain)
+- changes in the outputs: more digits on the values of x
+
+2025-04-15
+- correction of typos in the mobile rain solution
+
+2025-04-08
+- modification of the parameters of the mobile rain case
+- addition of commented lines in the mobile rain case to have 2 other times saved if necessary
+
+2025-04-07
+- correction of typos in the mobile rain solution
+
+2025-04-02
+- new solutions with mobile rain
+- correction of the bibtex key BZ24 and the corresponding "\cite", and update of the title
+
+2025-03-15
+- url of Gaveau2015 added in the .bib file 
+
+2024-11-25
+- update of the bibliography (BeyZekkoub24 entry + new links for HAL + SWASHES software entry)
+- update of the doc with the bibliography
+- READY FOR TAG version 1.04.02
+
+2024-11-20
+- typos corrected
+
+2024-10-31
+- change unit of concentrations: g/m^3 -> kg/m^3 (SI): multiplication by 0.001 of the parameters, initializations, and the results
+
+2024-10-28
+- update of the documentation for solute
+- update of doygen in solute files, reference BZ24 to be updated
+- upper case in doxygen comments
+
+2024-10-25
+- new solute solution from the work of Mohamed Bey Zekkoub - not finished: check doxygen files
+
+2024-10-24
+- correction of speed units in the parameters of the step solution
+
+2024-01-22
+- READY FOR TAG version 1.04.01
+
+2024-01-19
+- correction of the list of authors after discussions about the software declaration
+
+2023-03-20
+- update of the Doc-NewReleaseHowTo file
+
+2023-03-03
+- addition of the AUTHORS.txt file for HAL
+
+2023-01-25
+- updated for doxygen 1.9.6 
+- typos in citation of Delestre13
+- correction of a double declaration of d in bump.cpp highlighted by cppcheck 
+
+2022-09-02
+- reference to Rougier22 added in the documentation
+- READY FOR TAG version 1.04.00
+
+2022-08-24
+- text of the list of cases shortened, in the code and the doc
+
+2022-08-12
+- Correction of typos in the doc and in the code
+
+2022-07-28
+-Corrected a few typos in the code
+-Updated the file Documentation.TEX
+
+2022-07-27
+-Added the new class step, for the dam break problem with a step
+
+2022-07-18
+-Changed the points where the mesh was computed in the spherical class so it actually computes N_y*(N_x+1) points
+
+2022-07-12
+-Corrected different mistakes in Maxime's code using cppcheck
+-Updated doxygen
+
+2022-07-06
+-Corrected the first solution added to sluice_gate
+-Added two new solutions
+
+2022-06-29
+-Added the class sluice_gate to compute the new solution
+
+2022-06-22
+- Changed the length of the domain for the cross shaped dam
+- Changed the number of point in spherical geometry
+
+2022-06-20
+- Changed the interval on the lattitude in spherical geometry
+
+2022-06-17
+- Added the new solution for the spherical geometry
+- Modified all the necessary classes so the new solution gets displayed correctly
+- Modified the display when one choses a wrong parameter to also display the recommended number of points
+
+2022-06-14
+- Added a new domain to the class Dam_2D with cross shaped dam
+- Added several functions in Dam_2D useful to compute the topography
+- Added the function MIN with the function MAX
+- Modified the class parameters so it also displays the new solutions
+- Modified the header of Dam_2D according to cppcheck
+
+2022-06-10
+- new class Dam_2D added containing the solutions for the case of the dam in 2 dimensions
+- modifications of the class choice_solution to allow people to chose the Dam_2D solution
+
+2022-03-31
+- READY FOR TAG version 1.03.01
+
+2022-03-30
+- parameters changed to const as indicated by cppcheck
+- copy constructor and operator= defined as private in classes indicated by cppcheck  
+- modification of hplus declaration in bump
+
+2022-03-29
+- modifications to avoid == or != tests with floats
+- after running cppcheck: avoid uninitialized variables and scope of variables reduced
+- correction of cppcheck warnings: "Class '...' has a constructor with 1 argument that is not explicit. "
+- correction of cppcheck warnings on parameters to be passed by const reference
+- option to run C++11 and use override specifier
+
+2022-03-28
+- compilation options modified in make_config
+- no DEBUG mode
+
+2022-03-25
+- addition of the make_config file and update of the makefile following Marco's work
+- modifications of makefile and make_config as done in FullSWOF (in particular, the clang problem is treated)
+- modification of make commands in the doc and in refman 
+- correction in Swash::leftcondition hex[1] and uex[1] replaced by hexl and uexl
+- doxygen config files updated with the doxygen -u command
+- typo in the doxygen class name in swash.hpp
+
+2020-07-15
+- How to cite added in doc
+
+2020-07-09
+- Update of HowtoRelease document
+
+2018-01-15
+- mention Conda package and library pyswashes in documentation
+
+2016-07-06
+- typo in the Self similar note
+
+2016-06-20
+- another typo in the Self similar note
+
+2016-06-16
+- typo in the Self similar note
+
+2016-01-29
+- in doxygen config file, DOT_FONTNAME modified into default value to avoid warnings.
+- initialization of A2,B2 … F2 added in swash to avoid warnings.
+- READY FOR TAG version 1.03.00
+
+2016-01-28
+- update of the documentation for the swash solutions.
+
+2016-01-27
+- in swash solution:
+-- initialization of the h=0-flag for each time loop instead of each time loop and point.
+-- final time for the periodic case 12.28s, half-period.
+-- number of iterations of Newton change to 15.
+
+2016-01-26
+- transient swash solution: correction in A2, divided by a^2 instead of a.
+The difference on the results cannot be seen, of order 10^-7 (absolute difference) on q and h.
+- periodic swash solution: correction in F2, u2^2/2 instead of u2^2/4, typo in Noemie's report and in Marche07.
+- addition of a flag to treat the beach (h=0).
+- modification of the main loop in n to get the initial condition with tf=0 (n=0).
+
+2016-01-25
+- periodic solution added from Noemie's work, computation to be checked
+- transient_solution moved into swash where we will compute both transient solution and periodic solution (avoids duplication of code).
+Warning: the periodic solution is not computed yet.
+- improvement of the left boundary condition file (comments for FullSWOF).
+
+2016-01-21
+- modification of the transient solution: the left boundary condition in time is saved in a file (transient_leftbc.txt) with a time step dt=0.01s in order to have the left boundary condition for a Shallow Water code.
+
+2015-11-03
+- modification of the output of transient solution to get the left boundary condition in time
+
+2015-10-28
+- typos and tabs/spaces corrected
+- references for the transient solution added in the documentation
+
+2015-10-12
+- typo in "initialization" corrected in transient solution comments
+
+2015-08-28
+- typos in transient solution
+
+2015-07-20
+- Upgrade to Doxygen 1.8.10
+
+2015-07-10
+- addition of the transient solution written by Noemie Gaveau (MAPMO training course, may 18 - june 26, 2015)
+
+2015-06-12
+- correction of the Bug 9892: the topography was wrong for the inclined plane
+- modification in Doxygen_style.tex to avoid problems with \cleardoublepage
+
+2015-04-03
+- UpdateDateVersion.sh: Check first for sed, doxygen, mktemp and egrep
+
+2014-07-11
+- in dressler_dam.cpp and macdonaldb1.cpp, minor corrections in doxygen comments
+to avoid empty pages (as if \newpage were used)(2014-06-12)
+removed: it is a Latex feature
+
+2014-06-12
+- modification of the Doxygen_style and Doxygen_config_latex files for doxygen 1.8.7.
+In this new version, the Bug 626172 is corrected such that no latex expressions can
+be used in the doxygen tags.
+Consequently, modification of the Doxygen_config_latex PROJECT_NUMBER;
+in the doxygen style file, addition of a newcommand{\+}
+and removal of \verb for $projectname.
+- modification of the UpdateDateVersion script to be consistent with doxygen 1.8.7
+- minor corrections in doxygen comments to avoid empty pages (as if \newpage were used)
+in dressler_dam.cpp and macdonaldb1.cpp
+
+2014-05-23
+- modification of Doxygen_config_files to be adapted to versions >= 1.8.2:
+'SHOW_DIRECTORIES', 'HTML_ALIGN_MEMBERS' and 'USE_INLINE_TREES' variables removed
+- "Exceptions to be treated" removed in doxygen comments (todo list) as errors are already treated
+
+2014-04-29
+- new version of the HowToRelease file with Windows releases
+- READY FOR TAG version 1.02.00
+
+2014-03-11
+- minor correction in a comment for the inclined plane: the subcritical flow is not of interest for this solution
+- correction in doxygen comments
+
+2014-02-20
+- self-similar solutions written with dimensional values to be adapted to FullSWOF
+- correction in the description of the laminar coefficient in the Self-similar_solutions file
+
+2014-02-19
+- new self-similar solution for dam break on an inclined plane added
+- self-similar solution for dam break on an inclined plane added in the explanations for self-similar solutions
+
+2014-02-10
+- Note in the bibliography to refer to "SWASHES: complementary results"
+
+2014-02-03
+- reference to Huppert82 added
+
+2014-01-30
+- modification of the authors of inclined_plane as we are using Cardano's method, coded by A.-C. Boulanger and O. Delestre
+- 'laminar friction' added for the self-similar solution for dam break on a flat bottom
+
+2014-01-29
+- the article SWASHES is the only one cited in the help, we refer to the documentation for other articles (where all the references are given)
+- new solution over an inclined plane added
+
+2014-01-28
+- new self-similar solution for dam break on a flat bottom added
+
+2013-11-20
+- new documentation file: DamBreakWetDomain-value_c_m to detail the computation of c_m in the case of a wet dam break
+- new part in the documentation for creating a new release: documents on the web site Sourcesup
+- minor correction in the names of dam break cases
+
+2013-11-07
+- update of the documentation for creating a new release. We added the step to update the tags directory.
+
+2013-09-09
+- documentation for creating a new release added in doc/
+- modification of the contact email in the documentation
+
+2013-05-13
+- change in bibliographic style to include URL in references
+
+2013-05-07
+- Include the scientific paper about SWASHES among the references
+READY FOR TAG version 1.01.04
+
+2012-05-11
+- "# Analytic solution chosen" replaced by "# " in order to remove this comment from the solution
+- desalloc* replaced by dealloc*
+- correction name of Tuoi in doc.bib
+
+2012-04-10
+- sourcesup.cru.fr replaced by sourceup.renater.fr
+
+2012-03-19
+- space removed in the version number of UpdateDateVersion.sh
+
+2012-03-09
+- Forgotten empty line in 2D between two different x
+READY FOR TAG version 1.01.02
+
+2012-03-08
+- references added
+- biblio updated
+- modif of the bibtex style (Doxygen_config and Doxygen_style)
+- name of the script for updating version and date changed
+READY FOR TAG version 1.01.01
+
+2012-03-07
+- file names: capital letters removed
+- #ifndef CLASS #define CLASS with capital letters
+- modifications for doxygen 1.8.0 in CITE_BIB_FILES tag (Doxygen_config*)
+- script for updating version and date added
+- modification in make cleanall to delete "swashes" but not the script
+
+2012-03-06
+- modifications of Doxygen comments in each Header or Source file
+- modifications of the Doxygen_config files to have the date of the code
+- modification in the Documentation to have the date of the doc and the date of the code (may be different)
+- "const" added when necessary
+- NX_EX and NY_EX in capital letters as they are constant
+- x^2-y^2 replaced by (x-y)(x+y)
+- correction in the headers
+
+2012-03-01
+- Application Note added in the doc folder
+- modif of the documentation for windows users
+- README.txt added
+
+2012-02-06
+READY FOR TAG version 1.01.00
+
+2012-01-25
+- modifications of the header of the output
+
+2012-01-24
+- new solution with bedload transport added in 1d (Grass and MPM)
+
+2012-01-10
+- correction in the outputs: when h=0, u,v,||U||,qx,qy and q=0, and Fr=NaN
+
+2011-12-19
+- documentation and doxygen
+- changes in the order of the outputs
+READY FOR TAG version 1.00.02
+
+2011-11-22
+- correction of the topography in MacDo-s: the value 0 is on the boundary, not on the first/last cell
+- REEL replaced by SCALAR
+- REEL* replaced by vector<SCALAR>
+- divers.hpp replaced by misc.hpp
+READY FOR TAG version 1.00.01
+
+2011-11-16
+- to do list: update
+READY FOR TAG version 1.00.00
+
+2011-10-21
+- correction of forgotten initializations in the topography of MacDonalds
+- correction of the bounds of the loops in MacDonalds
+
+2011-09-26
+- modification of the integration in MacDo1D: we start from 0 on the right side, the topography is positive
+- modification in pseudo2D MacDo*: function for the derivative of the topo as in the other files
+
+2011-09-19
+- no more memory pb in Thacker2D ... !?
+- sign changed of q*dh*dh/h in Delta_topo_diffus of MacDonald_like_diffus -> to be validated by Olivier
+- "analytical" -> "analytic"
+
+2011-09-16
+- output: changes in the order of choicedomain/choicesolution to be consistent with the input
+- correction USE help
+- pseudo2d = dim 1.5 -> choicedim not int but REEL
+- MacDo pseudo 2D added
+
+2011-09-08
+- Thacker 2D added
+
+2011-09-07
+- correction error in the domain of oscillations with friction
+- correction error when reading the parameters in 2D
+- structure of the 2D
+
+2011-09-06
+- changes in the parameters: the dimension, type, domain, choice and number of cells must be specified
+- cout -> cerr for the errors
+- swash -> swashes
+
+2011-08-09
+- modification of the headings of the files (name of the software)
+
+2011-08-08
+- displacement of the main file in Sources
+
+2011-08-03
+- publication of tag and package version 1.0.0
+
+2011-08-03
+- solution parameters included in output file
+- compilation with -O3 in makefile

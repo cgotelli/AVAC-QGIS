@@ -1,0 +1,168 @@
+! src2.f90 for AVAC 4: version = 2.0
+subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
+
+    ! Called to update q by solving source term equation
+    ! $q_t = \psi(q)$ over time dt starting at time t.
+    !
+    ! Explicit stopping treatment of the basal friction source term.
+    ! Supported constitutive laws (selected via imodel_rh in rheology_module):
+    !
+    !   imodel = 1  Coulomb:          tau = mu * rho * g * h * cos(theta)
+    !   imodel = 2  Voellmy:          tau = mu * rho * g * h * cos(theta)
+    !                                     + rho * g / xi * speed^2
+    !   imodel = 3  Cohesive Voellmy: tau = C + mu * rho * g * h * cos(theta)
+    !                                     + rho * g / xi * speed^2
+    !
+    ! where speed = sqrt(u^2 + v^2) and theta is the local bed slope angle
+    ! computed from the topography gradient (aux(1,:,:)).
+    !
+    ! Closed-form update of dv/dt = -a - b*v^2, with a floor at zero:
+    !   speed_new = friction_speed_after(...)
+    !   (hu)^{n+1} = (hu / speed) * h * speed_new
+    !   (hv)^{n+1} = (hv / speed) * h * speed_new
+    !
+    ! This allows exact stopping (speed = 0 precisely).
+
+    use geoclaw_module, only: g => grav, dry_tolerance, speed_limit
+    use geoclaw_module, only: friction_forcing, friction_depth
+    use geoclaw_module, only: manning_coefficient, manning_break, num_manning
+    use rheology_module
+
+    implicit none
+
+    ! Input parameters
+    integer, intent(in) :: meqn, mbc, mx, my, maux
+    double precision, intent(in) :: xlower, ylower, dx, dy, t, dt
+
+    ! Solution arrays
+    double precision, intent(inout) :: q(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
+    double precision, intent(inout) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
+
+    ! Locals
+    integer :: i, j, nman
+    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio
+    real(kind=8) :: dzdx, dzdy, theta_local
+    real(kind=8) :: tau_driving_rho, tau_static_rho
+    real(kind=8) :: mu_local, xi_local, C_local   ! altitude-zoned rheology (from get_mu_xi)
+    real(kind=8) :: coeff, gamma
+    logical :: at_rest
+
+    if (friction_forcing) then
+        do j = 1, my
+            do i = 1, mx
+                h = q(1,i,j)
+
+                if (h <= dry_tolerance) then
+                    q(2,i,j) = 0.d0
+                    q(3,i,j) = 0.d0
+
+                else if (h <= friction_depth) then
+                    hu = q(2,i,j)
+                    hv = q(3,i,j)
+
+                    ! Water mode uses GeoClaw's standard semi-implicit Manning
+                    ! update.  This is the Saint-Venant source term required by
+                    ! the SWASHES MacDonald benchmarks; granular modes below are
+                    ! unchanged.
+                    if (imodel_rh == 0) then
+                        coeff = 0.d0
+                        do nman = num_manning, 1, -1
+                            if (aux(1,i,j) < manning_break(nman)) then
+                                coeff = manning_coefficient(nman)
+                            end if
+                        end do
+                        gamma = dsqrt(hu**2+hv**2)*g*coeff**2 / &
+                                (h**(7.d0/3.d0))
+                        q(2,i,j) = hu/(1.d0+dt*gamma)
+                        q(3,i,j) = hv/(1.d0+dt*gamma)
+                        cycle
+                    end if
+
+                    ! Altitude-dependent rheology: pick mu and xi for this cell's bed elevation
+                    call get_mu_xi(aux(1,i,j), mu_local, xi_local, C_local)
+
+                    ! Local bed slope angle from centred topography gradient
+                    dzdx = (aux(1,i+1,j) - aux(1,i-1,j)) / (2.d0*dx)
+                    dzdy = (aux(1,i,j+1) - aux(1,i,j-1)) / (2.d0*dy)
+                    theta_local = datan(dsqrt(dzdx**2 + dzdy**2))
+
+                    ! Current speed
+                    u = hu / h
+                    v = hv / h
+                    speed = dsqrt(u**2 + v**2)
+
+                    ! Static yield test (Mohr-Coulomb): keep cells at rest if their
+                    ! momentum is exactly zero and the driving stress is below yield.
+                    ! A cell in motion must NOT be stopped here — it decelerates via
+                    ! kinetic friction until speed_new reaches zero (see below).
+                    !   tau_driving / rho = g * h * sin(theta)
+                    !   tau_static  / rho = [C/rho +] mu * g * h * cos(theta)
+                    ! (turbulent Voellmy term vanishes at v=0 => same for imodel=2)
+                    tau_driving_rho = g * h * dsin(theta_local)
+                    if (imodel_rh == 3) then
+                        tau_static_rho = C_local/rho_rh + mu_local * g * h !* dcos(theta_local)
+                    else
+                        tau_static_rho = mu_local * g * h !* dcos(theta_local)
+                    end if
+                    at_rest = (speed == 0.d0) .and. (tau_driving_rho <= tau_static_rho)
+                    if (at_rest) then
+                        q(2,i,j) = 0.d0
+                        q(3,i,j) = 0.d0
+                    end if
+
+                    if (.not. at_rest .and. speed > 0.d0) then
+                        ! Closed-form source update with floor at zero.  Unlike
+                        ! forward Euler, this gives the same accumulated local
+                        ! Voellmy drag when AMR subcycling changes dt.
+                        ! Mohr-Coulomb stop: if kinetic friction brings speed to zero
+                        ! (speed_new <= 0) AND the driving stress is below yield,
+                        ! the cell stops definitively.  A cell on a super-yield slope
+                        ! (tau_driving > tau_static) must NOT be zeroed, otherwise
+                        ! the slope re-accelerates it on the next step, creating a
+                        ! freeze/restart oscillation that violates the CFL.
+                        speed_new = friction_speed_after(speed, dt, h, mu_local, &
+                                                         xi_local, C_local, rho_rh, &
+                                                         g, imodel_rh)
+                        if (speed_new <= 0.d0 .and. &
+                            tau_driving_rho <= tau_static_rho) then
+                            ! Definitive stop: slope cannot restart the cell.
+                            q(2,i,j) = 0.d0
+                            q(3,i,j) = 0.d0
+                        else
+                            ! Floor at zero, but no forced stop on super-yield slopes.
+                            speed_new = max(0.d0, speed_new)
+                            if (speed_new > 0.d0) then
+                                q(2,i,j) = hu * speed_new / speed
+                                q(3,i,j) = hv * speed_new / speed
+                            else
+                                q(2,i,j) = 0.d0
+                                q(3,i,j) = 0.d0
+                            end if
+                        end if
+                    end if
+                end if
+            end do
+        end do
+    else
+        ! Keep GeoClaw's standard no-friction dry-front protection.  This is
+        ! essential for frictionless water benchmarks: a tiny wet cell can
+        ! otherwise produce hu/h above the configured physical speed limit,
+        ! overflow on the next step, and generate NaNs.
+        do j = 1-mbc, my+mbc
+            do i = 1-mbc, mx+mbc
+                if (q(1,i,j) <= dry_tolerance) then
+                    q(2,i,j) = 0.d0
+                    q(3,i,j) = 0.d0
+                else
+                    speed = dsqrt(q(2,i,j)**2 + q(3,i,j)**2) / q(1,i,j)
+                    if (speed > speed_limit) then
+                        sratio = speed_limit / speed
+                        q(2,i,j) = q(2,i,j) * sratio
+                        q(3,i,j) = q(3,i,j) * sratio
+                    end if
+                end if
+            end do
+        end do
+    end if
+
+end subroutine src2

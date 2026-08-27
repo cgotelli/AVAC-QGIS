@@ -1,0 +1,25 @@
+.DS_Store
+*.pyc
+*.o
+*.mod
+.output
+.data
+.plots
+xclaw
+xamr
+xgeoclaw
+*.html
+*.data
+*_output/
+*_plots/
+*~
+
+# log files
+*.log
+
+# py3k cache directories
+__pycache__
+
+# ipython
+.ipynb_checkpoints
+TESTING_GAUGE_FORMATS.md

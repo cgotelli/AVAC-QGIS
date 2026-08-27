@@ -1,0 +1,71 @@
+# macOS and editor state
+.DS_Store
+.idea/
+.vscode/
+*~
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Compiled solver and transient build products
+*.o
+*.mod
+*.so
+*.dylib
+*.log
+*.tmp
+*.bak
+avac-main/src/AVAC/xgeoclaw
+avac-main/src/WAVE/xgeoclaw
+avac-main/src/**/fort.*
+avac-main/src/**/_output*/
+avac-main/src/**/_plots*/
+
+# Historical development notebooks are retained locally, not published.
+avac-main/src/**/*.ipynb
+
+# Managed runtime archives and assembled releases are distributed separately.
+avac_qgis/resources/*.tar.gz
+avac_qgis/resources/runtime/
+/dist/
+/tmp/
+
+# Validation notebooks and drivers are published. External datasets and every
+# generated solver/result artifact remain local.
+/validation/_data/
+/validation/**/results/
+/validation/**/figures/
+/validation/**/reference/
+/validation/**/Topo/
+/validation/**/CL/
+/validation/AVAC/**/AVAC/
+/validation/AVAC/**/Wave/
+/validation/AVAC/Coulomb_sloping_bed/AVAC_*/
+/validation/AVAC/Coulomb_sloping_bed/repeatability_*/
+/validation/AVAC/Coulomb_sloping_bed/notebook_run/
+/validation/WAVE/**/AVAC/
+/validation/WAVE/**/Wave/
+/validation/WAVE/**/impulse_configuration.yaml
+/validation/WAVE/avac_reference/
+/validation/WAVE/comparison_report.md
+/validation/WAVE/comparison_summary.json
+/validation/ISeeSnow/*/Inputs/
+/validation/ISeeSnow/*/Run/
+/validation/ISeeSnow/*/Submission/
+/validation/ISeeSnow/*/AVAC4QGIS_ISeeSnow_*_Case.yaml
+/validation/ISeeSnow/*/avac_iseesnow_template.yaml
+/validation/ISeeSnow/*/initial_depth_*.asc
+/validation/ISeeSnow/*/native_mass_history.csv
+/validation/ISeeSnow/*/run_summary.json
+/validation/ISeeSnow/*.csv
+/validation/ISeeSnow/comparison_report.md
+/validation/ISeeSnow/plots/
+/validation/ISeeSnow/paper_figures/
+/validation/vendor/SWASHES-1.05.01/bin/
+/validation/vendor/SWASHES-1.05.01/build/
+/resources/

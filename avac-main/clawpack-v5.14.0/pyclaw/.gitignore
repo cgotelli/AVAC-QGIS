@@ -1,0 +1,36 @@
+# git ls-files --others --exclude-from=.git/info/exclude
+
+# compiled object files and Python code
+*.[oa]
+*.so
+*.pyc
+*.mod
+
+# File system metadata
+.DS_Store
+
+# Temporary/swap files
+*~
+
+# PyClaw-specific files to ignore
+_output
+_plots
+_plots*
+petclaw.log
+pyclaw.log
+.noseids
+_build
+build
+*.dSYM
+
+# symlink to examples directory
+src/pyclaw/examples
+
+# log files
+*.log
+
+# py3k cache directories
+__pycache__
+
+# ipython
+.ipynb_checkpoints

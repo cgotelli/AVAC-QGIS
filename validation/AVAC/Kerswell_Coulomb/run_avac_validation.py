@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""Run the Kerswell Coulomb dam-break using the AVAC source.
+
+The Chapter 8 problem is expanded to a five-cell-wide strip with wall
+boundaries across the strip.  The centerline is evaluated from the AVAC field.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import io
+import json
+from pathlib import Path
+import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+from scipy.optimize import brentq
+
+
+HERE = Path(__file__).resolve().parent
+
+from avac4qgis_validation.runtime import (
+    GRAVITY,
+    _replace_data_value,
+    clean_case,
+    fgout_frame,
+    fgout_times,
+    prepare_avac_coulomb_case,
+    run_solver,
+    runtime,
+)
+from avac4qgis_validation.kerswell import position_riemann, time_riemann
+
+
+H0 = 1.0
+MU = 0.1
+XLOWER, XUPPER = -10.0, 30.0
+X0 = H0 / MU
+T0 = np.sqrt(H0 / GRAVITY) / MU
+U0 = np.sqrt(GRAVITY * H0)
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def theory_front(time_s: np.ndarray) -> np.ndarray:
+    tau = np.asarray(time_s, dtype=float) / T0
+    return X0 * np.where(tau < 2.0, 2.0 * tau - 0.5 * tau**2, 2.0)
+
+
+def theory_rear(time_s: np.ndarray) -> np.ndarray:
+    tau = np.asarray(time_s, dtype=float) / T0
+    b = 0.5 * tau + 1.0
+    moving = X0 * -(
+        -3.64928 + 5.47993 * b - 2.06989 * b**2 + 0.319976 * b**3
+        - 0.103745 * b**4 + 0.0230073 * b**5
+    )
+    return np.where(tau < 1.529654, moving, -0.721577 * X0)
+
+
+def read_centerline(work: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return fgout time, x, depth, and x velocity on the strip centerline."""
+    times: list[float] = []
+    depth_rows: list[np.ndarray] = []
+    velocity_rows: list[np.ndarray] = []
+    x: np.ndarray | None = None
+    for frame_no, _ in enumerate(fgout_times("avac", work), start=1):
+        with contextlib.redirect_stdout(io.StringIO()):
+            frame = fgout_frame("avac", work, frame_no)
+        middle = frame.h.shape[1] // 2
+        h = np.asarray(frame.h[:, middle], dtype=float)
+        hu = np.asarray(frame.hu[:, middle], dtype=float)
+        if x is None:
+            x = np.asarray(frame.X[:, middle], dtype=float)
+        u = np.divide(hu, h, out=np.zeros_like(h), where=h > 1.0e-12)
+        times.append(float(frame.t))
+        depth_rows.append(h)
+        velocity_rows.append(u)
+    if x is None:
+        raise RuntimeError("AVAC did not write fixed-grid output.")
+    return np.asarray(times), x, np.asarray(depth_rows), np.asarray(velocity_rows)
+
+
+def extract(work: Path, dx: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+    times, x, depth, velocity = read_centerline(work)
+    front = np.full(times.shape, np.nan)
+    rear = np.full(times.shape, np.nan)
+    max_speed = np.max(np.abs(velocity), axis=1)
+    for index, (h, u) in enumerate(zip(depth, velocity)):
+        wet = x[h > 1.0e-12]
+        if wet.size:
+            front[index] = float(np.max(wet))
+        undisturbed = x[np.abs(h - H0) <= 1.0e-8]
+        if undisturbed.size:
+            rear[index] = float(np.max(undisturbed))
+    mass = np.sum(depth, axis=1) * dx
+    moving_front = times <= 2.0 * T0
+    moving_rear = times <= 1.529654 * T0
+    summary = {
+        "solver": str(runtime("avac") / "xgeoclaw"),
+        "solver_sha256": sha256(runtime("avac") / "xgeoclaw"),
+        "dx_m": dx,
+        "dy_m": dx,
+        "width_cells": 5,
+        "t_final_s": float(times[-1]),
+        "front_rmse_moving_m": float(np.sqrt(np.nanmean(
+            (front[moving_front] - theory_front(times[moving_front])) ** 2
+        ))),
+        "rear_rmse_moving_m": float(np.sqrt(np.nanmean(
+            (rear[moving_rear] - theory_rear(times[moving_rear])) ** 2
+        ))),
+        "front_final_m": float(front[-1]),
+        "front_theory_final_m": float(theory_front(times[-1])),
+        "rear_final_m": float(rear[-1]),
+        "rear_theory_final_m": float(theory_rear(times[-1])),
+        "maximum_speed_final_m_s": float(max_speed[-1]),
+        "mass_initial_m2_per_m": float(mass[0]),
+        "mass_range_m2_per_m": float(np.ptp(mass)),
+    }
+    return times, x, depth, velocity, summary | {"_front": front, "_rear": rear, "_mass": mass}
+
+
+def trace(rhs, start: float, times: np.ndarray) -> np.ndarray:
+    curve = np.empty_like(times)
+    curve[0] = start
+    for index in range(1, len(times)):
+        dt = times[index] - times[index - 1]
+        t = times[index - 1]
+        position = curve[index - 1]
+        k1 = rhs(position, t)
+        k2 = rhs(position + 0.5 * dt * k1, t + 0.5 * dt)
+        k3 = rhs(position + 0.5 * dt * k2, t + 0.5 * dt)
+        k4 = rhs(position + dt * k3, t + dt)
+        curve[index] = position + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+    return curve
+
+
+def analytical_profile(tau: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Kerswell's analytical profile, evaluated only for plotting."""
+    s_values = np.arange(-1.0 + 1.0e-5, 1.0, 0.01)
+    valid_s: list[float] = []
+    r_values: list[float] = []
+    for s in s_values:
+        lower, upper = 1.0 + 1.0e-9, 1.7657
+        try:
+            f_lower = time_riemann(float(s), lower) - tau
+            f_upper = time_riemann(float(s), upper) - tau
+        except (ArithmeticError, ValueError):
+            continue
+        if not (np.isfinite(f_lower) and np.isfinite(f_upper)) or f_lower * f_upper >= 0.0:
+            continue
+        r = brentq(lambda value: time_riemann(float(s), value) - tau, lower, upper, xtol=1.0e-10)
+        valid_s.append(float(s))
+        r_values.append(float(r))
+    if not valid_s:
+        return np.empty(0), np.empty(0), np.empty(0)
+    s = np.asarray(valid_s)
+    r = np.asarray(r_values)
+    x = np.asarray([position_riemann(float(ss), float(rr)) for ss, rr in zip(s, r)]) * X0
+    h = (r + s) ** 2 / 4.0
+    u = (r - s - tau) * U0
+    return x, h, u
+
+
+def plot(times: np.ndarray, x: np.ndarray, depth: np.ndarray, velocity: np.ndarray,
+         summary: dict[str, float], figures: Path) -> None:
+    figures.mkdir(exist_ok=True)
+    front = np.asarray(summary.pop("_front"))
+    rear = np.asarray(summary.pop("_rear"))
+    mass = np.asarray(summary.pop("_mass"))
+    h_interp = RegularGridInterpolator((times, x), depth, bounds_error=False, fill_value=0.0)
+    u_interp = RegularGridInterpolator((times, x), velocity, bounds_error=False, fill_value=0.0)
+    characteristic_time = np.arange(0.0, min(8.0, times[-1]) + 1.0e-12, 0.01)
+
+    def h_at(position: float, time: float) -> float:
+        return max(float(h_interp([[time, position]])[0]), 0.0)
+
+    def u_at(position: float, time: float) -> float:
+        return float(u_interp([[time, position]])[0])
+
+    fig, axis = plt.subplots(figsize=(10, 5.2))
+    for index, start in enumerate(np.linspace(-5.0, 0.0, 5)):
+        curve = trace(lambda xx, tt: u_at(xx, tt) + np.sqrt(GRAVITY * h_at(xx, tt)), start, characteristic_time)
+        axis.plot(curve / X0, characteristic_time / T0, color="0.5", lw=1.15,
+                  label=r"$r$-characteristics" if index == 0 else None)
+    for index, value in enumerate(np.linspace(-1.0, 1.0, 8)):
+        curve = trace(
+            lambda xx, tt, s=value: np.sqrt(GRAVITY * h_at(xx, tt)) - 2.0 * s * U0 - MU * GRAVITY * tt,
+            0.0, characteristic_time,
+        )
+        axis.plot(curve / X0, characteristic_time / T0, color="#1249d8", lw=1.05,
+                  label=r"$s$-characteristics" if index == 0 else None)
+    for index, start in enumerate(np.linspace(-5.0, -0.5, 6)):
+        curve = trace(lambda xx, tt: u_at(xx, tt) - np.sqrt(GRAVITY * h_at(xx, tt)), start, characteristic_time)
+        axis.plot(curve / X0, characteristic_time / T0, color="#00a9b8", lw=1.05,
+                  label=r"$s$-characteristics at rest" if index == 0 else None)
+    axis.scatter(rear / X0, times / T0, marker="+", s=18, color="black", label=r"$x_b$ (AVAC)")
+    axis.scatter(front / X0, times / T0, marker="o", s=9, color="black", label=r"$x_f$ (AVAC)")
+    axis.plot(theory_front(characteristic_time) / X0, characteristic_time / T0,
+              color="#d62728", lw=1.8, label=r"$x_f$ (Kerswell theory)")
+    axis.plot(theory_rear(characteristic_time) / X0, characteristic_time / T0,
+              color="#e69500", lw=1.8, label=r"$x_b$ (Kerswell theory)")
+    axis.set(xlabel=r"$x/X_0$", ylabel=r"$t/T_0$", xlim=(-1.0, 2.5), ylim=(0.0, 2.5))
+    axis.grid(alpha=0.35)
+    axis.legend(ncol=3, fontsize=8, frameon=False)
+    fig.tight_layout()
+    fig.savefig(figures / "figure_8_7_avac_vs_theory.png", dpi=240)
+    plt.close(fig)
+
+    theory_time = np.linspace(0.0, times[-1], 800)
+    fig, axes = plt.subplots(1, 2, figsize=(10.2, 4.4))
+    axes[0].plot(theory_time / T0, theory_rear(theory_time) / X0, "k-", lw=1.8, label="Kerswell theory")
+    axes[0].plot(times / T0, rear / X0, "+", color="#0072B2", ms=5, label="AVAC")
+    axes[0].set(xlabel=r"$t/T_0$", ylabel=r"$x_b/X_0$", title="Rear boundary")
+    axes[1].plot(theory_time / T0, theory_front(theory_time) / X0, "k-", lw=1.8, label="Kerswell theory")
+    axes[1].plot(times / T0, front / X0, "+", color="#0072B2", ms=5, label="AVAC")
+    axes[1].set(xlabel=r"$t/T_0$", ylabel=r"$x_f/X_0$", title="Front boundary")
+    for axis in axes:
+        axis.grid(alpha=0.35)
+        axis.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(figures / "figure_8_10_avac_vs_theory.png", dpi=240)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7.6), sharex=True)
+    for time_s in (1.0, 2.0, 4.0, 6.0):
+        index = int(np.argmin(np.abs(times - time_s)))
+        x_theory, h_theory, u_theory = analytical_profile(float(times[index] / T0))
+        axes[0].plot(x / X0, depth[index] / H0, lw=1.05, label=rf"AVAC, $t={times[index]:.1f}$ s")
+        axes[1].plot(x / X0, velocity[index] / U0, lw=1.05, label=rf"AVAC, $t={times[index]:.1f}$ s")
+        if x_theory.size:
+            axes[0].plot(x_theory / X0, h_theory / H0, "k--", lw=0.85)
+            axes[1].plot(x_theory / X0, u_theory / U0, "k--", lw=0.85)
+    axes[0].plot([], [], "k--", label="Kerswell theory")
+    axes[0].set(ylabel=r"$h/H_0$", ylim=(-0.03, 1.08), title="Depth profiles")
+    axes[1].set(xlabel=r"$x/X_0$", ylabel=r"$u/U_0$", title="Velocity profiles")
+    for axis in axes:
+        axis.set(xlim=(-1.2, 2.3))
+        axis.grid(alpha=0.35)
+        axis.legend(ncol=2, fontsize=8, frameon=False)
+    fig.tight_layout()
+    fig.savefig(figures / "profiles_avac_vs_theory.png", dpi=240)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.1))
+    axes[0].semilogy(times, np.maximum(np.max(np.abs(velocity), axis=1), 1.0e-15), color="#0072B2")
+    axes[0].axvline(2.0 * T0, color="black", ls="--", lw=1, label="theoretical front arrest")
+    axes[0].set(xlabel="time (s)", ylabel="maximum speed (m/s)")
+    axes[0].legend(frameon=False, fontsize=8)
+    axes[1].plot(times, mass - mass[0], color="#0072B2")
+    axes[1].set(xlabel="time (s)", ylabel=r"mass change (m$^2$/m)")
+    for axis in axes:
+        axis.grid(alpha=0.35)
+    fig.tight_layout()
+    fig.savefig(figures / "avac_arrest_and_mass.png", dpi=240)
+    plt.close(fig)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dx", type=float, default=0.01)
+    parser.add_argument("--t-final", type=float, default=10.0)
+    parser.add_argument("--nout", type=int, default=200)
+    parser.add_argument("--cores", type=int, default=8)
+    args = parser.parse_args()
+    if args.dx <= 0 or args.t_final <= 0 or args.nout < 1 or args.cores < 1:
+        raise ValueError("dx, t-final, nout, and cores must be positive")
+    if not np.isclose((XUPPER - XLOWER) / args.dx, round((XUPPER - XLOWER) / args.dx)):
+        raise ValueError("dx must divide the 40 m domain exactly")
+
+    clean_case(HERE)
+    figures = HERE / "figures"
+    figures.mkdir(exist_ok=True)
+    work = prepare_avac_coulomb_case(
+        HERE, xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
+        dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
+        depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
+    )
+    _replace_data_value(work / "amr.data", "flag2refine", "F")
+    _replace_data_value(work / "amr.data", "max1d", str(round((XUPPER - XLOWER) / args.dx)))
+    run_solver("avac", work, cores=args.cores)
+
+    times, x, depth, velocity, summary = extract(work, args.dx)
+    front = np.asarray(summary.pop("_front"))
+    rear = np.asarray(summary.pop("_rear"))
+    mass = np.asarray(summary.pop("_mass"))
+    results = HERE / "results"
+    results.mkdir(exist_ok=True)
+    np.savez_compressed(results / "centerline_fields.npz", time_s=times, x_m=x, depth_m=depth, velocity_m_s=velocity)
+    np.savetxt(results / "boundary_metrics.csv", np.column_stack((times, front, rear, np.max(np.abs(velocity), axis=1), mass)),
+               delimiter=",", header="time_s,front_x_m,rear_x_m,max_speed_m_s,mass_m2_per_m", comments="")
+    (results / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    plot(times, x, depth, velocity, summary | {"_front": front, "_rear": rear, "_mass": mass}, figures)
+    print(json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    main()
