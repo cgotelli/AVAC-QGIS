@@ -46,6 +46,18 @@ def main() -> None:
         bad = [name for name in names if "/tests/" in name or "__pycache__" in name or name.endswith((".pyc", ".DS_Store"))]
         if bad:
             raise SystemExit("development artifacts in ZIP: " + ", ".join(bad[:5]))
+        for descriptor_name, release_key in (
+            ("avac_qgis/resources/runtime-release.json", "runtime_manifest_sha256"),
+            ("avac_qgis/resources/wave-runtime-release.json", "wave_runtime_manifest_sha256"),
+        ):
+            descriptor = json.loads(archive.read(descriptor_name))
+            runtimes = descriptor.get("runtimes")
+            record = runtimes.get(args.platform) if isinstance(runtimes, dict) else descriptor
+            fingerprint = record.get("runtime_manifest_sha256") if isinstance(record, dict) else None
+            if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+                raise SystemExit(f"{descriptor_name} has no runtime manifest identity")
+            if fingerprint != manifest.get(release_key):
+                raise SystemExit(f"{descriptor_name} differs from release manifest")
     print(f"release validation: PASS ({package.name})")
 
 

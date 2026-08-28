@@ -1,0 +1,9 @@
+# Windows-only entry point for the WAVE solver build.
+#
+# The single-layer WAVE executable does not use the optional multilayer
+# LAPACK/BLAS code, so its Windows build only links OpenMP.  The normal
+# Makefile retains the existing Unix link flags.
+AVAC_WINDOWS_BUILD = 1
+LFLAGS ?= -fopenmp
+
+include Makefile

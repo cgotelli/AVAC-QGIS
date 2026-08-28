@@ -74,6 +74,12 @@ def _manifest(path: Path) -> dict[str, Any]:
     return payload
 
 
+def runtime_manifest_sha256(manifest: dict[str, Any]) -> str:
+    """Return a stable identity for one complete runtime manifest."""
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _checked_file(root: Path, relative: str, expected_hash: str) -> Path:
     path = root / relative
     if not path.is_file():
@@ -84,7 +90,12 @@ def _checked_file(root: Path, relative: str, expected_hash: str) -> Path:
     return path
 
 
-def validate_runtime(root: str | Path, *, expected_version: str | None = None) -> dict[str, Any]:
+def validate_runtime(
+    root: str | Path,
+    *,
+    expected_version: str | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
     """Validate every executable/library/backend hash before a runtime is used."""
     root = Path(root).expanduser().resolve()
     manifest = _manifest(root)
@@ -101,6 +112,10 @@ def validate_runtime(root: str | Path, *, expected_version: str | None = None) -
         )
     if expected_version is not None and manifest.get("runtime_version") != expected_version:
         raise RuntimeValidationError(f"Runtime version mismatch: expected {expected_version}, found {manifest.get('runtime_version')}")
+    if expected_manifest_sha256 is not None and runtime_manifest_sha256(manifest) != expected_manifest_sha256.lower():
+        raise RuntimeValidationError(
+            "Installed runtime manifest differs from the runtime bundled with this plugin."
+        )
     solver = manifest.get("solver")
     if not isinstance(solver, dict) or not isinstance(solver.get("path"), str) or not isinstance(solver.get("sha256"), str):
         raise RuntimeValidationError("Runtime manifest has no valid solver record.")
@@ -126,7 +141,12 @@ def validate_runtime(root: str | Path, *, expected_version: str | None = None) -
     return manifest
 
 
-def installed_runtime(version: str, *, destination_root: str | Path | None = None) -> Path | None:
+def installed_runtime(
+    version: str,
+    *,
+    destination_root: str | Path | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> Path | None:
     """Return a validated installed runtime from the requested product area.
 
     Optional components can share a manifest version number while providing a
@@ -137,13 +157,23 @@ def installed_runtime(version: str, *, destination_root: str | Path | None = Non
     destination = Path(destination_root).expanduser().resolve() if destination_root else runtime_install_root()
     candidate = destination / version / platform_key()
     try:
-        validate_runtime(candidate, expected_version=version)
+        validate_runtime(
+            candidate,
+            expected_version=version,
+            expected_manifest_sha256=expected_manifest_sha256,
+        )
     except RuntimeValidationError:
         return None
     return candidate
 
 
-def install_runtime_archive(archive: str | Path, version: str, *, destination_root: str | Path | None = None) -> Path:
+def install_runtime_archive(
+    archive: str | Path,
+    version: str,
+    *,
+    destination_root: str | Path | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> Path:
     """Atomically install a validated artifact; never publish a partial runtime."""
     archive = Path(archive).expanduser().resolve()
     if not archive.is_file():
@@ -153,7 +183,11 @@ def install_runtime_archive(archive: str | Path, version: str, *, destination_ro
     target = destination / version / target_platform
     if target.exists():
         try:
-            validate_runtime(target, expected_version=version)
+            validate_runtime(
+                target,
+                expected_version=version,
+                expected_manifest_sha256=expected_manifest_sha256,
+            )
             return target
         except RuntimeValidationError:
             # A corrupt prior install is replaced only after a new staged copy
@@ -172,7 +206,11 @@ def install_runtime_archive(archive: str | Path, version: str, *, destination_ro
         # their full platform target as the top-level member.
         if not staged.is_dir() and target_platform == "macos-arm64":
             staged = staging_parent / "arm64"
-        validate_runtime(staged, expected_version=version)
+        validate_runtime(
+            staged,
+            expected_version=version,
+            expected_manifest_sha256=expected_manifest_sha256,
+        )
         if target.exists():
             corrupt = target.with_name(target.name + ".corrupt")
             if corrupt.exists():

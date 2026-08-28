@@ -252,26 +252,19 @@ contains
     end function qinit_cell_average
 
         
-    ! currently only supports one file type:
-    ! x,y,z values, one per line in standard order from NW corner to SE
-    ! z is perturbation from standard depth h,hu,hv set in qinit_geo,
-    ! if iqinit = 1,2, or 3 respectively.
-    ! if iqinit = 4, the z column corresponds to the definition of the 
-    ! surface elevation eta. The depth is then set as q(i,j,1)=max(eta-b,0)
     subroutine read_qinit(fname)
-    
+
         use geoclaw_module, only: GEO_PARM_UNIT
-        
+
         implicit none
-        
-        ! Subroutine arguments
-        character(len=150) :: fname
-        
-        ! Data file opening
+
+        character(len=150), intent(in) :: fname
         integer, parameter :: unit = 19
-        integer :: i,num_points,status
-        double precision :: x,y
-        
+        integer :: status
+        character(len=8) :: magic
+
+        magic = ''
+
         print *,'  '
         print *,'Reading qinit data from file  ', fname
         print *,'  '
@@ -280,8 +273,113 @@ contains
         write(GEO_PARM_UNIT,*) 'Reading qinit data from'
         write(GEO_PARM_UNIT,*) fname
         write(GEO_PARM_UNIT,*) '  '
-        
-        open(unit=unit, file=fname, iostat=status, status="unknown", &
+
+        ! Probe the first eight bytes.  New plugin-prepared cases use a
+        ! versioned binary raster; legacy standalone cases remain formatted
+        ! x/y/value text and are handled by the original reader below.
+        open(unit=unit, file=fname, iostat=status, status="old", &
+             access="stream",form="unformatted",action="read")
+        if (status == 0) then
+            read(unit,iostat=status) magic
+            close(unit)
+        endif
+        if ((status == 0).and.(magic == 'AVACQIN1')) then
+            call read_qinit_binary(fname)
+        else
+            call read_qinit_text(fname)
+        endif
+
+    end subroutine read_qinit
+
+
+    subroutine read_qinit_binary(fname)
+
+        implicit none
+
+        character(len=150), intent(in) :: fname
+        integer, parameter :: unit = 19
+        integer :: status,components,reserved,num_points
+        integer(kind=8) :: mx_file,my_file,num_points_8
+        real(kind=8) :: x_low_file,y_hi_file,dx_file,dy_file
+        character(len=8) :: magic
+
+        open(unit=unit, file=fname, iostat=status, status="old", &
+             access="stream",form="unformatted",action="read", &
+             convert="little_endian")
+        if (status /= 0) then
+            print *,"Error opening binary qinit file ",fname
+            stop
+        endif
+
+        read(unit,iostat=status) magic,mx_file,my_file,components,reserved, &
+                                x_low_file,y_hi_file,dx_file,dy_file
+        if ((status /= 0).or.(magic /= 'AVACQIN1')) then
+            print *,"ERROR: Invalid AVAC binary qinit header in ",fname
+            stop
+        endif
+        if ((mx_file < 2).or.(my_file < 2).or. &
+            (mx_file > int(huge(mx_qinit),kind=8)).or. &
+            (my_file > int(huge(my_qinit),kind=8))) then
+            print *,"ERROR: Invalid AVAC binary qinit dimensions"
+            stop
+        endif
+        if (my_file > int(huge(num_points),kind=8)/mx_file) then
+            print *,"ERROR: AVAC binary qinit raster is too large"
+            stop
+        endif
+
+        mx_qinit = int(mx_file)
+        my_qinit = int(my_file)
+        num_points_8 = mx_file*my_file
+        num_points = int(num_points_8)
+        x_low_qinit = x_low_file
+        y_hi_qinit = y_hi_file
+        dx_qinit = dx_file
+        dy_qinit = dy_file
+        x_hi_qinit = x_low_qinit + (mx_qinit-1)*dx_qinit
+        y_low_qinit = y_hi_qinit - (my_qinit-1)*dy_qinit
+
+        if ((dx_qinit <= 0.d0).or.(dy_qinit <= 0.d0)) then
+            print *,"ERROR: Invalid AVAC binary qinit cell spacing"
+            stop
+        endif
+        if (qinit_type == 5) then
+            if (components /= 3) then
+                print *,"ERROR: qinit_type 5 requires three binary components"
+                stop
+            endif
+            allocate(qinit_state(3,num_points))
+            read(unit,iostat=status) qinit_state
+        else
+            if (components /= 1) then
+                print *,"ERROR: Scalar qinit requires one binary component"
+                stop
+            endif
+            allocate(qinit(num_points))
+            read(unit,iostat=status) qinit
+        endif
+        close(unit)
+        if (status /= 0) then
+            print *,"ERROR: Incomplete AVAC binary qinit payload in ",fname
+            stop
+        endif
+        print *,"Loaded binary qinit grid ",mx_qinit," x ",my_qinit
+
+    end subroutine read_qinit_binary
+
+
+    subroutine read_qinit_text(fname)
+        ! Legacy x,y,z values, one per line from NW to SE.  This path remains
+        ! available for existing projects and standalone AVAC workflows.
+
+        implicit none
+
+        character(len=150), intent(in) :: fname
+        integer, parameter :: unit = 19
+        integer :: i,num_points,status
+        double precision :: x,y
+
+        open(unit=unit, file=fname, iostat=status, status="old", &
              form='formatted',action="read")
         if ( status /= 0 ) then
             print *,"Error opening file", fname
@@ -339,8 +437,8 @@ contains
             enddo
         end if
         close(unit)
-        
-    end subroutine read_qinit
+
+    end subroutine read_qinit_text
 
     subroutine read_force_dry(fname)
 

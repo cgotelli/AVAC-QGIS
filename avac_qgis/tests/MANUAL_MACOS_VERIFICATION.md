@@ -46,7 +46,7 @@ Expected data-only tree (names may include additional `.data` after staging):
     inputs/dem/
     inputs/release/              # .shp/.shx/.dbf and applicable sidecars
     AVAC/AVAC_configuration.yaml
-    AVAC/init.xyz
+    AVAC/init.avacbin
     AVAC/*.data
     AVAC/_output/
     Topo/topography.asc

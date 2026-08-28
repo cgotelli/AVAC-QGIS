@@ -25,6 +25,7 @@ subroutine fgmax_frompatch(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
     integer :: clock_start, clock_finish, clock_rate
     integer :: mythread, omp_get_thread_num
     integer :: i_fg,i1_fg,i2_fg,  j_fg,j1_fg,j2_fg
+    logical :: dry_patch_initialized, interpolation_done
     
       mythread = 0 ! if not using OpenMP
 !$    mythread = omp_get_thread_num()
@@ -218,7 +219,13 @@ subroutine fgmax_frompatch(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
         ! not skip the first visit: fgmax still needs to record auxiliary
         ! topography and establish levelmax for every observation point.
         if (maxval(q(1,1:mx,1:my)) <= 0.d0) then
-            if (all(fg%levelmax(fg%klist(1:fg_klist_length,mythread)) > 0)) then
+            ! levelmax is shared by patch workers.  The short read must use
+            ! the same lock as the maxima commit below.
+            !$OMP CRITICAL (FGmaxCommit)
+            dry_patch_initialized = &
+                all(fg%levelmax(fg%klist(1:fg_klist_length,mythread)) > 0)
+            !$OMP END CRITICAL (FGmaxCommit)
+            if (dry_patch_initialized) then
                 cycle ifg_loop
             endif
         endif
@@ -233,10 +240,27 @@ subroutine fgmax_frompatch(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
         
     
         ! Interpolate from q on patch to desired values fg_values on fgrid.
-        call fgmax_interpolate(mx,my,meqn,mbc,maux,q,aux, &
-             dx,dy,xlower,ylower,ifg,level,fg_values, &
-             i1,i2,j1,j2,fg%klist(1:fg%npts,mythread), &
-             fg_klist_length,fg%npts)
+        ! fgmax_interpolate also initializes shared, static topography until
+        ! fg%auxdone(level) becomes true.  Serialize that one-time phase.  All
+        ! later interpolation uses only patch-local arrays and read-only fixed
+        ! grid metadata, so it can run concurrently across OpenMP workers.
+        interpolation_done = .false.
+        !$OMP CRITICAL (FGmaxCommit)
+        if (.not. fg%auxdone(level)) then
+            call fgmax_interpolate(mx,my,meqn,mbc,maux,q,aux, &
+                 dx,dy,xlower,ylower,ifg,level,fg_values, &
+                 i1,i2,j1,j2,fg%klist(1:fg%npts,mythread), &
+                 fg_klist_length,fg%npts)
+            interpolation_done = .true.
+        endif
+        !$OMP END CRITICAL (FGmaxCommit)
+
+        if (.not. interpolation_done) then
+            call fgmax_interpolate(mx,my,meqn,mbc,maux,q,aux, &
+                 dx,dy,xlower,ylower,ifg,level,fg_values, &
+                 i1,i2,j1,j2,fg%klist(1:fg%npts,mythread), &
+                 fg_klist_length,fg%npts)
+        endif
 
         if (FG_DEBUG) then
             write(61,*) '+++ updating level: ',level
@@ -244,6 +268,10 @@ subroutine fgmax_frompatch(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
             endif
 
     
+        ! Only this commit mutates the shared maxima/arrival arrays.  Keeping
+        ! interpolation outside this lock removes the large OpenMP bottleneck
+        ! while retaining the existing deterministic update rules.
+        !$OMP CRITICAL (FGmaxCommit)
         do indexk=1,fg_klist_length
             k = fg%klist(indexk,mythread)
             ! fg_values is set only at points k where the fgrid intersects the
@@ -278,6 +306,7 @@ subroutine fgmax_frompatch(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
                 endif
 
             enddo
+        !$OMP END CRITICAL (FGmaxCommit)
             
         deallocate(fg_values)
             

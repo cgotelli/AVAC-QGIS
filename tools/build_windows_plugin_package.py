@@ -30,6 +30,11 @@ def digest(path: Path) -> str:
     return value.hexdigest()
 
 
+def manifest_digest(manifest: dict) -> str:
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def metadata_version() -> str:
     fields = dict(line.split("=", 1) for line in (PLUGIN / "metadata.txt").read_text(encoding="utf-8").splitlines() if "=" in line)
     version = fields.get("version", "").strip()
@@ -66,7 +71,15 @@ def assert_no_forbidden(root: Path) -> None:
         raise ValueError("forbidden developer paths found in release staging: " + ", ".join(hits[:10]))
 
 
-def copy_plugin(staging: Path, runtime_archive: Path, runtime_version: str, wave_archive: Path, wave_version: str) -> Path:
+def copy_plugin(
+    staging: Path,
+    runtime_archive: Path,
+    runtime_version: str,
+    runtime_manifest_payload: dict,
+    wave_archive: Path,
+    wave_version: str,
+    wave_manifest_payload: dict,
+) -> Path:
     destination = staging / "avac_qgis"
     def ignore(_: str, names: list[str]) -> set[str]:
         return {name for name in names if name in EXCLUDED_DIRS or Path(name).suffix in EXCLUDED_SUFFIXES or name == ".DS_Store"}
@@ -83,8 +96,18 @@ def copy_plugin(staging: Path, runtime_archive: Path, runtime_version: str, wave
     wave_name = f"wave-runtime-{TARGET}-{wave_version}.tar.gz"
     shutil.copy2(runtime_archive, resources / avac_name)
     shutil.copy2(wave_archive, resources / wave_name)
-    (resources / "runtime-release.json").write_text(json.dumps({"runtimes": {TARGET: {"runtime_version": runtime_version, "platform": TARGET, "archive": avac_name}}}, indent=2) + "\n", encoding="utf-8")
-    (resources / "wave-runtime-release.json").write_text(json.dumps({"runtimes": {TARGET: {"runtime_version": wave_version, "platform": TARGET, "archive": wave_name}}}, indent=2) + "\n", encoding="utf-8")
+    (resources / "runtime-release.json").write_text(json.dumps({"runtimes": {TARGET: {
+        "runtime_version": runtime_version,
+        "platform": TARGET,
+        "archive": avac_name,
+        "runtime_manifest_sha256": manifest_digest(runtime_manifest_payload),
+    }}}, indent=2) + "\n", encoding="utf-8")
+    (resources / "wave-runtime-release.json").write_text(json.dumps({"runtimes": {TARGET: {
+        "runtime_version": wave_version,
+        "platform": TARGET,
+        "archive": wave_name,
+        "runtime_manifest_sha256": manifest_digest(wave_manifest_payload),
+    }}}, indent=2) + "\n", encoding="utf-8")
     metadata = (destination / "metadata.txt").read_text(encoding="utf-8")
     metadata = metadata.replace("description=AVAC avalanche simulation integration for QGIS with managed native runtimes.", "description=AVAC avalanche simulation integration for QGIS (Windows AMD64).")
     metadata = metadata.replace("about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using a bundled platform-specific runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS.", "about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using the bundled Windows AMD64 runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS on Windows.")
@@ -122,12 +145,15 @@ def main() -> None:
     filename = f"avac_qgis-{version}-{TARGET}.zip"; output = dist / filename
     if output.exists(): raise SystemExit(f"refusing to overwrite existing package: {output}")
     with tempfile.TemporaryDirectory(prefix="avac-qgis-windows-package-") as temporary:
-        staged = copy_plugin(Path(temporary), archive, args.runtime_version, wave_archive, args.wave_runtime_version)
+        staged = copy_plugin(
+            Path(temporary), archive, args.runtime_version, manifest,
+            wave_archive, args.wave_runtime_version, wave_manifest,
+        )
         assert_no_forbidden(staged); contents = write_zip(staged, output)
     package_hash = digest(output)
     (dist / f"{filename}.sha256").write_text(f"{package_hash}  {filename}\n", encoding="utf-8")
     (dist / "PACKAGE_CONTENTS.json").write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
-    release = {"plugin_version": version, "minimum_qgis": "3.40", "runtime_version": args.runtime_version, "runtime_format": manifest["format"], "supported_os": "Windows", "supported_architecture": "AMD64", "supported_platform": TARGET, "tested_qgis": "3.44 LTS", "clawpack_version": manifest["clawpack"]["version"], "solver_sha256": manifest["solver"]["sha256"], "runtime_archive_sha256": digest(archive), "wave_runtime_version": args.wave_runtime_version, "wave_clawpack_version": wave_manifest["clawpack"]["version"], "wave_solver_sha256": wave_manifest["solver"]["sha256"], "wave_runtime_archive_sha256": digest(wave_archive), "plugin_zip_sha256": package_hash, "build_timestamp_utc": datetime.now(timezone.utc).isoformat()}
+    release = {"plugin_version": version, "minimum_qgis": "3.40", "runtime_version": args.runtime_version, "runtime_format": manifest["format"], "runtime_manifest_sha256": manifest_digest(manifest), "supported_os": "Windows", "supported_architecture": "AMD64", "supported_platform": TARGET, "tested_qgis": "3.44 LTS", "clawpack_version": manifest["clawpack"]["version"], "solver_sha256": manifest["solver"]["sha256"], "runtime_archive_sha256": digest(archive), "wave_runtime_version": args.wave_runtime_version, "wave_runtime_manifest_sha256": manifest_digest(wave_manifest), "wave_clawpack_version": wave_manifest["clawpack"]["version"], "wave_solver_sha256": wave_manifest["solver"]["sha256"], "wave_runtime_archive_sha256": digest(wave_archive), "plugin_zip_sha256": package_hash, "build_timestamp_utc": datetime.now(timezone.utc).isoformat()}
     (dist / "RELEASE_MANIFEST.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"package: {output}\nsha256: {package_hash}\nfiles: {len(contents)}\nbytes: {output.stat().st_size}")
 

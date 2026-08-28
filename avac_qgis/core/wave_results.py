@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sys
 import csv
 import traceback
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import yaml
@@ -23,7 +26,7 @@ from .wave_project import WAVE_MARKER
 WAVE_RESULT_DIRECTORY = "qgis_wave_results"
 WAVE_RESULT_MANIFEST = "results.json"
 WAVE_RESULT_ERROR_LOG = "result_loading_error.log"
-WAVE_RESULT_FORMAT = 3
+WAVE_RESULT_FORMAT = 4
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,106 @@ class WaveDiscovery:
     water_level: float
     temporal_origin_iso: str
     frames: tuple[WaveFrame, ...]
+
+
+def _wave_source_paths(discovery: WaveDiscovery) -> list[Path]:
+    """Return every source whose change invalidates a derived Wave product."""
+    paths = sorted(path for path in discovery.output.glob("fgout0001.*") if path.is_file())
+    paths.extend(
+        path for path in (
+            discovery.root / "impulse_configuration.yaml",
+            discovery.root / WAVE_MARKER,
+            discovery.root / "Topo" / "mask.asc",
+        ) if path.is_file()
+    )
+    return paths
+
+
+def _wave_raw_fingerprint(discovery: WaveDiscovery) -> str:
+    """Fingerprint immutable solver output without rereading large frame payloads."""
+    digest = hashlib.sha256()
+    for path in _wave_source_paths(discovery):
+        stat = path.stat()
+        try:
+            name = path.relative_to(discovery.root).as_posix()
+        except ValueError:
+            name = path.name
+        digest.update(f"{name}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
+def _wave_manifest_path(discovery: WaveDiscovery) -> Path:
+    return discovery.root / WAVE_RESULT_DIRECTORY / WAVE_RESULT_MANIFEST
+
+
+def _valid_wave_product(result: Path, product: dict[str, Any] | None, expected_bands: int = 1) -> bool:
+    if not isinstance(product, dict):
+        return False
+    path = result / str(product.get("path", ""))
+    if not path.is_file():
+        return False
+    try:
+        from osgeo import gdal
+        dataset = gdal.Open(str(path), gdal.GA_ReadOnly)
+        valid = bool(dataset and dataset.RasterCount == expected_bands)
+        dataset = None
+        return valid
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def cached_wave_results(discovery: WaveDiscovery) -> dict[str, Any] | None:
+    """Return a cache only when it still represents the discovered raw output."""
+    manifest_path = _wave_manifest_path(discovery)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if payload.get("format") not in {3, WAVE_RESULT_FORMAT}:
+        return None
+    try:
+        if Path(str(payload.get("source", ""))).resolve() != discovery.root:
+            return None
+    except (OSError, ValueError):
+        return None
+    expected_times = [frame.time_seconds for frame in discovery.frames]
+    if payload.get("simulation_time_seconds") != expected_times:
+        return None
+    if not isinstance(payload.get("static"), dict) or not isinstance(payload.get("temporal"), dict):
+        return None
+    fingerprint = _wave_raw_fingerprint(discovery)
+    stored_fingerprint = str(payload.get("raw_fingerprint") or "")
+    if stored_fingerprint:
+        if stored_fingerprint != fingerprint:
+            return None
+    else:
+        # Version 3 manifests did not carry a fingerprint. Adopt one only if
+        # the manifest is newer than every source, which prevents stale legacy
+        # products from being accepted after a solver rerun.
+        try:
+            if any(path.stat().st_mtime_ns > manifest_path.stat().st_mtime_ns for path in _wave_source_paths(discovery)):
+                return None
+        except OSError:
+            return None
+    payload["format"] = WAVE_RESULT_FORMAT
+    payload["raw_fingerprint"] = fingerprint
+    return payload
+
+
+def _publish_wave_raster(partial: Path, destination: Path, expected_bands: int) -> Path:
+    """Publish a raster without replacing a file that QGIS may hold open."""
+    if _valid_wave_product(destination.parent, {"path": destination.name}, expected_bands):
+        partial.unlink(missing_ok=True)
+        return destination
+    try:
+        os.replace(partial, destination)
+        return destination
+    except PermissionError:
+        # Windows does not permit replacing a raster opened by QGIS. A stale
+        # or damaged locked target must not prevent publishing a repaired one.
+        alternate = destination.with_name(f"{destination.stem}_{uuid.uuid4().hex[:8]}{destination.suffix}")
+        os.replace(partial, alternate)
+        return alternate
 
 
 def _wave_temporal_origin_iso(root: Path, marker: dict) -> str:
@@ -163,6 +266,26 @@ def _mask(root: Path, x: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 def materialize_wave_diagnostics(discovery: WaveDiscovery) -> dict:
     """Create the lake-water-volume history CSV product."""
+    result = discovery.root / WAVE_RESULT_DIRECTORY
+    volume_path = result / "lake_volume_history.csv"
+    cached = cached_wave_results(discovery)
+    source_paths = _wave_source_paths(discovery)
+    diagnostics_are_current = False
+    if cached is not None and volume_path.is_file():
+        try:
+            diagnostics_are_current = all(
+                path.stat().st_mtime_ns <= volume_path.stat().st_mtime_ns for path in source_paths
+            )
+        except OSError:
+            diagnostics_are_current = False
+    if diagnostics_are_current:
+        try:
+            with volume_path.open("r", newline="", encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+            if rows and rows[0] == ["simulation_time_s", "lake_water_volume_m3"] and len(rows) == len(discovery.frames) + 1:
+                return {"volume_csv": str(volume_path)}
+        except OSError:
+            pass
     _, x, y, initial_depth, _bed, _hu, _hv = load_wave_frame(discovery, discovery.frames[0].frame_id)
     wet_mask = _mask(discovery.root, x, y)
     geometry = geometry_from_axes(x, y); area = geometry.dx * geometry.dy
@@ -172,8 +295,7 @@ def materialize_wave_diagnostics(discovery: WaveDiscovery) -> dict:
         if geometry_from_axes(fx, fy) != geometry:
             raise ValueError("Wave fgout frames are inconsistent.")
         times.append(time); volumes.append(float(np.sum(depth[wet_mask]) * area))
-    result = discovery.root / WAVE_RESULT_DIRECTORY; result.mkdir(exist_ok=True)
-    volume_path = result / "lake_volume_history.csv"
+    result.mkdir(exist_ok=True)
     with volume_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle); writer.writerow(["simulation_time_s", "lake_water_volume_m3"])
         writer.writerows((f"{time:.12g}", f"{value:.12g}") for time, value in zip(times, volumes))
@@ -213,14 +335,27 @@ def materialize_wave_results(discovery: WaveDiscovery, variable: str = "surface_
     if variable not in {"depth", "water_elevation", "surface_displacement"}:
         raise ValueError("Unsupported Wave temporal variable.")
     result = discovery.root / WAVE_RESULT_DIRECTORY; result.mkdir(exist_ok=True)
+    fingerprint = _wave_raw_fingerprint(discovery)
+    payload = cached_wave_results(discovery)
+    if payload is not None:
+        temporal_product = payload["temporal"].get(variable)
+        static_products = payload["static"]
+        if (
+            _valid_wave_product(result, temporal_product, len(discovery.frames))
+            and _valid_wave_product(result, static_products.get("maximum_surface_rise"))
+            and _valid_wave_product(result, static_products.get("maximum_surface_drawdown"))
+        ):
+            _wave_manifest_path(discovery).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            return payload
     _, x, y, initial_depth, initial_bed, _hu, _hv = load_wave_frame(discovery, discovery.frames[0].frame_id)
     geometry = geometry_from_axes(x, y)
     band_records = temporal_band_records(
         discovery.temporal_origin_iso, [frame.time_seconds for frame in discovery.frames],
     )
     initial_surface = initial_bed + initial_depth
-    temporal_path = result / f"temporal_{variable}.tif"
-    partial = result / f".temporal_{variable}.partial.tif"
+    token = fingerprint[:12]
+    temporal_path = result / f"temporal_{variable}_{token}.tif"
+    partial = result / f".{temporal_path.stem}.{uuid.uuid4().hex[:8]}.partial.tif"
     dataset = _create_geotiff(partial, len(discovery.frames), geometry, discovery.crs_authid)
     dataset.SetMetadataItem("AVAC_FIRST_FRAME_START_ISO8601", str(band_records[0]["start_iso"]))
     dataset.SetMetadataItem("AVAC_TEMPORAL_AXIS", "elapsed simulation seconds")
@@ -259,11 +394,25 @@ def materialize_wave_results(discovery: WaveDiscovery, variable: str = "surface_
         if dataset is not None:
             dataset.FlushCache(); dataset = None
     try:
-        os.replace(partial, temporal_path)
+        temporal_path = _publish_wave_raster(partial, temporal_path, len(discovery.frames))
     except OSError as exc:
         raise RuntimeError(f"Could not finalize Wave temporal raster {temporal_path.name}: {exc}") from exc
+    static_payload: dict[str, dict[str, Any]] = {}
+    existing_static = payload.get("static", {}) if payload is not None else {}
     for name, values in (("maximum_surface_rise", np.maximum(crest, 0.0)), ("maximum_surface_drawdown", np.maximum(-drawdown, 0.0))):
-        dataset = _create_geotiff(result / f"{name}.tif", 1, geometry, discovery.crs_authid); _write_band(dataset, 1, values, geometry); dataset.FlushCache(); dataset = None
+        existing = existing_static.get(name)
+        if _valid_wave_product(result, existing):
+            static_path = result / str(existing["path"])
+        else:
+            static_path = result / f"{name}_{token}.tif"
+            static_partial = result / f".{static_path.stem}.{uuid.uuid4().hex[:8]}.partial.tif"
+            dataset = _create_geotiff(static_partial, 1, geometry, discovery.crs_authid)
+            _write_band(dataset, 1, values, geometry); dataset.FlushCache(); dataset = None
+            static_path = _publish_wave_raster(static_partial, static_path, 1)
+        static_payload[name] = {
+            "path": static_path.name, "unit": "m",
+            "range": [0., float(np.nanmax(values))],
+        }
     if variable == "surface_displacement":
         absolute = max(abs(minimum), abs(maximum)) if np.isfinite(minimum) and np.isfinite(maximum) else 0.0
         limits = [-absolute, absolute]
@@ -271,23 +420,18 @@ def materialize_wave_results(discovery: WaveDiscovery, variable: str = "surface_
         limits = [0.0, max(0.0, maximum if np.isfinite(maximum) else 0.0)]
     else:
         limits = [minimum, maximum] if np.isfinite(minimum) and np.isfinite(maximum) else [0.0, 1.0]
-    payload = {"format": WAVE_RESULT_FORMAT, "source": str(discovery.root), "simulation_time_seconds": [f.time_seconds for f in discovery.frames],
+    new_payload = {"format": WAVE_RESULT_FORMAT, "source": str(discovery.root), "raw_fingerprint": fingerprint,
+               "simulation_time_seconds": [f.time_seconds for f in discovery.frames],
                "temporal_origin_iso": discovery.temporal_origin_iso, "temporal_axis_epoch": discovery.temporal_origin_iso,
                "temporal_band_ranges": band_records,
-               "static": {"maximum_surface_rise": {"path": "maximum_surface_rise.tif", "unit": "m", "range": [0., float(np.nanmax(np.maximum(crest, 0.0)))]}, "maximum_surface_drawdown": {"path": "maximum_surface_drawdown.tif", "unit": "m", "range": [0., float(np.nanmax(np.maximum(-drawdown, 0.0)))]}},
+               "static": static_payload,
                "temporal": {variable: {"path": temporal_path.name, "unit": "m", "range": limits, "band_ranges": band_records}}}
     manifest_path = result / WAVE_RESULT_MANIFEST
-    try:
-        previous = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        previous = None
     if (
-        isinstance(previous, dict)
-        and previous.get("format") == WAVE_RESULT_FORMAT
-        and previous.get("source") == payload["source"]
-        and previous.get("simulation_time_seconds") == payload["simulation_time_seconds"]
-        and isinstance(previous.get("temporal"), dict)
+        isinstance(payload, dict)
+        and payload.get("raw_fingerprint") == fingerprint
+        and isinstance(payload.get("temporal"), dict)
     ):
-        payload["temporal"] = {**previous["temporal"], **payload["temporal"]}
-    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return payload
+        new_payload["temporal"] = {**payload["temporal"], **new_payload["temporal"]}
+    manifest_path.write_text(json.dumps(new_payload, indent=2), encoding="utf-8")
+    return new_payload

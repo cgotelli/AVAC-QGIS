@@ -115,6 +115,10 @@ class PrepareWaveResultsTask(QgsTask):
             self.discovery = discover_wave_results(self.root, self.runtime)
             self.manifest = materialize_wave_results(self.discovery, self.variable)
             self.diagnostics = materialize_wave_diagnostics(self.discovery)
+            try:
+                (Path(self.root) / "qgis_wave_results" / "result_loading_error.log").unlink(missing_ok=True)
+            except OSError:
+                pass
             return True
         except Exception as exc:  # noqa: BLE001
             self.error = exc

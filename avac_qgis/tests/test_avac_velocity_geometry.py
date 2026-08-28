@@ -40,4 +40,7 @@ def test_recovered_pdf_baseline_source_hashes_are_stable():
         "Makefile": "ea519f819761ae7b6690e1a31016ab08a05961ff4f3af90ff68bac84f7b14714",
     }
     for name, digest in expected.items():
-        assert hashlib.sha256((AVAC / name).read_bytes()).hexdigest() == digest
+        # Git may materialize CRLF working-tree files on Windows. The source
+        # contract concerns the repository text, not platform line endings.
+        normalized = (AVAC / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+        assert hashlib.sha256(normalized).hexdigest() == digest

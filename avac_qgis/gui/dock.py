@@ -253,7 +253,10 @@ class AvacDockWidget(QDockWidget):
         self.refinement_dem_layer.setFilters(QgsMapLayerProxyModel.Filter.RasterLayer)
         self.refinement_dem_layer.setAllowEmptyLayer(True)
         # Keep the selector and preparation support available for a future
-        # refinement-workflow return, but do not expose it in the normal UI.
+        # refinement-workflow return, but do not expose or implicitly enable it
+        # in the normal UI. QgsMapLayerComboBox otherwise selects the first
+        # project raster even when an empty choice is allowed.
+        self.refinement_dem_layer.setLayer(None)
         self.refinement_dem_layer.setVisible(False)
         self.release_layer = QgsMapLayerComboBox()
         self.release_layer.setFilters(QgsMapLayerProxyModel.Filter.VectorLayer)
@@ -573,7 +576,6 @@ class AvacDockWidget(QDockWidget):
         self.wave_extension_toggle.toggled.connect(self._set_wave_extension_enabled)
         self.log_toggle.toggled.connect(self.log.setVisible)
         self.dem_layer.layerChanged.connect(self._invalidate_prepared)
-        self.refinement_dem_layer.layerChanged.connect(self._invalidate_prepared)
         self.release_layer.layerChanged.connect(self._invalidate_prepared)
         self.workspace_root.textChanged.connect(self._invalidate_prepared)
         self.configuration_template.textChanged.connect(self._invalidate_prepared)
@@ -2825,13 +2827,19 @@ class AvacDockWidget(QDockWidget):
 
     def _preparation_signature(self) -> tuple:
         dem = self.dem_layer.currentLayer()
-        fine_dem = self.refinement_dem_layer.currentLayer()
+        fine_dem = self._selected_refinement_dem()
         release = self.release_layer.currentLayer()
         return (
             dem.id() if dem else None, fine_dem.id() if fine_dem else None, release.id() if release else None,
             self.workspace_root.text().strip(), self.configuration_template.text().strip(),
             json.dumps(self._controlled_parameters(), sort_keys=True),
         )
+
+    def _selected_refinement_dem(self):
+        """Return an explicitly enabled refinement DEM, never a hidden default."""
+        if self.refinement_dem_layer.isHidden():
+            return None
+        return self.refinement_dem_layer.currentLayer()
 
     def _invalidate_prepared(self, *_args) -> None:
         if self.prepared_avac_dir is not None:
@@ -2852,7 +2860,7 @@ class AvacDockWidget(QDockWidget):
             workspace = self.report.avac_dir
             dem = self.dem_layer.currentLayer()
             raster = raster_from_qgis_layer(dem)
-            fine_layer = self.refinement_dem_layer.currentLayer()
+            fine_layer = self._selected_refinement_dem()
             fine_raster = raster_from_qgis_layer(fine_layer) if fine_layer else None
             rings = rings_from_qgis_layer(self.release_layer.currentLayer(), dem.crs())
             template = self._current_configuration_template()

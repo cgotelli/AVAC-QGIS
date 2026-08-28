@@ -6,9 +6,13 @@ import filecmp
 import os
 from pathlib import Path
 
+import numpy as np
+
 from qgis.PyQt.QtCore import QCoreApplication, QTimer
 from qgis.core import QgsCoordinateReferenceSystem, QgsProject, QgsRasterLayer, QgsVectorLayer
 from qgis.utils import plugins
+
+from avac_qgis.core.preprocessing import QINIT_BINARY_HEADER, QINIT_BINARY_MAGIC
 
 
 CASE = Path("/Users/cmgotelli/Downloads/Lac_Clusaz")
@@ -41,7 +45,14 @@ def run() -> None:
 
 def complete(dock) -> None:
     assert filecmp.cmp(ROOT / "Topo" / "topography.asc", REFERENCE / "topography.asc", shallow=False)
-    assert filecmp.cmp(ROOT / "AVAC" / "init.xyz", REFERENCE / "init.xyz", shallow=False)
+    binary = ROOT / "AVAC" / "init.avacbin"
+    with binary.open("rb") as handle:
+        header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+        binary_values = np.fromfile(handle, dtype="<f8")
+    reference_values = np.loadtxt(REFERENCE / "init.xyz", usecols=2)
+    assert header[0] == QINIT_BINARY_MAGIC
+    assert binary_values.size == header[1] * header[2]
+    assert np.array_equal(binary_values, reference_values)
     assert (ROOT / ".avac_qgis_run.json").is_file()
     assert dock.run_prepared_button.isEnabled()
     print(f"QGIS_DOCK_PREPARED_STATUS={dock.status.text()}", flush=True)

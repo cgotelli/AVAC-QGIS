@@ -30,6 +30,11 @@ def digest(path: Path) -> str:
     return value.hexdigest()
 
 
+def manifest_digest(manifest: dict) -> str:
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def metadata_version() -> str:
     text = (PLUGIN / "metadata.txt").read_text(encoding="utf-8")
     fields = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
@@ -70,7 +75,15 @@ def assert_no_forbidden(root: Path) -> None:
         raise ValueError("forbidden developer paths found in release staging: " + ", ".join(hits[:10]))
 
 
-def copy_plugin(staging: Path, runtime_archive: Path, runtime_version: str, wave_runtime_archive: Path | None = None, wave_runtime_version: str | None = None) -> Path:
+def copy_plugin(
+    staging: Path,
+    runtime_archive: Path,
+    runtime_version: str,
+    runtime_manifest_payload: dict,
+    wave_runtime_archive: Path | None = None,
+    wave_runtime_version: str | None = None,
+    wave_manifest_payload: dict | None = None,
+) -> Path:
     destination = staging / "avac_qgis"
     def ignore(directory: str, names: list[str]) -> set[str]:
         return {name for name in names if name in EXCLUDED_DIRS or Path(name).suffix in EXCLUDED_SUFFIXES or name == ".DS_Store"}
@@ -88,9 +101,15 @@ def copy_plugin(staging: Path, runtime_archive: Path, runtime_version: str, wave
     archive_name = f"avac-runtime-macos-arm64-{runtime_version}.tar.gz"
     shutil.copy2(runtime_archive, resources / archive_name)
     (resources / "runtime-release.json").write_text(
-        json.dumps({"runtime_version": runtime_version, "archive": archive_name}, indent=2) + "\n", encoding="utf-8"
+        json.dumps({
+            "runtime_version": runtime_version,
+            "archive": archive_name,
+            "runtime_manifest_sha256": manifest_digest(runtime_manifest_payload),
+        }, indent=2) + "\n", encoding="utf-8"
     )
     if wave_runtime_archive is not None and wave_runtime_version is not None:
+        if wave_manifest_payload is None:
+            raise ValueError("Wave runtime manifest is required when packaging a Wave runtime.")
         for old in resources.glob("wave-runtime-*.tar.gz"):
             old.unlink()
         for old in resources.glob("wave-runtime-release*.json"):
@@ -98,7 +117,11 @@ def copy_plugin(staging: Path, runtime_archive: Path, runtime_version: str, wave
         wave_name = f"wave-runtime-macos-arm64-{wave_runtime_version}.tar.gz"
         shutil.copy2(wave_runtime_archive, resources / wave_name)
         (resources / "wave-runtime-release.json").write_text(
-            json.dumps({"runtime_version": wave_runtime_version, "archive": wave_name}, indent=2) + "\n", encoding="utf-8"
+            json.dumps({
+                "runtime_version": wave_runtime_version,
+                "archive": wave_name,
+                "runtime_manifest_sha256": manifest_digest(wave_manifest_payload),
+            }, indent=2) + "\n", encoding="utf-8"
         )
     return destination
 
@@ -142,7 +165,10 @@ def main() -> None:
     if output.exists():
         raise SystemExit(f"refusing to overwrite existing package: {output}")
     with tempfile.TemporaryDirectory(prefix="avac-qgis-package-") as temporary:
-        staged = copy_plugin(Path(temporary), archive, args.runtime_version, wave_archive, args.wave_runtime_version)
+        staged = copy_plugin(
+            Path(temporary), archive, args.runtime_version, manifest,
+            wave_archive, args.wave_runtime_version, wave_manifest,
+        )
         assert_no_forbidden(staged)
         contents = write_zip(staged, output)
     package_hash = digest(output)
@@ -150,6 +176,7 @@ def main() -> None:
     (dist / "PACKAGE_CONTENTS.json").write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
     release = {
         "plugin_version": version, "runtime_version": args.runtime_version, "runtime_format": manifest["format"],
+        "runtime_manifest_sha256": manifest_digest(manifest),
         "supported_os": "macOS", "supported_architecture": "arm64", "tested_qgis": "3.44 LTS",
         "clawpack_version": manifest["clawpack"]["version"],
         "solver_sha256": manifest["solver"]["sha256"],
@@ -160,6 +187,7 @@ def main() -> None:
     if wave_archive is not None and wave_manifest is not None:
         release.update({
             "wave_runtime_version": args.wave_runtime_version,
+            "wave_runtime_manifest_sha256": manifest_digest(wave_manifest),
             "wave_clawpack_version": wave_manifest["clawpack"]["version"],
             "wave_solver_sha256": wave_manifest["solver"]["sha256"],
             "wave_solver_source_sha256": wave_manifest["solver"]["source_sha256"],

@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from .runtime import install_runtime_archive, installed_runtime, platform_key, runtime_install_root
+from .runtime import install_runtime_archive, platform_key, runtime_install_root
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ _DEVELOPMENT_RUNTIME_VERSION = "0.5.1"
 _RELEASE_DESCRIPTOR = RESOURCES / "runtime-release.json"
 
 
-def _runtime_release() -> tuple[str, Path]:
+def _runtime_release() -> tuple[str, Path, str | None]:
     """Resolve release metadata without making a checkout depend on it.
 
     The packaging builder adds the descriptor and release archive to its
@@ -37,17 +37,20 @@ def _runtime_release() -> tuple[str, Path]:
             version = str(record["runtime_version"])
             archive_name = str(record["archive"])
             declared_platform = str(record.get("platform", target))
+            manifest_sha256 = record.get("runtime_manifest_sha256")
+            if manifest_sha256 is not None:
+                manifest_sha256 = str(manifest_sha256).lower()
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise RuntimeError(f"Invalid packaged runtime descriptor: {_RELEASE_DESCRIPTOR}") from exc
         if declared_platform != target:
             raise RuntimeError(f"This AVAC4QGIS package does not include a runtime for {target}.")
         if Path(archive_name).name != archive_name:
             raise RuntimeError("Packaged runtime descriptor contains an unsafe archive name.")
-        return version, RESOURCES / archive_name
-    return _DEVELOPMENT_RUNTIME_VERSION, RESOURCES / f"avac-runtime-{target}-{_DEVELOPMENT_RUNTIME_VERSION}.tar.gz"
+        return version, RESOURCES / archive_name, manifest_sha256
+    return _DEVELOPMENT_RUNTIME_VERSION, RESOURCES / f"avac-runtime-{target}-{_DEVELOPMENT_RUNTIME_VERSION}.tar.gz", None
 
 
-RUNTIME_VERSION, RUNTIME_ARCHIVE = _runtime_release()
+RUNTIME_VERSION, RUNTIME_ARCHIVE, RUNTIME_MANIFEST_SHA256 = _runtime_release()
 
 
 def bundled_backend_directory() -> Path:
@@ -79,8 +82,11 @@ def bundled_runtime_archive() -> Path:
 
 def ensure_bundled_runtime() -> Path:
     """Reuse a validated installed runtime or atomically install the plugin asset."""
-    runtime = installed_runtime(RUNTIME_VERSION)
-    return runtime or install_runtime_archive(bundled_runtime_archive(), RUNTIME_VERSION)
+    return install_runtime_archive(
+        bundled_runtime_archive(),
+        RUNTIME_VERSION,
+        expected_manifest_sha256=RUNTIME_MANIFEST_SHA256,
+    )
 
 
 # WAVE is a separate executable and is intentionally installed beside—not in
@@ -88,20 +94,23 @@ def ensure_bundled_runtime() -> Path:
 _WAVE_RELEASE_DESCRIPTOR = RESOURCES / "wave-runtime-release.json"
 
 
-def _wave_runtime_release() -> tuple[str, Path]:
+def _wave_runtime_release() -> tuple[str, Path, str | None]:
     try:
         payload = json.loads(_WAVE_RELEASE_DESCRIPTOR.read_text(encoding="utf-8"))
         target = platform_key()
         record = payload.get("runtimes", {}).get(target) if isinstance(payload.get("runtimes"), dict) else payload
         version, archive = str(record["runtime_version"]), str(record["archive"])
         declared_platform = str(record.get("platform", target))
+        manifest_sha256 = record.get("runtime_manifest_sha256")
+        if manifest_sha256 is not None:
+            manifest_sha256 = str(manifest_sha256).lower()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Bundled Wave runtime descriptor is missing or invalid.") from exc
     if Path(archive).name != archive:
         raise RuntimeError("Bundled Wave runtime descriptor contains an unsafe archive name.")
     if declared_platform != target:
         raise RuntimeError(f"This AVAC4QGIS package does not include a Wave runtime for {target}.")
-    return version, RESOURCES / archive
+    return version, RESOURCES / archive, manifest_sha256
 
 
 def ensure_bundled_wave_runtime() -> Path:
@@ -111,9 +120,13 @@ def ensure_bundled_wave_runtime() -> Path:
     their manifest version.  Use a separate product area so a valid AVAC
     runtime can never be mistaken for the Wave backend.
     """
-    version, archive = _wave_runtime_release()
+    version, archive, manifest_sha256 = _wave_runtime_release()
     if not archive.is_file():
         raise RuntimeError(f"Bundled Wave runtime is missing from this plugin installation: {archive}")
     destination = runtime_install_root() / "wave"
-    runtime = installed_runtime(version, destination_root=destination)
-    return runtime or install_runtime_archive(archive, version, destination_root=destination)
+    return install_runtime_archive(
+        archive,
+        version,
+        destination_root=destination,
+        expected_manifest_sha256=manifest_sha256,
+    )

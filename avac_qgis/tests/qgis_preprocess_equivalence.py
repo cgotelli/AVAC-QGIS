@@ -16,7 +16,8 @@ from qgis.PyQt.QtCore import QCoreApplication, QTimer
 from qgis.core import QgsCoordinateReferenceSystem, QgsRasterLayer, QgsVectorLayer
 
 from avac_qgis.core.preprocessing import (
-    prepare_inputs, raster_from_qgis_layer, release_mask_from_rings, rings_from_qgis_layer,
+    QINIT_BINARY_HEADER, QINIT_BINARY_MAGIC, prepare_inputs, raster_from_qgis_layer,
+    release_mask_from_rings, rings_from_qgis_layer,
 )
 
 
@@ -50,6 +51,22 @@ def legacy_ascii_mask(x: np.ndarray, y: np.ndarray, rings) -> np.ndarray:
 
 
 def init_metrics(path: Path) -> tuple[int, int, float, float, float]:
+    with path.open("rb") as handle:
+        prefix = handle.read(len(QINIT_BINARY_MAGIC))
+        if prefix == QINIT_BINARY_MAGIC:
+            handle.seek(0)
+            header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+            values = np.fromfile(handle, dtype="<f8")
+            assert values.size == header[1] * header[2]
+            present = values[values != 0.0]
+            return (
+                values.size,
+                present.size,
+                float(present.min()) if present.size else 0.0,
+                float(present.max()) if present.size else 0.0,
+                float(present.sum()),
+            )
+
     rows = nonzero = 0
     total = 0.0
     minimum = float("inf")
@@ -98,7 +115,10 @@ def _check() -> None:
     release_parameters = yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))["release"]
     prepared = prepare_inputs(RUN_ROOT, raster, rings, TEMPLATE, release_parameters)
     assert filecmp.cmp(prepared.topo_path, REFERENCE_TOPO, shallow=False), "topography.asc differs from GUI reference"
-    assert filecmp.cmp(prepared.init_path, REFERENCE_INIT, shallow=False), "init.xyz differs from GUI reference"
+    prepared_metrics = init_metrics(prepared.init_path)
+    reference_metrics = init_metrics(REFERENCE_INIT)
+    assert prepared_metrics[:4] == reference_metrics[:4], "binary qinit values differ from GUI reference"
+    assert np.isclose(prepared_metrics[4], reference_metrics[4], rtol=0.0, atol=1e-9)
     reference_mask = np.load(REFERENCE_ROOT / "mask.npy")
     reference_depth = np.load(REFERENCE_ROOT / "depth.npy")
     assert np.array_equal(qgis_mask, reference_mask), "release mask differs from reference cell-by-cell"
@@ -112,13 +132,13 @@ def _check() -> None:
     assert generated["computation"] == expected_computation
     assert generated["file_names"]["topo_source"] == "real_world"
     assert generated["release"] == release_parameters
-    rows, nonzero, minimum, maximum, total = init_metrics(prepared.init_path)
+    rows, nonzero, minimum, maximum, total = prepared_metrics
     assert rows == raster.z.size == 5_995_001, (rows, raster.z.shape)
     print(f"DEM shape={raster.z.shape} extent={raster.metadata['xmin']},{raster.metadata['xmax']},{raster.metadata['ymin']},{raster.metadata['ymax']} cellsize={raster.metadata['cellsize']} CRS={raster.crs_authid}", flush=True)
     print(f"RELEASE_MASK reference_equal=True cells={int(qgis_mask.sum())}", flush=True)
     print(f"INITIAL_DEPTH reference_equal=True rows={rows} nonzero={nonzero} min={minimum:.12g} max={maximum:.12g} sum={total:.12g}", flush=True)
     print("TOPOGRAPHY byte_identical=True", flush=True)
-    print("INIT_XYZ byte_identical=True", flush=True)
+    print("INIT_BINARY legacy_value_equivalent=True", flush=True)
     print("YAML template_preservation=True", flush=True)
     QCoreApplication.quit()
 

@@ -52,7 +52,16 @@ MODULES ?=
 EXCLUDE_SOURCES ?=
 EXCLUDE_MODULES ?=
 
-# Consolidate custom and common sources into a single list for compilations
+# Consolidate custom and common sources into a single list for compilations.
+# The Windows release builder supplies an already-consolidated list because
+# invoking check_src.py with every source on a native Windows command line can
+# exceed the shell's argument limit.
+ifeq ($(AVAC_WINDOWS_BUILD),1)
+SOURCES := $(SOURCES)
+MODULES := $(MODULES)
+SOURCE_CONFLICTS :=
+MODULES_CONFLICTS :=
+else
 SOURCES := $(shell $(CLAW_PYTHON) $(CLAW)/clawutil/src/check_src.py consolidate \
 		$(SOURCES) ";" $(COMMON_SOURCES) ";" $(EXCLUDE_SOURCES))
 MODULES := $(shell $(CLAW_PYTHON) $(CLAW)/clawutil/src/check_src.py consolidate \
@@ -61,6 +70,7 @@ MODULES := $(shell $(CLAW_PYTHON) $(CLAW)/clawutil/src/check_src.py consolidate 
 # Create list of possible file name conflicts
 SOURCE_CONFLICTS := $(shell $(CLAW_PYTHON) $(CLAW)/clawutil/src/check_src.py conflicts $(SOURCES))
 MODULES_CONFLICTS := $(shell $(CLAW_PYTHON) $(CLAW)/clawutil/src/check_src.py conflicts $(MODULES))
+endif
 
 # Make list of .o files required from the sources above:
 OBJECTS = $(subst .F,.o, $(subst .F90,.o, $(subst .f,.o, $(subst .f90,.o, $(SOURCES)))))

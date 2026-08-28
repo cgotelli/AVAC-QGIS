@@ -6,7 +6,12 @@ import os
 import tempfile
 from pathlib import Path
 
-from avac_qgis.core.runtime import RuntimeValidationError, install_runtime_archive, validate_runtime
+from avac_qgis.core.runtime import (
+    RuntimeValidationError,
+    install_runtime_archive,
+    runtime_manifest_sha256,
+    validate_runtime,
+)
 
 
 def main() -> None:
@@ -17,6 +22,22 @@ def main() -> None:
         installed = install_runtime_archive(archive, version, destination_root=root)
         manifest = validate_runtime(installed, expected_version=version)
         assert manifest["architecture"] == "arm64"
+        identity = runtime_manifest_sha256(manifest)
+        assert validate_runtime(
+            installed,
+            expected_version=version,
+            expected_manifest_sha256=identity,
+        ) == manifest
+        try:
+            validate_runtime(
+                installed,
+                expected_version=version,
+                expected_manifest_sha256="0" * 64,
+            )
+        except RuntimeValidationError as exc:
+            assert "differs from the runtime bundled" in str(exc)
+        else:
+            raise AssertionError("A valid but stale same-version runtime was accepted")
         # The test installation is explicitly isolated under ``root``.  Do
         # not make its result depend on whether a real first-use installation
         # already exists in Application Support.
@@ -30,7 +51,7 @@ def main() -> None:
             raise AssertionError("Corrupt solver was accepted")
         repaired = install_runtime_archive(archive, version, destination_root=root)
         assert validate_runtime(repaired, expected_version=version)["runtime_version"] == version
-    print("runtime manifest validation, corrupt-runtime replacement, and staged install: PASS")
+    print("runtime identity validation, corrupt-runtime replacement, and staged install: PASS")
 
 
 if __name__ == "__main__":

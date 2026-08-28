@@ -46,6 +46,7 @@ def main() -> None:
         raster = AvacRaster(np.arange(4.0), np.arange(4.0), np.zeros((4, 4)), {"xmin": 0.0, "xmax": 4.0, "ymin": 0.0, "ymax": 4.0, "ncols": 4, "nrows": 4, "cellsize": 1.0, "nodata_value": -9999.0}, "EPSG:2154", 1)
         generated = materialize_configuration(TEMPLATE, Path(directory) / "generated.yaml", raster, {"d0": 1.6}, Path(directory), changed)
         assert generated["computation"]["t_max"] == 7 and generated["animation"]["n_out"] == 4
+        assert generated["file_names"]["initiation_file"] == "init.avacbin"
         assert generated["release"]["period_return"] == 300
         assert not generated["gauges"]["gauge_recording"] and generated["gauges"]["gauges"] == template["gauges"]["gauges"]
         assert not generated["refinement"]["topo_refinement"]

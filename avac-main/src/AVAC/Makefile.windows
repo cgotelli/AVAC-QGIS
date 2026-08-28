@@ -1,0 +1,8 @@
+# Windows-only entry point for the AVAC solver build.
+#
+# The source lists are supplied by tools/build_windows_solvers.py.  Keeping
+# this switch here leaves the normal Makefile unchanged for macOS/Linux.
+AVAC_WINDOWS_BUILD = 1
+REAL_WORLD_TOPO ?= 1
+
+include Makefile

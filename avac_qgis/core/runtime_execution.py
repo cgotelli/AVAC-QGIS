@@ -22,7 +22,8 @@ def prepare_runtime_execution(runtime_root: str | Path, avac_dir: str | Path) ->
     runtime_root, avac_dir = Path(runtime_root).expanduser().resolve(), Path(avac_dir).expanduser().resolve()
     manifest = validate_runtime(runtime_root)
     backend = runtime_root / "backend" / "AVAC" / "setrun.py"
-    if not (avac_dir / "AVAC_configuration.yaml").is_file() or not (avac_dir.parent / "Topo" / "topography.asc").is_file() or not (avac_dir / "init.xyz").is_file():
+    has_qinit = any((avac_dir / name).is_file() for name in ("init.avacbin", "init.xyz"))
+    if not (avac_dir / "AVAC_configuration.yaml").is_file() or not (avac_dir.parent / "Topo" / "topography.asc").is_file() or not has_qinit:
         raise RuntimeValidationError("Prepared AVAC inputs are incomplete; prepare the run again before execution.")
     claw_source = runtime_root / manifest["clawpack"]["root"]
     if str(claw_source) not in sys.path:

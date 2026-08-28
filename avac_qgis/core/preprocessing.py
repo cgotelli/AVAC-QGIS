@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+import struct
 from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
@@ -17,6 +18,11 @@ import yaml
 from matplotlib.path import Path as MplPath
 
 from .configuration import apply_controlled_values, load_complete_configuration, validate_grid_contract
+
+
+QINIT_BINARY_MAGIC = b"AVACQIN1"
+QINIT_BINARY_HEADER = struct.Struct("<8sqqii4d")
+QINIT_BINARY_NAME = "init.avacbin"
 
 
 class PreparationCancelled(InterruptedError):
@@ -131,7 +137,11 @@ def raster_from_qgis_layer(layer, band: int = 1, extent=None, grid_cell_size: fl
     if grid_cell_size is None:
         cell_x, cell_y = (xmax - xmin) / width, (ymax - ymin) / height
         if not np.isclose(cell_x, cell_y, rtol=0.0, atol=max(abs(cell_x), abs(cell_y), 1.0) * 1e-8):
-            raise ValueError("DEM cells must be square for AVAC terrain input.")
+            layer_name = str(layer.name() or "selected DEM")
+            raise ValueError(
+                f"DEM '{layer_name}' cells must be square for AVAC terrain input "
+                f"(X resolution {cell_x:.12g}, Y resolution {cell_y:.12g})."
+            )
         output_cell = float(cell_x)
     else:
         output_cell = float(grid_cell_size)
@@ -435,6 +445,51 @@ def write_init_xyz(path: Path, raster: AvacRaster, depth: np.ndarray, cancelled:
                 handle.write(f"{x_value:.12g} {raster.y[row]:.12g} {float(value) if np.isfinite(value) else 0.0:.12g}\n")
 
 
+def write_init_binary(path: Path, raster: AvacRaster, depth: np.ndarray, cancelled: Callable[[], bool] | None = None) -> None:
+    """Write AVAC's portable, bulk-readable qinit raster.
+
+    The payload is explicitly little-endian and ordered north-to-south, with
+    each row stored west-to-east.  This matches the indexing of the legacy
+    ``init.xyz`` reader without serially formatting and parsing millions of
+    redundant x/y coordinates.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    values = np.asarray(depth, dtype=float)
+    if values.shape != raster.z.shape:
+        raise ValueError("Initial-depth array shape does not match DEM.")
+    if raster.x.size < 2 or raster.y.size < 2:
+        raise ValueError("Initial-condition raster must contain at least two rows and columns.")
+    dx = float(raster.x[1] - raster.x[0])
+    dy = float(raster.y[1] - raster.y[0])
+    if dx <= 0.0 or dy <= 0.0 or not np.allclose(np.diff(raster.x), dx) or not np.allclose(np.diff(raster.y), dy):
+        raise ValueError("Initial-condition raster coordinates must form a regular increasing grid.")
+    header = QINIT_BINARY_HEADER.pack(
+        QINIT_BINARY_MAGIC,
+        int(raster.x.size),
+        int(raster.y.size),
+        1,  # scalar qinit component
+        0,  # reserved for future format flags
+        float(raster.x[0]),
+        float(raster.y[-1]),
+        dx,
+        dy,
+    )
+    with path.open("wb") as handle:
+        handle.write(header)
+        for row in range(raster.y.size - 1, -1, -1):
+            if cancelled and cancelled():
+                raise PreparationCancelled("AVAC input preparation cancelled.")
+            row_values = np.nan_to_num(values[row], nan=0.0, posinf=0.0, neginf=0.0)
+            # Retain the legacy writer's ``.12g`` scientific-input precision
+            # so switching transport formats does not alter solver results.
+            nonzero = row_values != 0.0
+            if np.any(nonzero):
+                row_values = row_values.copy()
+                scale = np.power(10.0, 11.0 - np.floor(np.log10(np.abs(row_values[nonzero]))))
+                row_values[nonzero] = np.rint(row_values[nonzero] * scale) / scale
+            row_values.astype("<f8", copy=False).tofile(handle)
+
+
 def materialize_configuration(template: Path, destination: Path, raster: AvacRaster, release: dict[str, Any], topo_dir: Path, controlled_values: dict[str, Any] | None = None, fine_raster: AvacRaster | None = None) -> dict[str, Any]:
     """Preserve a complete valid YAML template; alter only derived/run fields."""
     config = configuration_for_raster(
@@ -444,7 +499,7 @@ def materialize_configuration(template: Path, destination: Path, raster: AvacRas
     if issues:
         raise ValueError(" ".join(issues))
     config["release"].update(release)
-    config["file_names"].update({"topofile": "topography.asc", "initiation_file": "init.xyz", "type_dem": 3, "type_init": 1})
+    config["file_names"].update({"topofile": "topography.asc", "initiation_file": QINIT_BINARY_NAME, "type_dem": 3, "type_init": 1})
     if not config["file_names"].get("topo_source"):
         raise ValueError("Template requires file_names.topo_source for the current setrun.py.")
     config["file_names"]["topo_directory"] = str(topo_dir)
@@ -502,7 +557,7 @@ def prepare_inputs(
     if progress:
         progress(40)
     depth = initial_depth_from_release(raster, mask, effective_release)
-    topo_path, init_path, configuration_path = topo_dir / "topography.asc", avac_dir / "init.xyz", avac_dir / "AVAC_configuration.yaml"
+    topo_path, init_path, configuration_path = topo_dir / "topography.asc", avac_dir / QINIT_BINARY_NAME, avac_dir / "AVAC_configuration.yaml"
     if progress:
         progress(50)
     write_topography(topo_path, raster, cancelled)
@@ -510,7 +565,7 @@ def prepare_inputs(
         write_topography(topo_dir / "fine_topography.asc", fine_raster, cancelled)
     if progress:
         progress(72)
-    write_init_xyz(init_path, raster, depth, cancelled)
+    write_init_binary(init_path, raster, depth, cancelled)
     if progress:
         progress(90)
     if cancelled and cancelled():

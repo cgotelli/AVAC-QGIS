@@ -34,7 +34,7 @@ def fail(message: str) -> None:
 def completed() -> None:
     prepared = ROOT / "AVAC"
     print(f"QGIS_PREPARED_INPUT_TOPO_SHA256={digest(ROOT / 'Topo' / 'topography.asc')}", flush=True)
-    print(f"QGIS_PREPARED_INPUT_INIT_SHA256={digest(prepared / 'init.xyz')}", flush=True)
+    print(f"QGIS_PREPARED_INPUT_INIT_SHA256={digest(prepared / 'init.avacbin')}", flush=True)
     print(f"QGIS_PREPARED_CONFIG_SHA256={digest(prepared / 'AVAC_configuration.yaml')}", flush=True)
     print(f"QGIS_PREPARED_MARKER={ (ROOT / '.avac_qgis_run.json').read_text().strip() }", flush=True)
     dock.runner.progress.connect(lambda current, total: progress_samples.append((current, total)))

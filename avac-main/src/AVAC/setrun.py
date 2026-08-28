@@ -53,6 +53,11 @@ def setrun(claw_pkg='geoclaw'):
 
     num_dim = 2
     rundata = data.ClawRunData(claw_pkg, num_dim)
+    # A fine DEM can improve level-1 terrain sampling even when AMR is off,
+    # but a second fine-resolution fgmax/fgout grid is then redundant.  It
+    # previously forced every step through a huge serialized fixed-grid update
+    # and produced hundreds of MB per frame outside the computational domain.
+    use_zoom_output = bool(Refine['topo_refinement']) and int(Param['refinement']) > 1
 
     #------------------------------------------------------------------
     # GeoClaw specific parameters:
@@ -328,7 +333,7 @@ def setrun(claw_pkg='geoclaw'):
     # to specify regions of refinement append lines of the form
     #  [minlevel,maxlevel,t1,t2,x1,x2,y1,y2]
     #regions.append([1, 1, 0., 1.e10, 925720,927160., 6451140.,6452155.])
-    if Refine['topo_refinement']:
+    if use_zoom_output:
         regions.append([1, 3, 0., 1.e10, Refine['fine_dict']['xmin'], Refine['fine_dict']['xmax'], Refine['fine_dict']['ymin'], Refine['fine_dict']['ymax']])   
        
  
@@ -404,7 +409,7 @@ def setrun(claw_pkg='geoclaw'):
     fg.interp_method = 0      # 0 ==> pw const in cells, recommended
     fgmax_grids.append(fg)    # written to fgmax_grids.data
 
-    if Refine['topo_refinement']:
+    if use_zoom_output:
         fg_zoom = fgmax_tools.FGmaxGrid()
         fg_zoom.point_style = 2  # uniform rectangular x-y grid
         fg_zoom.x1 = Refine['fine_dict']['xmin']
@@ -450,7 +455,7 @@ def setrun(claw_pkg='geoclaw'):
     fgout.nout   = Movie['n_out']
     fgout_grids.append(fgout)    # written to fgout_grids.data
 
-    if Refine['topo_refinement']:
+    if use_zoom_output:
         fgout_zoom               = fgout_tools.FGoutGrid()
         fgout_zoom.fgno          = 2
         fgout_zoom.point_style   = 2
@@ -517,7 +522,7 @@ def setrun(claw_pkg='geoclaw'):
     probdata.add_param('constitutive_model', Rheol["model"],
                        'constitutive model (Coulomb, Voellmy, cohesive_Voellmy)')
     probdata.add_param('type_init', Files['type_init'],
-                       'init type: 0=qinit.f90 (synthetic topo), 1=init.xyz (real world topo)')
+                       'init type: 0=qinit.f90 (synthetic topo), 1=qinit raster file (real world topo)')
     if Files['type_init'] == 0:
         probdata.add_param('theta',        Release["theta"],  'theta')
         probdata.add_param('free_surface', Release["free_surface"],  'free surface shape')

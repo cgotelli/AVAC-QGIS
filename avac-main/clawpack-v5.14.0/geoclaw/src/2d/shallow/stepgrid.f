@@ -170,11 +170,11 @@ c            write(6,*) '+++ fout_interp(1), tc0, level: ',tc0,level
 c:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 c     New fixed grid stuff: Update fixed grid info from this patch.
-c     fgmax grids are shared by every patch advanced in this OpenMP region.
-!$OMP CRITICAL (FixedGrids)
+c     fgmax_frompatch performs interpolation concurrently and protects only
+c     its shared fixed-grid initialization and maxima commit.  Locking this
+c     whole call serialized the dominant work on large AVAC observation grids.
       call fgmax_frompatch(mx,my,nvar,mbc,maux,q,aux,
      &     dx,dy,xlowmbc,ylowmbc,level,time,time+dt)
-!$OMP END CRITICAL (FixedGrids)
 c:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 c
 c     # take one step on the conservation law:

@@ -83,6 +83,12 @@ def verify() -> None:
     assert isinstance(dock.wave_lake_boundary, QgsMapLayerComboBox)
     assert dock.wave_lake_dem.allowEmptyLayer() and dock.wave_lake_dem.currentLayer() is None
     assert dock.wave_lake_boundary.allowEmptyLayer() and dock.wave_lake_boundary.currentLayer() is None
+    # The unfinished refinement workflow is hidden. It must not silently use
+    # the first project raster as fine terrain during an ordinary AVAC run.
+    assert dock.refinement_dem_layer.isHidden()
+    assert dock.refinement_dem_layer.allowEmptyLayer()
+    assert dock.refinement_dem_layer.currentLayer() is None
+    assert dock._selected_refinement_dem() is None
     assert isinstance(dock.wave_result_gauge_layer, QgsMapLayerComboBox)
     assert dock.wave_result_gauge_layer.allowEmptyLayer()
     assert dock.wave_prepare_progress.format() == "Not prepared"

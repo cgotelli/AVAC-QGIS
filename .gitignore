@@ -20,8 +20,11 @@ htmlcov/
 *.log
 *.tmp
 *.bak
+*.aux.xml
 avac-main/src/AVAC/xgeoclaw
 avac-main/src/WAVE/xgeoclaw
+avac-main/src/AVAC/xgeoclaw.exe
+avac-main/src/WAVE/xgeoclaw.exe
 avac-main/src/**/fort.*
 avac-main/src/**/_output*/
 avac-main/src/**/_plots*/

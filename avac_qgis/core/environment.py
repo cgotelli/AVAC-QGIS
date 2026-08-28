@@ -144,6 +144,15 @@ def _expected_frames(configuration: Path) -> tuple[int | None, int | None]:
     return outputs + 1, outputs
 
 
+def _prepared_qinit_path(avac_path: Path) -> Path | None:
+    """Resolve new binary and legacy text initial-condition inputs."""
+    for name in ("init.avacbin", "init.xyz"):
+        candidate = avac_path / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _tool_path(name: str, env: Mapping[str, str]) -> str | None:
     return shutil.which(name, path=env.get("PATH"))
 
@@ -210,8 +219,8 @@ def check_environment(
         topo_dir = avac_path.parent / "Topo"
         if not (topo_dir / "topography.asc").is_file():
             errors.append(f"Missing AVAC-ready terrain input: {topo_dir / 'topography.asc'}")
-        if not (avac_path / "init.xyz").is_file():
-            errors.append(f"Missing AVAC-ready initial-condition input: {avac_path / 'init.xyz'}")
+        if _prepared_qinit_path(avac_path) is None:
+            errors.append(f"Missing AVAC-ready initial-condition input in: {avac_path}")
 
     if configured_python and not Path(configured_python).is_file():
         errors.append(f"Configured CLAW_PYTHON does not exist: {configured_python}")
@@ -245,7 +254,7 @@ def check_runtime_environment(avac_dir: str | Path, omp_threads: int | None = No
         errors.append(f"Prepared AVAC directory does not exist: {avac_path}")
     if not configuration.is_file():
         errors.append("Missing AVAC_configuration.yaml; prepare the run again.")
-    if not (avac_path / "init.xyz").is_file():
+    if _prepared_qinit_path(avac_path) is None:
         errors.append("Missing AVAC initial condition; prepare the run again.")
     if not (avac_path.parent / "Topo" / "topography.asc").is_file():
         errors.append("Missing AVAC terrain input; prepare the run again.")
