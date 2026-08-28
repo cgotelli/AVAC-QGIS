@@ -1,0 +1,695 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[american]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=24mm,headheight=14pt]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\definecolor{avacblue}{HTML}{1F5C99}
+\definecolor{avaclight}{HTML}{EAF3FA}
+\definecolor{avacgray}{HTML}{4E5963}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=avacblue,
+  urlcolor=avacblue,
+  pdftitle={AVAC4QGIS User Interface Guide},
+  pdfauthor={LHE--EPFL},
+  pdfsubject={AVAC4QGIS 0.5.10 user interface reference}
+}
+\setlist[itemize]{leftmargin=*,itemsep=3pt,topsep=4pt}
+\setlist[enumerate]{leftmargin=*,itemsep=5pt,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\arraystretch}{1.15}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small AVAC4QGIS User Interface Guide}
+\fancyhead[R]{\small Version 0.5.10}
+\fancyfoot[C]{\thepage}
+
+\newcommand{\control}[1]{\textbf{#1}}
+\newcommand{\pathcode}[1]{\texttt{#1}}
+\newcommand{\uiscreenshot}[2]{%
+  \begin{figure}[p]
+    \centering
+    \includegraphics[width=\textwidth,height=0.78\textheight,keepaspectratio]{images/#1}
+    \caption{#2}
+  \end{figure}
+}
+\newenvironment{notebox}{%
+  \begin{quote}\small\color{avacgray}\noindent
+}{%
+  \end{quote}
+}
+
+\title{\textbf{AVAC4QGIS User Interface Guide}\\[6pt]
+       \large Interface reference for AVAC4QGIS 0.5.10}
+\author{LHE--EPFL, Switzerland}
+\date{August 28, 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{notebox}
+This guide describes the controls that are visible in the packaged QGIS
+plugin. It was checked against the current implementation in
+\pathcode{avac\_qgis/gui/dock.py} and the preparation, coupling, and result
+modules used by those controls. Hidden compatibility fields and developer-only
+code paths are not presented as user features.
+\end{notebox}
+
+\tableofcontents
+\clearpage
+
+\section{General description of the interface}
+
+AVAC4QGIS is a dockable QGIS panel for preparing, running, and inspecting
+depth-averaged avalanche simulations. The standard workflow has three tabs:
+\control{AVAC Parameters}, \control{AVAC Run}, and \control{Results}. Inputs,
+scientific parameters, execution, visualization, profiles, gauges, and PNG
+exports remain inside QGIS, while packaged native solvers run in isolated
+case directories.
+
+The optional \control{Enable Lake-Wave Extension} check box inserts
+\control{WAVE Parameters} and \control{WAVE Run}. WAVE consumes a completed
+AVAC run as a read-only source and uses the same final Results tab. Enabling
+WAVE does not change an existing AVAC run.
+
+The parameter and result pages use accordion controls. Click an accordion
+header to display its contents. Each major operation reports its state through
+status text and a progress bar. Long execution logs remain hidden until their
+corresponding log button is enabled.
+
+\uiscreenshot{ui_overview.png}{The complete dock with the persistent controls above the tabs and the normal AVAC workflow.}
+
+\section{General simulation workflow}
+
+\subsection{AVAC-only simulation}
+
+\begin{enumerate}
+  \item Choose a writable \control{AVAC Working Directory} above the tabs.
+  \item In \control{AVAC Parameters}, select the terrain DEM and release
+        polygons, then load or set the release, rheology, and numerical values.
+  \item In \control{AVAC Run}, use \control{Check Environment} and
+        \control{Validate Inputs}. Use the previews if the initial state or
+        altitude-dependent rheology must be inspected.
+  \item Select \control{Prepare AVAC Run}. Preparation creates a new,
+        self-contained run below \pathcode{runs/}; it does not execute the
+        solver.
+  \item Select \control{Run}. A completed run becomes available in
+        \control{Results}.
+  \item In \control{Results}, select the run and load summary or temporal
+        products. Profiles, gauges, and exports load a missing temporal product
+        automatically before continuing.
+\end{enumerate}
+
+\subsection{AVAC followed by WAVE}
+
+\begin{enumerate}
+  \item Complete AVAC first and enable the Lake-Wave Extension.
+  \item In \control{WAVE Parameters}, choose the completed AVAC run, terrain
+        DEM, lake water-body polygon, water-surface elevation, WAVE cell size,
+        and model settings. The lake polygon may instead be created from the
+        DEM, water elevation, and a map click before AVAC has been run.
+  \item Use \control{Preview Water Level}. The exact solver-grid lake state is
+        cached and reused by preparation while its inputs remain unchanged.
+  \item In \control{WAVE Run}, validate and prepare the WAVE scenario. WAVE
+        inherits the completed AVAC calculation bounds, duration, output
+        count, and temporal origin. Preparation creates the internal shoreline
+        source without modifying AVAC output.
+  \item Run WAVE and return to the shared Results tab. Select both the completed
+        AVAC run and its completed WAVE scenario when comparing snow and water
+        products.
+\end{enumerate}
+
+\begin{notebox}
+WAVE and AVAC both solve on rectangular GeoClaw grids, but the snow-to-water
+transfer is not imposed at the outer rectangle. It is applied internally on
+the grid-aligned shoreline of the initially wet lake. Only AVAC flux directed
+into the wet lake contributes to the WAVE source.
+\end{notebox}
+
+\section{Function of each interface element}
+
+This section follows the current visual order of the interface. It describes
+what each visible element reads, changes, or creates.
+
+\subsection{Controls above the tabs}
+
+\begin{itemize}
+  \item \control{AVAC Working Directory} is the required writable workspace.
+        Type a path or use the browse button. It is user data storage, not the
+        plugin installation or the managed runtime. QGIS remembers the path.
+  \item \control{Enable Lake-Wave Extension} shows or hides WAVE Parameters
+        and WAVE Run and adds WAVE variables and Lake Volume to Results. It
+        does not alter AVAC files.
+  \item \control{Load Case} restores a complete AVAC4QGIS case YAML: workspace,
+        persistent input-layer sources, visible AVAC values, WAVE enabled
+        state, and WAVE setup when present.
+  \item \control{Save Case} writes the corresponding complete case YAML. It
+        stores references to persistent layer sources; temporary memory layers
+        must be saved to disk before the case can be portable.
+  \item \control{Help} opens this PDF. The Plugins $>$ AVAC4QGIS menu also
+        contains Help. Its online-documentation and website entries are present
+        but disabled until those destinations exist.
+\end{itemize}
+
+\subsection{AVAC Parameters tab}
+
+This tab contains four accordion pages and the AVAC-only configuration
+buttons. Changing a visible input or parameter invalidates any prepared run;
+prepare again before executing it.
+
+\subsubsection{AVAC Inputs}
+
+\begin{itemize}
+  \item \control{DEM raster layer} selects the fixed basal topography. The
+        first raster band must have a valid CRS, finite usable cells, and square
+        pixels. The selected DEM extent defines the rectangular AVAC
+        calculation domain. The terrain resolution must equal or evenly
+        subdivide the chosen computational cell size.
+  \item \control{Release polygon layer} selects polygon or multipolygon
+        features defining the initially mobile release area. Geometries are
+        transformed to the DEM CRS during preparation when needed. At least one
+        DEM grid point must fall inside the combined polygons.
+\end{itemize}
+
+Preparation copies the selected sources into the run's \pathcode{inputs/}
+tree for traceability. The optional refinement-DEM backend remains in the
+source for compatibility but has no visible selector and is not part of the
+normal workflow.
+
+\uiscreenshot{ui_avac_parameters_inputs.png}{AVAC Parameters with the AVAC Inputs accordion open.}
+
+\subsubsection{Release / initial conditions}
+
+The DEM remains the fixed basal surface. These controls initialize only the
+mobile release depth. There is no additional stationary winter snowpack:
+outside the release polygons, initial mobile depth is zero and the initial
+snow-surface product equals the DEM.
+
+\begin{itemize}
+  \item \control{Release depth} $d_0$ (m) is the base mobile thickness. With
+        both corrections disabled, every release-grid point receives $d_0$.
+  \item \control{Critical slope} $\theta_{cr}$ (degrees) and
+        \control{Slope correction} $\nu$ define the optional local-slope
+        factor. The implementation evaluates it only where DEM slope exceeds
+        $25^\circ$ and the denominator is numerically safe.
+  \item \control{Reference elevation} $z_{ref}$ (m) and
+        \control{Hypsometric gradient} define the optional elevation change
+        $(z-z_{ref})\,g_h/100$. A positive gradient increases depth above
+        $z_{ref}$ and decreases it below $z_{ref}$.
+  \item \control{Apply slope correction} and \control{Apply elevation
+        correction} select which corrections are applied. If both are active,
+        the elevation-corrected depth is multiplied by the slope factor.
+  \item \control{Return period [years]} is positive integer scenario metadata.
+        It labels the case and results but does not change AVAC equations or
+        the release-depth calculation.
+\end{itemize}
+
+The initial-depth preview should be inspected when corrections are active.
+The code replaces nonfinite corrected values with zero, but does not silently
+substitute a different scientific correction model.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=11mm and 12mm,
+  block/.style={draw=avacblue,rounded corners,fill=avaclight,align=center,
+                minimum width=34mm,minimum height=12mm,font=\small},
+  result/.style={draw=avacgray,rounded corners,align=center,
+                 minimum width=38mm,minimum height=12mm,font=\small},
+  arrow/.style={-{Latex[length=2.5mm]},thick,avacblue}
+]
+  \node[block] (dem) {Terrain DEM\\$z(x,y)$};
+  \node[block,right=of dem] (mask) {Release polygon\\indicator $I_R(x,y)$};
+  \node[block,below=of dem] (base) {Base depth $d_0$\\and elevation correction};
+  \node[block,below=of mask] (slope) {DEM slope\\and optional slope factor};
+  \node[result,below=15mm of $(base)!0.5!(slope)$] (depth)
+       {Mobile initial depth\\$h_0=I_R\,d_{corrected}$};
+  \node[result,below=of depth] (surface)
+       {Preview Initial Snow Surface\\$\eta_0=z+h_0$};
+  \draw[arrow] (dem) -- (base);
+  \draw[arrow] (dem) -- (slope);
+  \draw[arrow] (mask) -- (depth);
+  \draw[arrow] (base) -- (depth);
+  \draw[arrow] (slope) -- (depth);
+  \draw[arrow] (dem) |- (surface);
+  \draw[arrow] (depth) -- (surface);
+\end{tikzpicture}
+\caption{How the visible Release / initial conditions controls produce the
+mobile initial depth and its display surface. Outside the release polygon,
+$I_R=0$ and therefore $h_0=0$.}
+\end{figure}
+
+\uiscreenshot{ui_avac_parameters_release.png}{AVAC Parameters with Release / initial conditions open.}
+
+\subsubsection{Rheology}
+
+\begin{itemize}
+  \item \control{Model} selects \control{Coulomb}, \control{Voellmy}, or
+        \control{cohesive\_Voellmy}. Coulomb uses basal dry-friction
+        resistance. Voellmy adds speed-dependent resistance. Cohesive Voellmy
+        adds cohesive strength and its static-yield contribution.
+  \item \control{Density} $\rho$ (kg/m$^3$) is bulk avalanche density. It is
+        used by the cohesive term and by the displayed kinetic-pressure result
+        $p_k=\rho v^2/2$, reported in kPa.
+  \item \control{$\mu$} is the dimensionless Coulomb-friction coefficient.
+        Increasing it strengthens the speed-independent basal resistance.
+  \item \control{$\xi$} (m/s$^2$) controls the Voellmy speed-dependent term.
+        In the implemented term, larger $\xi$ means weaker speed-dependent
+        resistance. It is disabled for the Coulomb-only model.
+  \item \control{Cohesion} $C$ (Pa) adds material strength in the cohesive
+        Voellmy model and is disabled for the other two models.
+  \item \control{Altitude zones} replaces uniform $\mu$, $\xi$, and $C$ with
+        bed-elevation zones. Enter one comma-separated row per zone as
+        \pathcode{mu, xi, cohesion, lower elevation}. The first row must leave
+        the fourth field blank. Later lower elevations must be strictly
+        increasing; a cell exactly at a break belongs to the higher zone.
+  \item \control{Visualize Rheology Zones} writes
+        \pathcode{qgis\_previews/avac\_rheology\_zones.tif} and loads it as a
+        categorical raster. Its colors and legend show exactly which zone each
+        valid DEM cell will use. It does not prepare or alter a run.
+\end{itemize}
+
+The AVAC source update integrates the local Coulomb/cohesive and Voellmy
+resistance with an explicit zero-speed arrested state. This is why rheology is
+material behavior, not merely result styling.
+
+\uiscreenshot{ui_avac_parameters_rheology.png}{AVAC Parameters with the Rheology accordion open.}
+
+\subsubsection{Simulation / numerical}
+
+\begin{itemize}
+  \item \control{Simulation duration} is the final elapsed solver time in
+        seconds.
+  \item \control{AMR refinement levels} is the maximum number of adaptive mesh
+        levels. Additional levels can resolve flagged flow regions more finely
+        and increase cost. Level 1 is the unrefined base calculation.
+  \item \control{Output interval} is the requested elapsed time between
+        outputs. Its default is exactly 1 s. When duration or interval is
+        edited, the plugin calculates a whole number of intervals and includes
+        both $t=0$ and final time in the temporal raster. A loaded configuration
+        retains its explicit output count until one of these timing controls is
+        changed.
+  \item \control{CFL target} is the normal adaptive time-step target and
+        \control{CFL maximum} is the rejection limit. Target must not exceed
+        maximum.
+  \item \control{Computational cell size} (m) is base solver spacing. It must
+        equal or be a whole-number multiple of the DEM pixel size, and both
+        domain spans must contain a whole number of solver cells.
+  \item \control{Limiter} selects none, minmod, superbee, MC, or van Leer for
+        second-order wave limiting. The AVAC default is superbee.
+\end{itemize}
+
+There is no boundary selector. Every normally prepared AVAC case uses
+extrapolating outer boundaries, so material may leave the rectangular domain.
+The prepared YAML also standardizes binary 32-bit output, zero solver
+verbosity, and Depth as the default temporal variable.
+
+\uiscreenshot{ui_avac_parameters_numerical.png}{AVAC Parameters with Simulation / numerical open.}
+
+\subsubsection{Load Configuration and Save Configuration}
+
+\control{Load Configuration} reads a complete AVAC YAML schema, restores the
+visible values, and makes that file the template for preparation. Unknown
+advanced keys remain in the complete template rather than being discarded.
+\control{Save Configuration} applies the current visible values and fixed run
+choices to that complete schema and writes a new YAML file after validation.
+These buttons affect AVAC settings only; Load Case and Save Case above the tabs
+cover the complete plugin setup.
+
+\subsection{AVAC Run tab}
+
+\begin{itemize}
+  \item \control{Prepared Simulation} summarizes the isolated run, return
+        period, duration, output interval, cell size, and rheology after
+        preparation.
+  \item \control{Active run} is read-only and shows the directory that Run will
+        execute.
+  \item \control{CPU cores} sets \pathcode{OMP\_NUM\_THREADS} from one to the
+        maximum logical cores detected on the computer. The default is the
+        maximum.
+  \item \control{Check Environment} checks the writable workspace, complete
+        built-in or user-selected configuration template, and managed AVAC
+        runtime. External Make, gfortran, Python, and CLAW variables are not
+        required for packaged execution.
+  \item \control{Validate Inputs} checks DEM, release geometry, visible
+        parameters, CRS, and grid compatibility without creating a run.
+  \item \control{Prepare AVAC Run} creates a timestamped directory under
+        \pathcode{runs/}, materializes source inputs, computes the terrain and
+        initial condition, writes the run configuration, and stages runtime
+        data. Its progress bar reports this background task.
+  \item \control{Preview Initial Depth} loads the exact mobile $h_0$ field used
+        by preparation. \control{Preview Initial Snow Surface} loads
+        $z+h_0$. Both reusable rasters are written below
+        \pathcode{qgis\_previews/} in the Working Directory.
+  \item \control{Run} starts the prepared native solver. \control{Stop}
+        requests termination of that AVAC process. A stopped run remains on
+        disk but is not marked as completed.
+  \item The execution status and progress bar report readiness and frame
+        progress. \control{Show execution log} reveals environment,
+        preparation, solver, and error messages.
+\end{itemize}
+
+\uiscreenshot{ui_avac_run.png}{The current AVAC Run tab.}
+
+\subsection{WAVE Parameters tab}
+
+This tab exists only while the Lake-Wave Extension is enabled. It has three
+accordion pages. WAVE is a separate water solver and does not write into the
+selected AVAC run.
+
+\subsubsection{AVAC Source}
+
+\control{Completed AVAC run} lists completed runs in the Working Directory.
+\control{Refresh Completed AVAC Runs} refreshes the list. The selected run
+provides AVAC frames, CRS, rectangular calculation bounds, duration, output
+count, and the shared temporal origin.
+
+WAVE has no independent calculation-domain controls. Its rectangular solver
+domain is exactly the selected completed AVAC domain. WAVE may use a different,
+coarser cell size, but its terrain must cover these bounds and share the AVAC
+CRS.
+
+\uiscreenshot{ui_wave_parameters_source.png}{WAVE Parameters with the AVAC Source accordion open.}
+
+\subsubsection{Terrain and Lake Inputs}
+
+\begin{itemize}
+  \item \control{Terrain/bathymetry DEM} is the WAVE bed source. It must use
+        square pixels, have a valid CRS, and cover the complete AVAC domain.
+        It is commonly the same source DEM used by AVAC, but it may include
+        bathymetric information not present in the AVAC topography.
+  \item \control{Lake water-body polygon} defines the actual reservoir or lake
+        footprint. It determines the initially wet mask and the internal
+        shoreline used for AVAC-to-WAVE transfer. It is not the rectangular
+        solver domain.
+  \item \control{Water level} (m) is absolute initial free-surface elevation in
+        the DEM's vertical datum, not water depth. A cell inside the lake is wet
+        only when its prepared bed is below this elevation. A numeric value of
+        zero is therefore an elevation of 0 m in that datum; it does not mean
+        ``empty lake.''
+  \item \control{Create Lake Polygon from Map Point} arms one QGIS map click.
+        From the clicked DEM cell it finds the four-connected cells at or below
+        Water level, expands its DEM read window until the contour closes, and
+        writes a persistent GeoPackage under \pathcode{derived\_inputs/}. It
+        requires the DEM, water level, map point, and writable Working
+        Directory, but no completed AVAC run. A right click cancels selection.
+  \item \control{Preview Water Level} creates and loads the exact WAVE-grid
+        initial depth. It uses the lake polygon and selected WAVE cell size,
+        stabilizes the grid-aligned shoreline, stores the GeoTIFF under
+        \pathcode{qgis\_previews/}, and caches the prepared lake state.
+  \item \control{Wave grid cell size} (m) must equal the terrain resolution or
+        be a larger whole-number multiple. Coarsening reduces runtime and
+        memory; unsupported finer or fractional resampling is rejected.
+\end{itemize}
+
+The lake polygon is rasterized consistently with the WAVE mesh. When the DEM
+is finer, a solver cell becomes lake only when at least half of its fine-grid
+coverage is inside the polygon. A narrow shoreline guard is adjusted to the
+waterline plus dry tolerance to prevent artificial waves at $t=0$. Exterior
+cells are not permanently dry: resolved runup may wet them later.
+
+\uiscreenshot{ui_wave_parameters_lake.png}{WAVE Parameters with Terrain and Lake Inputs open. The point-derived lake polygon does not require a prior AVAC run.}
+
+\subsubsection{WAVE Model Settings}
+
+\begin{itemize}
+  \item \control{Snow-to-water damping} multiplies the internally coupled
+        AVAC source rates. The permitted interface range is 0 to 0.4; smaller
+        values inject less water volume and momentum.
+  \item \control{Land Strickler coefficient} and \control{Water Strickler
+        coefficient} set roughness on the two bed-elevation sides of the
+        water-level break. WAVE passes their reciprocals as Manning
+        coefficients, so larger Strickler means weaker Manning resistance.
+  \item \control{Friction depth limit} is the maximum water depth on which the
+        Manning source term is applied.
+  \item \control{Dry-depth limit} is the WAVE wet/dry threshold and the small
+        elevation offset used by shoreline stabilization.
+  \item \control{Wave refinement tolerance} controls GeoClaw wave-based AMR
+        flagging. WAVE currently prepares one AMR level in the normal plugin
+        workflow; the tolerance remains part of its configuration.
+  \item \control{CFL target} and \control{CFL maximum} control adaptive time
+        stepping. Target must not exceed maximum.
+  \item \control{Limiter} selects none, minmod, superbee, MC, or van Leer. The
+        WAVE default is van Leer.
+\end{itemize}
+
+\control{Load WAVE Configuration} and \control{Save WAVE Configuration}
+restore or write only this WAVE setup: selected AVAC source reference, terrain,
+lake polygon, water level, cell size, and model values. They do not change AVAC
+Parameters.
+
+\uiscreenshot{ui_wave_parameters_model.png}{WAVE Parameters with WAVE Model Settings open.}
+
+\subsubsection{Internal AVAC-to-WAVE source}
+
+During WAVE preparation, the plugin constructs north/south/east/west faces
+around the initially wet lake on the WAVE grid. At each AVAC output time it
+samples the three conserved AVAC components $h$, $hu$, and $hv$ at each face.
+The inward normal flux is
+\[
+q_n = hu\,n_x + hv\,n_y.
+\]
+Only finite samples with positive depth and $q_n>0$ are active. Multiplication
+by face length and Snow-to-water damping produces an integrated water-volume
+rate $Q$. WAVE receives all three conservative source rates
+\[
+(Q,\; Q u,\; Q v),
+\]
+not mass alone. The WAVE solver divides those integrated rates by the area of
+the base-grid or AMR cell that receives the point source. This prevents mesh
+refinement from changing the total injection.
+
+Preparation integrates the source history and records injected water volume,
+both depth-momentum components, and both physical water-momentum components in
+\pathcode{CL/summary\_config.yaml} and in the WAVE execution log. If no
+inward-moving AVAC sample reaches the wet shoreline, preparation reports that
+the lake was not reached and leaves Run unavailable.
+
+\subsection{WAVE Run tab}
+
+\begin{itemize}
+  \item \control{Prepared Simulation} identifies the WAVE scenario and its
+        AVAC source after preparation.
+  \item \control{Check Environment} verifies the writable workspace, managed
+        WAVE runtime, solver, dependencies, and selected core count.
+  \item \control{Validate Inputs} checks the completed AVAC source, terrain,
+        lake polygon, inherited AVAC domain, cell-size alignment, CRS, and
+        current water-level preview state without creating a scenario.
+  \item \control{Prepare Wave Run} creates a timestamped directory below
+        \pathcode{wave\_runs/}, reuses or creates the water-level preview,
+        writes terrain and wet/dry inputs, and creates the internal shoreline
+        source. WAVE duration and output count are inherited from AVAC.
+  \item \control{Run} starts the prepared WAVE solver. \control{Stop} first
+        requests a clean termination and force-stops the process after a grace
+        period if needed.
+  \item \control{CPU cores} sets WAVE's \pathcode{OMP\_NUM\_THREADS} and
+        defaults to the detected maximum.
+  \item Status text and both progress bars report preparation and output-frame
+        progress. \control{Show Wave execution log} reveals the preparation,
+        coupling ledger, runtime, and solver messages.
+\end{itemize}
+
+\uiscreenshot{ui_wave_run.png}{The current WAVE Run tab.}
+
+\subsection{Results tab}
+
+Results is always the last tab. It is shared by both solvers. Controls select a
+product whose label begins with AVAC or WAVE and dispatch the work to the
+corresponding completed run. The progress bar remains at the bottom of the tab.
+
+\subsubsection{Results Run}
+
+\begin{itemize}
+  \item \control{Completed workspace run} and \control{Refresh Runs} select a
+        completed AVAC run from the Working Directory.
+  \item \control{Open Run Directory} selects an external completed AVAC run
+        directory.
+  \item When WAVE is enabled, \control{Completed WAVE scenario}, its Refresh
+        Runs button, and \control{Open Wave Scenario Directory} select a
+        completed WAVE scenario. AVAC and WAVE summaries remain visible
+        together.
+\end{itemize}
+
+\uiscreenshot{ui_results_runs.png}{Results Run with the Lake-Wave Extension enabled.}
+
+\subsubsection{Summary Maps}
+
+AVAC summary choices are Maximum Depth, Maximum Velocity, Maximum Pressure,
+Arrival Time, Time of Maximum Depth, and Time of Maximum Velocity. Maximum
+Pressure is the kinetic-pressure display $\rho v^2/2$ in kPa. Time products
+contain elapsed simulation seconds.
+
+When WAVE is enabled, the selector also contains Maximum Surface Rise and
+Maximum Surface Drawdown. These are the largest positive rise and largest
+positive magnitude of drawdown relative to the initial WAVE free surface.
+\control{Load Map} creates or reuses the selected GeoTIFF and adds it to QGIS.
+
+\uiscreenshot{ui_results_summary.png}{The shared Summary Maps accordion. WAVE choices appear in the selector when the extension is enabled.}
+
+\subsubsection{Time Series Maps and PNG export}
+
+\begin{itemize}
+  \item \control{Variable} selects AVAC Depth, Velocity, Pressure, or Snow
+        Surface Elevation. With WAVE enabled it also offers WAVE Snow Depth
+        Outside Lake, WAVE Water Depth, Water Elevation, and Surface
+        Displacement.
+  \item \control{WAVE Snow Depth Outside Lake} is a derived copy of AVAC depth
+        with AVAC cells intersecting the prepared lake footprint set to zero
+        in every band. The original AVAC product is unchanged. Band count and
+        elapsed times are preserved.
+  \item \control{WAVE Water Elevation} is $B+h$ only on wet cells; dry cells are
+        NoData. \control{WAVE Surface Displacement} is $(B+h)$ minus the
+        initial surface. Its color ramp is diverging and exactly zero is
+        transparent.
+  \item \control{Load Time Series} creates or reuses a multiband GeoTIFF and
+        loads it into QGIS. AVAC and WAVE layers inherit one shared simulation
+        origin, so equal elapsed times align.
+  \item The \control{Frame Player} has a seek slider, Play, Pause, Restart, and
+        frames-per-second control. It directly switches raster bands and does
+        not require tuning QGIS Temporal Controller dates.
+  \item \control{Include} selects a simulation-time title, legends, and scale
+        bar for PNG output. A legend uses the active layer's QGIS color ramp.
+        If multiple visible temporal layers are exported together, each gets
+        its own legend.
+  \item \control{Extent} chooses Current map canvas or Selected result extent
+        for rendering only. \control{Image width} accepts 640--8000 pixels.
+  \item \control{Export Current Map PNG} renders the current map and frame.
+        \control{Export Time Series Frames} renders the selected series, and
+        \control{Export every Nth frame} controls sampling. \control{Cancel
+        Export} stops the loop; completed PNG files remain.
+\end{itemize}
+
+Temporal and derived rasters are stored under the selected AVAC or WAVE run in
+the Working Directory. Frame-export destinations are chosen by the user; the
+plugin does not keep generated result rasters in the QGIS application folder.
+
+\uiscreenshot{ui_results_time_series.png}{Time Series Maps with the shared Frame Player and PNG export controls.}
+
+\subsubsection{Profile Analysis}
+
+\begin{itemize}
+  \item \control{Profile layer} lists valid QGIS line layers.
+        \control{Refresh Layers} refreshes that list.
+  \item \control{Selected feature} uses the sole usable line automatically. If
+        a layer has multiple lines, select exactly one feature in QGIS; the
+        control reports that feature.
+  \item \control{Result type} has Selected frame, Full time series (export),
+        and Historical maximum through selected frame. Historical maximum is
+        calculated independently at every sampled point from frame 1 through
+        the current frame; it is not the value of a separate static profile.
+  \item \control{Variable} selects any available AVAC, lake-clipped AVAC, or
+        WAVE temporal quantity.
+  \item \control{Sampling} uses raster-cell spacing or enables a user-defined
+        \control{Sample spacing} in meters.
+  \item \control{Extract / Plot Profile} samples and plots the chosen result.
+        AVAC depth and snow-surface quantities use the same ground/surface
+        cross-section presentation as WAVE water profiles. \control{Export
+        CSV} writes the current extraction.
+  \item For Full time series, \control{Time-series export} writes either one
+        long-form CSV or one PNG profile per frame. PNG profile export is
+        cancellable.
+\end{itemize}
+
+If the selected temporal layer has not been loaded, the profile action loads
+it first and then resumes automatically.
+
+\uiscreenshot{ui_results_profile.png}{Profile Analysis. The selected-feature row reflects the actual QGIS line selection.}
+
+\subsubsection{Gauge Histories}
+
+\begin{itemize}
+  \item \control{Point layer} accepts any valid QGIS point layer and is empty
+        by default. Gauges are postprocessing samples and do not have to be
+        defined before AVAC or WAVE preparation.
+  \item \control{Variable} independently selects an AVAC or WAVE temporal
+        quantity.
+  \item \control{Read Gauges from Selected Point Layer} loads a missing result
+        series automatically, transforms point coordinates to the result CRS,
+        and bilinearly samples every usable point in every band.
+  \item \control{Sampled point} lists the sampled features.
+        \control{Plot Gauge History} opens the elapsed-time plot and
+        \control{Export Gauge CSV} writes simulation time and the selected
+        value.
+\end{itemize}
+
+\uiscreenshot{ui_results_gauges.png}{Gauge Histories, shared by AVAC and WAVE and based on post-run QGIS point layers.}
+
+\subsubsection{Lake Volume}
+
+This accordion appears only when WAVE is enabled. Lake-water volume is
+calculated at every WAVE output time as water depth times cell area, summed
+over the initial water-body mask. \control{Plot Lake Volume History} displays
+the result and \control{Export Lake Volume CSV} writes elapsed simulation time
+and volume in m$^3$. The interface does not currently expose an outflow or
+spillway hydrograph.
+
+\uiscreenshot{ui_results_lake_volume.png}{The WAVE-only Lake Volume page in the shared Results tab.}
+
+\clearpage
+\section{Working-directory structure}
+
+The Working Directory contains user inputs, isolated runs, derived rasters,
+and exports. Managed runtimes are installed separately under the user's
+application-support directory.
+
+\begin{verbatim}
+AVAC Working Directory/
+  derived_inputs/                  point-derived lake polygons
+  qgis_previews/                   reusable setup preview rasters
+  runs/
+    run_YYYYMMDD_HHMMSS/
+      .avac_qgis_run.json
+      inputs/                      materialized source records and files
+      Topo/                        AVAC terrain
+      AVAC/
+        AVAC_configuration.yaml
+        init.xyz
+        _output/                   raw AVAC solver output
+      qgis_results/                AVAC GeoTIFFs and results.json
+  wave_runs/
+    wave_YYYYMMDD_HHMMSS/
+      .avac_qgis_wave_run.json
+      impulse_configuration.yaml
+      Topo/                        WAVE terrain and force-dry mask
+      CL/                          shoreline faces, source, and source ledger
+      Wave/_output/                raw WAVE solver output
+      qgis_wave_results/           WAVE GeoTIFFs, volume CSV, manifests
+\end{verbatim}
+
+Run directory names and displayed creation times use the computer's local
+time. The AVAC and WAVE rasters store elapsed simulation seconds together with
+one shared per-simulation temporal origin. A WAVE scenario records a reference
+to its completed AVAC source; it does not overwrite, delete, or silently edit
+that source run.
+
+\section{Portable installation and documentation source}
+
+The GitHub source archive does not contain compiled managed runtimes and is not
+the QGIS installer. Install the platform-specific ZIP from the GitHub Releases
+page through Plugins $>$ Manage and Install Plugins $>$ Install from ZIP.
+
+This guide is maintained as \pathcode{docs/AVAC\_QGIS\_UI\_REFERENCE.tex}.
+Current images are under \pathcode{docs/images/}; they can be regenerated from
+the installed QGIS Python environment with
+\pathcode{docs/generate\_ui\_screenshots.py}. Compile from the
+\pathcode{docs/} directory with \pathcode{latexmk -pdf
+AVAC\_QGIS\_UI\_REFERENCE.tex}.
+
+\end{document}

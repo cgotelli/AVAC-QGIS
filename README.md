@@ -5,14 +5,14 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current release is **0.5.9** and targets **QGIS 3.44 LTS**.
+The current release is **0.5.10** and targets **QGIS 3.44 LTS**.
 
 ## Installation
 
 1. Download the installable package from the
-   [AVAC4QGIS 0.5.9 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.5.9).
+   [AVAC4QGIS 0.5.10 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.5.10).
    The macOS Apple Silicon package is
-   [`avac_qgis-0.5.9-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.5.9/avac_qgis-0.5.9-macos-arm64.zip).
+   [`avac_qgis-0.5.10-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.5.10/avac_qgis-0.5.10-macos-arm64.zip).
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.
 3. Select the downloaded ZIP and open **AVAC4QGIS** from the Plugins menu.
 
@@ -29,6 +29,13 @@ installing AVAC4QGIS on another Mac.
 The [AVAC4QGIS User Interface Reference](docs/AVAC_QGIS_UI_REFERENCE.pdf)
 explains the simulation workflow and every control in the graphical interface.
 The same guide is available from the plugin's **Help** button.
+
+The editable LaTeX source is
+[`docs/AVAC_QGIS_UI_REFERENCE.tex`](docs/AVAC_QGIS_UI_REFERENCE.tex). Its
+screenshots are stored in [`docs/images`](docs/images/) and can be regenerated
+under the QGIS Python environment with
+[`docs/generate_ui_screenshots.py`](docs/generate_ui_screenshots.py). Run
+`latexmk -pdf AVAC_QGIS_UI_REFERENCE.tex` from `docs/` to rebuild the PDF.
 
 ## Basic workflow
 
