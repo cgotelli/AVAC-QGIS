@@ -72,3 +72,12 @@ avac_qgis/resources/runtime/
 /validation/vendor/SWASHES-1.05.01/bin/
 /validation/vendor/SWASHES-1.05.01/build/
 /resources/
+
+# The published tutorial dataset is deliberately limited to the lightweight,
+# directly usable inputs listed below. Other locally generated or source
+# rasters and vector sidecars stay outside the repository.
+/tutorial/*
+!/tutorial/avalanches.geojson
+!/tutorial/satellite.png
+!/tutorial/satellite.pgw
+!/tutorial/topo_cut_dam_1m.tif
