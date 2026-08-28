@@ -86,9 +86,15 @@ def copy_plugin(
     shutil.copytree(PLUGIN, destination, ignore=ignore)
     for name in ("README.md", "THIRD_PARTY_NOTICES.md"):
         shutil.copy2(ROOT / name, destination / name)
-    if (ROOT / "docs" / "AVAC_QGIS_UI_REFERENCE.pdf").is_file():
+    if (ROOT / "docs" / "ui_reference" / "AVAC_QGIS_UI_REFERENCE.pdf").is_file():
         documentation = destination / "documentation"; documentation.mkdir(exist_ok=True)
-        shutil.copy2(ROOT / "docs" / "AVAC_QGIS_UI_REFERENCE.pdf", documentation / "AVAC_QGIS_UI_REFERENCE.pdf")
+        shutil.copy2(
+            ROOT / "docs" / "ui_reference" / "AVAC_QGIS_UI_REFERENCE.pdf",
+            documentation / "AVAC_QGIS_UI_REFERENCE.pdf",
+        )
+        tutorial = ROOT / "docs" / "tutorial" / "AVAC4QGIS_TUTORIAL.pdf"
+        if tutorial.is_file():
+            shutil.copy2(tutorial, documentation / "AVAC4QGIS_TUTORIAL.pdf")
     resources = destination / "resources"
     for pattern in ("avac-runtime-*.tar.gz", "wave-runtime-*.tar.gz", "runtime-release*.json", "wave-runtime-release*.json"):
         for stale in resources.glob(pattern): stale.unlink()

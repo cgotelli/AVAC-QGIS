@@ -276,18 +276,19 @@ def _draw_wave_cross_section(painter: QPainter, rect, distance, ground, surface,
         painter.drawText(plot, Qt.AlignCenter, "No valid profile samples")
         return
     xmin, xmax = float(np.nanmin(distance[valid])), float(np.nanmax(distance[valid]))
-    ymin, ymax = float(np.nanmin(ground[valid]) - 1.0), float(np.nanmax(ground[valid]) + 2.0)
+    ymin = float(np.nanmin(ground[valid]) - 1.0)
+    ymax = float(max(np.nanmax(ground[valid]), np.nanmax(surface[valid])) + 2.0)
     if math.isclose(xmin, xmax): xmax = xmin + 1.0
     if math.isclose(ymin, ymax): ymax = ymin + 1.0
     def point(index: int, value: float) -> QPointF:
         return QPointF(plot.left() + (distance[index] - xmin) / (xmax - xmin) * plot.width(), plot.bottom() - (value - ymin) / (ymax - ymin) * plot.height())
-    terrain = QPainterPath(); ground_line = QPainterPath(); water = QPainterPath(); first = True
+    terrain = QPainterPath(); ground_line = QPainterPath(); surface_line = QPainterPath(); water = QPainterPath(); first = True
     for index in np.flatnonzero(valid):
         p_ground, p_surface = point(index, ground[index]), point(index, surface[index])
         if first:
-            terrain.moveTo(p_ground); ground_line.moveTo(p_ground); water.moveTo(p_ground); water.lineTo(p_surface); first = False
+            terrain.moveTo(p_ground); ground_line.moveTo(p_ground); surface_line.moveTo(p_surface); water.moveTo(p_ground); water.lineTo(p_surface); first = False
         else:
-            terrain.lineTo(p_ground); ground_line.lineTo(p_ground); water.lineTo(p_surface)
+            terrain.lineTo(p_ground); ground_line.lineTo(p_ground); surface_line.lineTo(p_surface); water.lineTo(p_surface)
     # Close fills in the same order used by the notebook's fill_between calls.
     last, first_index = int(np.flatnonzero(valid)[-1]), int(np.flatnonzero(valid)[0])
     terrain.lineTo(point(last, ymin)); terrain.lineTo(point(first_index, ymin)); terrain.closeSubpath()
@@ -295,8 +296,8 @@ def _draw_wave_cross_section(painter: QPainter, rect, distance, ground, surface,
     for index in np.flatnonzero(valid)[::-1]: water.lineTo(point(index, ground[index]))
     water.closeSubpath()
     painter.fillPath(terrain, QColor("white")); painter.fillPath(water, QColor("skyblue"))
+    painter.setPen(QPen(QColor("deepskyblue"), 1.5)); painter.drawPath(surface_line)
     painter.setPen(QPen(QColor("sienna"), 1.5)); painter.drawPath(ground_line)
-    painter.setPen(QPen(QColor("deepskyblue"), 1.5)); painter.drawPath(water)
     painter.setPen(QPen(Qt.black, 1)); painter.drawText(4, plot.top() + 10, f"{ymax:.4g}"); painter.drawText(4, plot.bottom(), f"{ymin:.4g}")
     painter.drawText(plot.right() - 85, plot.bottom() + 20, f"{xmax:.4g} m")
     painter.drawText(plot.center().x() - 75, rect.bottom() - 12, "Distance along profile [m]")

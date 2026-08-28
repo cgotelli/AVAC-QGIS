@@ -7,7 +7,7 @@ release process uses::
     QT_QPA_PLATFORM=offscreen \
     PYTHONPATH="$(pwd):/Applications/QGIS.app/Contents/Resources/python" \
     /Applications/QGIS.app/Contents/MacOS/python3.12 \
-    docs/generate_ui_screenshots.py
+    docs/ui_reference/generate_ui_screenshots.py
 
 The screenshots intentionally use empty selectors: they document controls,
 not a private user case or a machine-specific path.

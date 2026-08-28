@@ -635,7 +635,7 @@ class AvacDockWidget(QDockWidget):
         packaged = Path(__file__).resolve().parents[1] / "documentation" / "AVAC_QGIS_UI_REFERENCE.pdf"
         if packaged.is_file():
             return packaged
-        return Path(__file__).resolve().parents[2] / "docs" / "AVAC_QGIS_UI_REFERENCE.pdf"
+        return Path(__file__).resolve().parents[2] / "docs" / "ui_reference" / "AVAC_QGIS_UI_REFERENCE.pdf"
 
     def open_help_pdf(self) -> None:
         path = self.help_pdf_path()

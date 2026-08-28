@@ -21,6 +21,12 @@ htmlcov/
 *.tmp
 *.bak
 *.aux.xml
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
 avac-main/src/AVAC/xgeoclaw
 avac-main/src/WAVE/xgeoclaw
 avac-main/src/AVAC/xgeoclaw.exe

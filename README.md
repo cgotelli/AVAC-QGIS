@@ -28,9 +28,19 @@ installing AVAC4QGIS on another computer.
 
 ## Documentation
 
-The [AVAC4QGIS User Interface Reference](docs/AVAC_QGIS_UI_REFERENCE.pdf)
+The [AVAC4QGIS User Interface Reference](docs/ui_reference/AVAC_QGIS_UI_REFERENCE.pdf)
 explains the simulation workflow and every control in the graphical interface.
 The same guide is available from the plugin's **Help** button.
+
+The [AVAC4QGIS Tutorial](docs/tutorial/AVAC4QGIS_TUTORIAL.pdf) is a
+figure-rich, step-by-step example from avalanche setup through optional
+avalanche--lake coupling and result inspection.
+
+The animation below shows a small simulated avalanche entering the water body
+and generating an impulse wave. It combines AVAC snow depth outside the lake
+with WAVE water-surface displacement, as recommended in the tutorial.
+
+![AVAC4QGIS avalanche-generated impulse-wave example](docs/tutorial/images/wave_surface_displacement_5fps.gif)
 
 ## Basic workflow
 

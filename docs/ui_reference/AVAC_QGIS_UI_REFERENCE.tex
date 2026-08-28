@@ -14,6 +14,7 @@
 \usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{hyperref}
+\usepackage{libertine}
 
 \definecolor{avacblue}{HTML}{1F5C99}
 \definecolor{avaclight}{HTML}{EAF3FA}
@@ -627,7 +628,7 @@ AVAC Working Directory/
       Topo/                        AVAC terrain
       AVAC/
         AVAC_configuration.yaml
-        init.xyz
+        init.avacbin                   packaged binary initial depth
         _output/                   raw AVAC solver output
       qgis_results/                AVAC GeoTIFFs and results.json
   wave_runs/
@@ -652,11 +653,12 @@ The GitHub source archive does not contain compiled managed runtimes and is not
 the QGIS installer. Install the platform-specific ZIP from the GitHub Releases
 page through Plugins $>$ Manage and Install Plugins $>$ Install from ZIP.
 
-This guide is maintained as \pathcode{docs/AVAC\_QGIS\_UI\_REFERENCE.tex}.
-Current images are under \pathcode{docs/images/}; they can be regenerated from
-the installed QGIS Python environment with
-\pathcode{docs/generate\_ui\_screenshots.py}. Compile from the
-\pathcode{docs/} directory with \pathcode{latexmk -pdf
+This guide is maintained as
+\pathcode{docs/ui\_reference/AVAC\_QGIS\_UI\_REFERENCE.tex}.
+Current images are under \pathcode{docs/ui\_reference/images/}; they can be
+regenerated from the installed QGIS Python environment with
+\pathcode{docs/ui\_reference/generate\_ui\_screenshots.py}. Compile from the
+\pathcode{docs/ui\_reference/} directory with \pathcode{latexmk -pdf
 AVAC\_QGIS\_UI\_REFERENCE.tex}.
 
 \end{document}

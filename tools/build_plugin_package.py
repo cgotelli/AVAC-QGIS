@@ -92,7 +92,14 @@ def copy_plugin(
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", destination / "THIRD_PARTY_NOTICES.md")
     documentation = destination / "documentation"
     documentation.mkdir()
-    shutil.copy2(ROOT / "docs" / "AVAC_QGIS_UI_REFERENCE.pdf", documentation / "AVAC_QGIS_UI_REFERENCE.pdf")
+    shutil.copy2(
+        ROOT / "docs" / "ui_reference" / "AVAC_QGIS_UI_REFERENCE.pdf",
+        documentation / "AVAC_QGIS_UI_REFERENCE.pdf",
+    )
+    shutil.copy2(
+        ROOT / "docs" / "tutorial" / "AVAC4QGIS_TUTORIAL.pdf",
+        documentation / "AVAC4QGIS_TUTORIAL.pdf",
+    )
     resources = destination / "resources"
     for old in resources.glob("avac-runtime-*.tar.gz"):
         old.unlink()
