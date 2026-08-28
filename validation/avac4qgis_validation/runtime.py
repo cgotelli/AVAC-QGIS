@@ -36,6 +36,20 @@ SOURCE_ROOTS = {
 }
 
 
+def _solver_executable(source: Path) -> Path:
+    """Return the platform-native solver executable below ``source``."""
+    return source / ("xgeoclaw.exe" if os.name == "nt" else "xgeoclaw")
+
+
+def _make_command() -> str | None:
+    """Return a GNU Make-compatible command, including Windows' ``gmake``."""
+    return next(
+        (command for command in ("make", "gmake", "mingw32-make")
+         if shutil.which(command) is not None),
+        None,
+    )
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -55,19 +69,35 @@ def build_solver(kind: str, cores: int | None = None) -> Path:
     if kind not in SOURCE_ROOTS:
         raise ValueError(f"Unknown runtime kind: {kind}")
     source = SOURCE_ROOTS[kind]
-    make = shutil.which("make")
+    make = _make_command()
     compiler = os.environ.get("FC") or shutil.which("gfortran")
     if make is None or compiler is None:
         raise RuntimeError(
-            f"Cannot build {kind.upper()}: install GNU Make and gfortran, "
+            f"Cannot build {kind.upper()}: install GNU Make (or gmake) and gfortran, "
             "then rerun this notebook."
         )
     environment = os.environ.copy()
     environment["CLAW"] = str(CLAWPACK_SOURCE)
     environment["FC"] = compiler
     environment.setdefault("OMP_NUM_THREADS", str(cores or max(1, os.cpu_count() or 1)))
-    subprocess.run([make, "new"], cwd=source, env=environment, check=True)
-    executable = source / "xgeoclaw"
+    if os.name == "nt":
+        builder = WORKSPACE / "tools" / "build_windows_solvers.py"
+        if not builder.is_file():
+            raise RuntimeError(
+                f"Cannot build {kind.upper()} on Windows: expected helper {builder} is missing."
+            )
+        subprocess.run(
+            [
+                sys.executable, str(builder), "--target", kind.upper(),
+                "--make", make, "--fc", compiler, "--no-strip",
+            ],
+            cwd=WORKSPACE,
+            env=environment,
+            check=True,
+        )
+    else:
+        subprocess.run([make, "new"], cwd=source, env=environment, check=True)
+    executable = _solver_executable(source)
     if not executable.is_file():
         raise RuntimeError(f"The {kind.upper()} build completed without creating {executable}")
     return source
@@ -83,10 +113,20 @@ def runtime(kind: str) -> Path:
     if kind not in SOURCE_ROOTS:
         raise ValueError(f"Unknown runtime kind: {kind}")
     candidate = SOURCE_ROOTS[kind]
-    executable = candidate / "xgeoclaw"
+    executable = _solver_executable(candidate)
     if not executable.is_file():
         return build_solver(kind)
     return candidate
+
+
+def solver_executable(kind: str) -> Path:
+    """Return the current solver executable, building it on first use.
+
+    Unlike a hard-coded ``xgeoclaw`` path, this accepts Windows' required
+    ``xgeoclaw.exe`` suffix while preserving the Unix filename on macOS and
+    Linux.
+    """
+    return _solver_executable(runtime(kind))
 
 
 @contextmanager
@@ -782,7 +822,7 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
     """
     if cores < 1:
         raise ValueError("cores must be at least 1")
-    executable = runtime(kind) / "xgeoclaw"
+    executable = solver_executable(kind)
     environment = os.environ.copy()
     environment["OMP_NUM_THREADS"] = str(int(cores))
     command, timing_flavor = _external_time_command(executable)
@@ -821,6 +861,7 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
     solver_error = (
         "SOLUTION ERROR" in combined_output
         or "Error ***" in combined_output
+        or "set_fgout: ERROR" in combined_output
         or "ERROR reading hydraulic" in combined_output
         or "ERROR: hydraulic boundary" in combined_output
         or "ERROR: total-discharge boundary" in combined_output

@@ -29,7 +29,20 @@ class ValidationCase:
             target = self.path / target
         command = [sys.executable, str(target), *(str(value) for value in arguments)]
         print("Running:", " ".join(command))
-        subprocess.run(command, cwd=cwd or self.path, check=True)
+        result = subprocess.run(
+            command,
+            cwd=cwd or self.path,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        if result.returncode:
+            tail = "\n".join(result.stdout.splitlines()[-40:])
+            raise RuntimeError(
+                f"Validation command failed with exit code {result.returncode}:\n{tail}"
+            )
 
     def json(self, relative_path: str | Path) -> dict[str, Any]:
         return json.loads((self.path / relative_path).read_text(encoding="utf-8"))

@@ -37,6 +37,7 @@ from avac4qgis_validation.runtime import (
     prepare_wave_hydraulic_case,
     run_solver,
     runtime,
+    solver_executable,
 )
 
 
@@ -395,8 +396,8 @@ def main() -> None:
     outflow_start = np.flatnonzero(np.isfinite(front) & ~interior_front)
     closed_mass = mass[interior_front]
     summary = {
-        "solver": str(runtime(args.solver) / "xgeoclaw"),
-        "solver_sha256": sha256(runtime(args.solver) / "xgeoclaw"),
+        "solver": str(solver_executable(args.solver)),
+        "solver_sha256": sha256(solver_executable(args.solver)),
         "water_model": f"{args.solver.upper()} Water",
         "dx_m": dx_actual,
         "dy_m": args.dx,

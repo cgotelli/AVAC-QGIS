@@ -26,13 +26,14 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq
 
 from avac4qgis_validation.kerswell import position_riemann, time_riemann
+from avac4qgis_validation.runtime import solver_executable
 
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 AVAC_SOURCE = ROOT / "avac-main" / "src" / "AVAC"
 CLAW_SOURCE = ROOT / "avac-main" / "clawpack-v5.14.0"
-SOLVER = AVAC_SOURCE / "xgeoclaw"
+SOLVER = solver_executable("avac")
 
 G = 9.81
 H0 = 1.0

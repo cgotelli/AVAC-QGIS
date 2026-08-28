@@ -25,6 +25,7 @@ from avac4qgis_validation.runtime import (
     prepare_wave_hydraulic_case,
     run_solver,
     runtime,
+    solver_executable,
 )
 
 
@@ -194,8 +195,8 @@ def main() -> None:
     fig.savefig(figures/"avac_wave_baines_and_lake_at_rest.png", dpi=240)
     plt.close(fig)
 
-    wave_executable = runtime("wave")/"xgeoclaw"
-    avac_executable = runtime("avac")/"xgeoclaw"
+    wave_executable = solver_executable("wave")
+    avac_executable = solver_executable("avac")
     summary = {
         "wave_solver": str(wave_executable),
         "wave_solver_sha256": digest(wave_executable),

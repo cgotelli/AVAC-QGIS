@@ -27,6 +27,7 @@ from avac4qgis_validation.runtime import (
     prepare_wave_hydraulic_case,
     run_solver,
     runtime,
+    solver_executable,
 )
 
 
@@ -252,8 +253,8 @@ def main() -> None:
         "amr_level2_8core": native_composite_mass_change(amr_8),
     }
     summary = {
-        "solver": str(runtime("wave")/"xgeoclaw"),
-        "solver_sha256": digest(runtime("wave")/"xgeoclaw"),
+        "solver": str(solver_executable("wave")),
+        "solver_sha256": digest(solver_executable("wave")),
         "case": "flat-bed dry dam break",
         "coarse_dx_m": COARSE_DX,
         "fine_dx_m": FINE_DX,

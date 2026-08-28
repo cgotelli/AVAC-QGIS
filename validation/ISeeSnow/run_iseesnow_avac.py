@@ -13,7 +13,6 @@ import csv
 import hashlib
 import json
 import os
-import resource
 import shutil
 import subprocess
 import sys
@@ -36,14 +35,19 @@ import numpy as np
 import shapefile as pyshp
 import yaml
 
+try:
+    import resource
+except ImportError:  # Windows does not provide the POSIX resource module.
+    resource = None
+
 
 VALIDATION_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = VALIDATION_ROOT.parents[1]
 from avac4qgis_validation.datasets import ensure_iseesnow  # noqa: E402
+from avac4qgis_validation.runtime import solver_executable  # noqa: E402
 
 BENCHMARK_ROOT = ensure_iseesnow()
 PLUGIN_ROOT = PROJECT_ROOT / "avac_qgis"
-SOURCE_SOLVER = PROJECT_ROOT / "avac-main" / "src" / "AVAC" / "xgeoclaw"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from avac_qgis.core.configuration import controlled_values, load_complete_configuration  # noqa: E402
@@ -119,11 +123,7 @@ def current_source_solver() -> Path:
     the last packaged plugin archive.  The exact executable hash is retained
     in every result rather than silently substituting an installed runtime.
     """
-    if not SOURCE_SOLVER.is_file() or not os.access(SOURCE_SOLVER, os.X_OK):
-        raise FileNotFoundError(
-            f"Current source-built AVAC solver is unavailable: {SOURCE_SOLVER}"
-        )
-    return SOURCE_SOLVER.resolve()
+    return solver_executable("avac").resolve()
 
 
 @dataclass(frozen=True)
@@ -378,13 +378,18 @@ def solver_environment(workers: int) -> dict[str, str]:
 
 def launch_solver(solver: Path, output_dir: Path, log_path: Path, workers: int) -> tuple[float, float]:
     """Run the validated executable and return wall and child CPU seconds."""
-    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    before = resource.getrusage(resource.RUSAGE_CHILDREN) if resource else None
     start = time.perf_counter()
     with log_path.open("w", encoding="utf-8") as log:
         result = subprocess.run([str(solver)], cwd=output_dir, env=solver_environment(workers), stdout=log, stderr=subprocess.STDOUT)
     wall_seconds = time.perf_counter() - start
-    after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    cpu_seconds = (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
+    if resource and before:
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        cpu_seconds = (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
+    else:
+        # Windows has no POSIX child-resource counter.  Keep the report schema
+        # stable with a wall-clock estimate instead of failing before a run.
+        cpu_seconds = wall_seconds
     if result.returncode != 0:
         raise RuntimeError(f"xgeoclaw exited with {result.returncode}; inspect {log_path}")
     return wall_seconds, cpu_seconds

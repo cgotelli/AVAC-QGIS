@@ -27,6 +27,7 @@ from avac4qgis_validation.runtime import (
     prepare_wave_hydraulic_case,
     run_solver,
     runtime,
+    solver_executable,
 )
 from swashes_reference import save_reference, solution  # noqa: E402
 
@@ -91,8 +92,8 @@ def nearest_reference(reference: np.ndarray, x: np.ndarray, column: int) -> np.n
 def base_summary(case_name: str, work: Path, dx: float, frame) -> dict[str, object]:
     return {
         "case": case_name,
-        "solver": str(runtime(SOLVER_KIND) / "xgeoclaw"),
-        "solver_sha256": sha256(runtime(SOLVER_KIND) / "xgeoclaw"),
+        "solver": str(solver_executable(SOLVER_KIND)),
+        "solver_sha256": sha256(solver_executable(SOLVER_KIND)),
         "dx_m": dx,
         "final_time_s": float(frame.t),
         "water_model": f"{model_label()} Water",

@@ -6,9 +6,15 @@ notebooks for the AVAC and WAVE source solvers shipped with AVAC4QGIS.
 ## Requirements
 
 - Python 3.10 or newer and Jupyter;
-- GNU Make and gfortran;
+- GNU Make (called `make`, `gmake`, or `mingw32-make`) and gfortran;
 - a C++ compiler for the SWASHES analytical generator;
 - internet access on the first ISeeSnow run.
+
+On Windows, install Git Bash as well as the compilers. The notebooks detect
+Windows `xgeoclaw.exe` files and use the repository's Windows build helper;
+SWASHES is compiled directly from its pinned C++ files because its upstream
+Makefile relies on POSIX `find`. macOS and Linux use the normal source
+Makefiles.
 
 Open any notebook and run its cells in order. Its first code cell locates the
 repository and installs the avac4qgis-validation package and its Python

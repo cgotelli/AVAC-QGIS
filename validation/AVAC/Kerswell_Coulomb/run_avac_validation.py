@@ -32,6 +32,7 @@ from avac4qgis_validation.runtime import (
     prepare_avac_coulomb_case,
     run_solver,
     runtime,
+    solver_executable,
 )
 from avac4qgis_validation.kerswell import position_riemann, time_riemann
 
@@ -106,8 +107,8 @@ def extract(work: Path, dx: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, 
     moving_front = times <= 2.0 * T0
     moving_rear = times <= 1.529654 * T0
     summary = {
-        "solver": str(runtime("avac") / "xgeoclaw"),
-        "solver_sha256": sha256(runtime("avac") / "xgeoclaw"),
+        "solver": str(solver_executable("avac")),
+        "solver_sha256": sha256(solver_executable("avac")),
         "dx_m": dx,
         "dy_m": dx,
         "width_cells": 5,
