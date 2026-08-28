@@ -32,13 +32,6 @@ The [AVAC4QGIS User Interface Reference](docs/AVAC_QGIS_UI_REFERENCE.pdf)
 explains the simulation workflow and every control in the graphical interface.
 The same guide is available from the plugin's **Help** button.
 
-The editable LaTeX source is
-[`docs/AVAC_QGIS_UI_REFERENCE.tex`](docs/AVAC_QGIS_UI_REFERENCE.tex). Its
-screenshots are stored in [`docs/images`](docs/images/) and can be regenerated
-under the QGIS Python environment with
-[`docs/generate_ui_screenshots.py`](docs/generate_ui_screenshots.py). Run
-`latexmk -pdf AVAC_QGIS_UI_REFERENCE.tex` from `docs/` to rebuild the PDF.
-
 ## Basic workflow
 
 Choose an **AVAC Working Directory**, select the terrain DEM and release
