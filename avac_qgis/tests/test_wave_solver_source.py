@@ -61,6 +61,10 @@ def test_internal_inflow_v2_is_conservative_across_amr_cell_areas():
     module = source("internal_inflow_module.f90")
     assert "version /= 1 .and. version /= 2" in module
     assert "if (inflow_version == 2) rate = rate / (dx*dy)" in module
+    # All three conserved equations receive the same-stage source: depth,
+    # x depth-momentum and y depth-momentum.  A depth-only assignment would
+    # silently create mass without the AVAC impact momentum.
+    assert "q(1:3,i,j) = q(1:3,i,j) + dt*rate" in module
 
 
 def test_runtime_never_reuses_legacy_amr_dependent_source():

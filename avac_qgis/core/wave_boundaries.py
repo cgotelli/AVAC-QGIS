@@ -26,6 +26,10 @@ class WaveBoundarySummary:
     shoreline_faces: int = 0
     active_source_cells: int = 0
     injected_water_volume_m3: float = 0.0
+    injected_depth_momentum_x_m4_s: float = 0.0
+    injected_depth_momentum_y_m4_s: float = 0.0
+    injected_water_momentum_x_kg_m_s: float = 0.0
+    injected_water_momentum_y_kg_m_s: float = 0.0
 
 
 def _finite_boundary_state(depth: np.ndarray, hu: np.ndarray, hv: np.ndarray, *, epsilon: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
@@ -129,6 +133,36 @@ def _write_internal_inflow(path: Path, times: np.ndarray, cells: np.ndarray, rat
             handle.write(f"{x:.17g} {y:.17g}\n")
             for time_index in range(times.size):
                 handle.write(" ".join(f"{value:.17g}" for value in rates[time_index, cell_index]) + "\n")
+
+
+def _integrated_source_ledger(
+    times: np.ndarray,
+    rates: np.ndarray,
+    *,
+    water_density: float,
+) -> tuple[float, float, float, float, float]:
+    """Integrate conservative mass and momentum sources over AVAC time.
+
+    The three source columns are total ``Q, Q*u, Q*v`` rates.  Their time
+    integrals are water volume and the two depth-momentum integrals.  The
+    latter become physical water momentum after multiplication by density.
+    Keeping this ledger beside every scenario makes it directly auditable
+    that coupling supplies both mass and horizontal momentum.
+    """
+    time_values = np.asarray(times, dtype=float).reshape(-1)
+    source_rates = np.asarray(rates, dtype=float)
+    if source_rates.ndim != 3 or source_rates.shape[0] != time_values.size or source_rates.shape[2] != 3:
+        raise ValueError("Internal Wave source ledger has inconsistent dimensions.")
+    density = float(water_density)
+    if not np.isfinite(density) or density <= 0.0:
+        raise ValueError("Water density must be finite and positive.")
+    total_rates = source_rates.sum(axis=1)
+    integrate = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+    integrated = np.asarray(integrate(total_rates, time_values, axis=0), dtype=float)
+    return (
+        float(integrated[0]), float(integrated[1]), float(integrated[2]),
+        float(density * integrated[1]), float(density * integrated[2]),
+    )
 
 
 def _interpolate_patch_component(state, component: int, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -297,8 +331,10 @@ def create_boundary_conditions(
         coupling_dir / "active_shoreline_faces.txt", faces[active_faces], fmt="%.12g",
         header="target_x target_y face_x face_y normal_into_lake_x normal_into_lake_y face_length",
     )
-    total_rate = source_rates[:, :, 0].sum(axis=1)
-    injected_volume = float(np.trapezoid(total_rate, time_values)) if hasattr(np, "trapezoid") else float(np.trapz(total_rate, time_values))
+    water_density = float(config.get("rheology", {}).get("rho", 1000.0))
+    injected_volume, momentum_x, momentum_y, physical_momentum_x, physical_momentum_y = _integrated_source_ledger(
+        time_values, source_rates, water_density=water_density,
+    )
     summary_data = {
         "source_avac_run": str(avac_root),
         "mode": "internal_shoreline",
@@ -311,9 +347,22 @@ def create_boundary_conditions(
         "active_inflow_samples": int(active_samples),
         "outside_avac_coverage_zeroed": int(replaced_samples),
         "injected_water_volume_m3": injected_volume,
+        "injected_depth_momentum_x_m4_s": momentum_x,
+        "injected_depth_momentum_y_m4_s": momentum_y,
+        "water_density_kg_m3": water_density,
+        "injected_water_momentum_x_kg_m_s": physical_momentum_x,
+        "injected_water_momentum_y_kg_m_s": physical_momentum_y,
     }
     (coupling_dir / "summary_config.yaml").write_text(yaml.safe_dump(summary_data, sort_keys=False), encoding="utf-8")
     return WaveBoundarySummary(
-        tuple(times), active_samples, replaced_samples, int(len(faces)),
-        int(len(ordered_cells)), injected_volume,
+        times=tuple(times),
+        active_samples=active_samples,
+        outside_avac_coverage_zeroed=replaced_samples,
+        shoreline_faces=int(len(faces)),
+        active_source_cells=int(len(ordered_cells)),
+        injected_water_volume_m3=injected_volume,
+        injected_depth_momentum_x_m4_s=momentum_x,
+        injected_depth_momentum_y_m4_s=momentum_y,
+        injected_water_momentum_x_kg_m_s=physical_momentum_x,
+        injected_water_momentum_y_kg_m_s=physical_momentum_y,
     )

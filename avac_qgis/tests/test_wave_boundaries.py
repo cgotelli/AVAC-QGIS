@@ -7,10 +7,22 @@ import pytest
 
 from avac_qgis.core.wave_boundaries import (
     _finite_boundary_state,
+    _integrated_source_ledger,
     _sample_conserved_components,
     _source_rates,
     _write_internal_inflow,
 )
+
+
+def test_source_ledger_integrates_mass_and_both_momentum_components():
+    times = np.array([0., 2.])
+    # Two receiving cells; total rates are constant at Q=3, Q*u=1, Q*v=-2.
+    rates = np.array([
+        [[1., 2., -1.], [2., -1., -1.]],
+        [[1., 2., -1.], [2., -1., -1.]],
+    ])
+    ledger = _integrated_source_ledger(times, rates, water_density=1000.)
+    assert np.allclose(ledger, (6., 2., -4., 2000., -4000.))
 
 
 def test_only_inward_flux_becomes_density_scaled_water_source(tmp_path):

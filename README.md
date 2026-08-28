@@ -5,18 +5,24 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current release is **0.5.7** and targets **QGIS 3.44 LTS**.
+The current release is **0.5.9** and targets **QGIS 3.44 LTS**.
 
 ## Installation
 
-1. Download the ZIP for your operating system from the project's GitHub
-   Releases page (not published yet).
+1. Download the installable package from the
+   [AVAC4QGIS 0.5.9 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.5.9).
+   The macOS Apple Silicon package is
+   [`avac_qgis-0.5.9-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.5.9/avac_qgis-0.5.9-macos-arm64.zip).
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.
 3. Select the downloaded ZIP and open **AVAC4QGIS** from the Plugins menu.
 
 Each release ZIP contains a managed solver runtime. Running the installed
 plugin does not require GNU Make, a Fortran compiler, or a separate Clawpack
 installation.
+
+The GitHub source-code ZIP does **not** contain the managed solver runtimes and
+is not an installable QGIS package. Use the release asset linked above when
+installing AVAC4QGIS on another Mac.
 
 ## Documentation
 
@@ -34,8 +40,11 @@ the managed runtime remains separate.
 The optional **Enable Lake-Wave Extension** switch adds the WAVE parameter and
 run pages. A WAVE scenario reads a completed AVAC result without modifying it
 and transfers the avalanche contribution through the prepared internal
-shoreline coupling. AVAC and WAVE maps, profiles, gauges, and time series are
-handled together in the final **Results** page.
+shoreline coupling. Before running AVAC, the lake polygon can be selected from
+QGIS or derived directly from the terrain DEM by entering a water-surface
+elevation and clicking a point inside the connected basin. AVAC and WAVE maps,
+profiles, gauges, and time series are handled together in the final
+**Results** page.
 
 ## Validation notebooks
 

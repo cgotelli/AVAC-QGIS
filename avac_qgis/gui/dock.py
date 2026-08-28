@@ -26,7 +26,7 @@ from qgis.core import (
     QgsRasterLayerTemporalProperties, QgsRasterShader, QgsUnitTypes, QgsWkbTypes, QgsPalettedRasterRenderer,
     QgsSingleBandPseudoColorRenderer, QgsMapRendererCustomPainterJob, QgsMapSettings, QgsFeature, QgsFillSymbol, QgsVectorLayer,
 )
-from qgis.gui import QgsMapLayerComboBox, QgsTemporalControllerWidget
+from qgis.gui import QgsMapLayerComboBox, QgsMapToolEmitPoint, QgsTemporalControllerWidget
 
 from ..core.environment import (
     EnvironmentReport, available_cpu_cores, check_environment, check_packaged_environment, default_avac_directory, default_clawpack_root,
@@ -44,10 +44,14 @@ from ..core.preprocessing import (
 )
 from ..core.tasks import InitialDepthPreviewTask, PrepareAvacLakeDepthTask, PrepareAvacRunTask, PrepareAvacResultsTask, PrepareWaveResultsTask
 from ..core.wave_results import WAVE_RESULT_DIRECTORY, discover_wave_results, load_wave_frame, read_wave_gauges
+from ..core.lake_polygon import connected_lake_mask, seed_cell, write_lake_polygon
 from ..core.avac_lake_depth import AVAC_LAKE_DEPTH_MANIFEST, wave_source_avac_run
 from ..core.run_project import read_run_metadata, validate_prepared_run
 from ..core.workspace import completed_runs, create_run_root, materialize_layer_sources, validate_workspace
-from ..core.wave_project import PreparedWaveLake, prepare_wave_lake, prepare_wave_scenario, validate_wave_source_compatibility
+from ..core.wave_project import (
+    PreparedWaveLake, avac_computation_domain, prepare_wave_lake,
+    prepare_wave_scenario, validate_wave_source_compatibility,
+)
 from ..core.profiles import ProfileDataset, bilinear_sample, extract_profile, write_profile_csv
 from ..core.results import EPOCH_ISO, RESULT_DIRECTORY, discover_results
 from ..core.rheology import altitude_zone_ids
@@ -57,12 +61,25 @@ from .profile_plot import ProfilePlotDialog, TimeSeriesPlotDialog, WaveCrossSect
 
 
 def _is_stale_packaged_template_path(candidate: Path, built_in: Path) -> bool:
-    """Identify the resource path written by an older plugin installation."""
-    return (
+    """Identify known obsolete defaults written by earlier plugin versions.
+
+    A normal missing external YAML must remain visible to the user.  The two
+    cases repaired here were never normal user templates: an older installed
+    plugin's resource copy, and the generated ISeeSnow driver template that a
+    previous validation workflow temporarily wrote into QGIS settings.
+    """
+    previous_packaged_default = (
         candidate.name == built_in.name
         and candidate.parent.name == "resources"
         and candidate.parent.parent.name == "avac_qgis"
     )
+    candidate_parts = {part.casefold() for part in candidate.parts}
+    previous_iseesnow_validation_default = (
+        candidate.name.casefold() == "avac_iseesnow_template.yaml"
+        and "validation-iseesnow" in candidate_parts
+        and "idealizedtopo" in candidate_parts
+    )
+    return previous_packaged_default or previous_iseesnow_validation_default
 
 
 WAVE_SNOW_DEPTH_LABEL = "WAVE — Snow Depth Outside Lake"
@@ -81,9 +98,10 @@ class AvacDockWidget(QDockWidget):
     WAVE_SETUP_CONFIGURATION_FORMAT = "AVAC4QGIS Wave setup configuration"
     PLUGIN_CONFIGURATION_FORMAT = "AVAC4QGIS plugin configuration"
     CONFIGURATION_VERSION = 1
-    # These output choices are standardized for every prepared AVAC run.
+    # These execution choices are standardized for every prepared AVAC run.
     # They are no longer case-by-case controls in the normal user interface.
-    FIXED_OUTPUT_PARAMETERS = {
+    FIXED_RUN_PARAMETERS = {
+        "computation.boundary": "extrap",
         "output.delta_t": 1.0,
         "output.verbosity": 0,
         "output.output_format": "binary32",
@@ -128,6 +146,8 @@ class AvacDockWidget(QDockWidget):
         self._wave_expected_frames = 0
         self._wave_lake_preview: PreparedWaveLake | None = None
         self._wave_lake_preview_signature: tuple | None = None
+        self._lake_polygon_map_tool: QgsMapToolEmitPoint | None = None
+        self._lake_polygon_previous_map_tool = None
         self._wave_progress_timer = QTimer(self)
         self._wave_progress_timer.setInterval(500)
         self._wave_progress_timer.timeout.connect(self._update_wave_progress)
@@ -146,7 +166,10 @@ class AvacDockWidget(QDockWidget):
         # The normal UI exposes duration and requested cadence.  Keep these
         # raw schema controls off-screen so loaded legacy YAMLs can still be
         # opened and saved without changing their established schedules.
-        self._timing_mode = "raw"
+        # Normal loaded configurations are expressed through the visible
+        # interval control.  Direct developer/test changes to the two hidden
+        # count widgets still switch back to raw-count mode via their signals.
+        self._timing_mode = "interval"
         self._preview_task: InitialDepthPreviewTask | None = None
         self._preview_kind = "depth"
         self._animation_timer: QTimer | None = None
@@ -304,7 +327,7 @@ class AvacDockWidget(QDockWidget):
         controls = QHBoxLayout()
         self.run_prepared_button = QPushButton("Run")
         self.run_prepared_button.setEnabled(False)
-        self.stop_button = QPushButton("Stop (direct process)")
+        self.stop_button = QPushButton("Stop")
         self.stop_button.setEnabled(False)
         controls.addWidget(self.run_prepared_button)
         controls.addWidget(self.stop_button)
@@ -741,36 +764,23 @@ class AvacDockWidget(QDockWidget):
         self.wave_lake_boundary = QgsMapLayerComboBox(); self.wave_lake_boundary.setFilters(QgsMapLayerProxyModel.Filter.VectorLayer); self.wave_lake_boundary.setAllowEmptyLayer(True); self.wave_lake_boundary.setLayer(None)
         self.wave_water_level = QDoubleSpinBox(); self.wave_water_level.setDecimals(4); self.wave_water_level.setRange(-10000.0, 10000.0); self.wave_water_level.setSuffix(" m")
         self.wave_cell_size = QDoubleSpinBox(); self.wave_cell_size.setDecimals(6); self.wave_cell_size.setRange(.01, 10000.0); self.wave_cell_size.setValue(1.0); self.wave_cell_size.setSuffix(" m")
-        self.wave_lake_dem.setToolTip("Terrain/bathymetry DEM covering the complete rectangular Wave calculation domain, including the avalanche-entry edge.")
-        self.wave_lake_boundary.setToolTip("Polygon of the actual water body. It creates the force-dry mask; it is not the Wave calculation domain.")
+        self.wave_lake_dem.setToolTip("Terrain/bathymetry DEM covering the completed AVAC computation domain.")
+        self.wave_lake_boundary.setToolTip("Polygon of the actual water body used to initialize the lake and its shoreline coupling.")
         lake_form.addRow("Terrain/bathymetry DEM", self.wave_lake_dem)
         lake_form.addRow("Lake water-body polygon", self.wave_lake_boundary)
         lake_form.addRow("Water level", self.wave_water_level)
         self.wave_preview_water_button = QPushButton("Preview Water Level")
         self.wave_preview_water_button.setToolTip("Show water depth inside the lake polygon for the selected water-surface elevation.")
+        self.wave_create_lake_polygon_button = QPushButton("Create Lake Polygon from Map Point")
+        self.wave_create_lake_polygon_button.setToolTip(
+            "Click a point inside the lake basin; connected DEM cells at or below the water level become a persistent polygon. "
+            "No completed AVAC run is required."
+        )
+        lake_form.addRow(self.wave_create_lake_polygon_button)
+        lake_form.addRow(self.wave_preview_water_button)
         self.wave_cell_size.setToolTip("Use the DEM resolution or a larger whole-number multiple. A coarser grid reduces Wave runtime and memory use.")
         lake_form.addRow("Wave grid cell size", self.wave_cell_size)
         lake_group.setTitle(""); self.wave_parameter_toolbox.addItem(lake_group, "Terrain and Lake Inputs")
-
-        domain_group = QGroupBox("Wave Calculation Domain")
-        domain_form = QFormLayout(domain_group)
-        domain_group.setToolTip("The rectangular GeoClaw solution domain. AVAC-to-WAVE transfer is detected separately along the initial wet lake shoreline inside this rectangle.")
-        self.wave_domain_xmin = QDoubleSpinBox(); self.wave_domain_xmax = QDoubleSpinBox()
-        self.wave_domain_ymin = QDoubleSpinBox(); self.wave_domain_ymax = QDoubleSpinBox()
-        for control in (self.wave_domain_xmin, self.wave_domain_xmax, self.wave_domain_ymin, self.wave_domain_ymax):
-            control.setDecimals(4); control.setRange(-10000000.0, 10000000.0); control.setSingleStep(1.0); control.setSuffix(" m")
-        self.wave_domain_buffer = QDoubleSpinBox(); self.wave_domain_buffer.setDecimals(3); self.wave_domain_buffer.setRange(0.0, 100000.0); self.wave_domain_buffer.setValue(20.0); self.wave_domain_buffer.setSuffix(" m")
-        self.wave_domain_from_lake_button = QPushButton("Create from Lake Polygon")
-        self.wave_preview_domain_button = QPushButton("Preview Calculation Domain")
-        domain_form.addRow("X minimum", self.wave_domain_xmin)
-        domain_form.addRow("X maximum", self.wave_domain_xmax)
-        domain_form.addRow("Y minimum", self.wave_domain_ymin)
-        domain_form.addRow("Y maximum", self.wave_domain_ymax)
-        domain_form.addRow("Lake-domain buffer", self.wave_domain_buffer)
-        domain_form.addRow(self.wave_domain_from_lake_button)
-        domain_form.addRow(self.wave_preview_domain_button)
-        domain_form.addRow(self.wave_preview_water_button)
-        domain_group.setTitle(""); self.wave_parameter_toolbox.addItem(domain_group, "WAVE Calculation Domain and Coupling Boundary")
 
         model_group = QGroupBox("Wave Model Settings")
         model_form = QFormLayout(model_group)
@@ -782,7 +792,7 @@ class AvacDockWidget(QDockWidget):
         self.wave_tolerance = QDoubleSpinBox(); self.wave_tolerance.setRange(.000001, 100.0); self.wave_tolerance.setDecimals(6); self.wave_tolerance.setValue(.2)
         self.wave_cfl_target = QDoubleSpinBox(); self.wave_cfl_target.setRange(.01, 1.0); self.wave_cfl_target.setDecimals(3); self.wave_cfl_target.setValue(.5)
         self.wave_cfl_max = QDoubleSpinBox(); self.wave_cfl_max.setRange(.01, 1.0); self.wave_cfl_max.setDecimals(3); self.wave_cfl_max.setValue(1.0)
-        self.wave_limiter = QComboBox(); self.wave_limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); self.wave_limiter.setCurrentText("mc")
+        self.wave_limiter = QComboBox(); self.wave_limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); self.wave_limiter.setCurrentText("vanleer")
         model_form.addRow("Snow-to-water damping", self.wave_damping)
         model_form.addRow("Land Strickler coefficient", self.wave_land_strickler)
         model_form.addRow("Water Strickler coefficient", self.wave_water_strickler)
@@ -909,20 +919,17 @@ class AvacDockWidget(QDockWidget):
         self.wave_log_toggle.toggled.connect(self.wave_execution_log.setVisible)
         self.wave_plot_volume_button.clicked.connect(self.plot_wave_volume)
         self.wave_export_volume_button.clicked.connect(lambda: self.export_wave_diagnostic_csv("volume_csv", "lake_volume_history.csv"))
-        self.wave_domain_from_lake_button.clicked.connect(self._set_wave_domain_from_lake_polygon)
+        self.wave_create_lake_polygon_button.clicked.connect(self.start_wave_lake_polygon_capture)
         self.wave_preview_water_button.clicked.connect(self.preview_wave_water_level)
-        self.wave_preview_domain_button.clicked.connect(self.preview_wave_calculation_domain)
         self.wave_lake_dem.layerChanged.connect(self._set_wave_cell_size_from_dem)
         self.wave_lake_dem.layerChanged.connect(self._invalidate_wave_water_preview)
         self.wave_lake_boundary.layerChanged.connect(self._invalidate_wave_water_preview)
+        self.wave_avac_run_selector.currentIndexChanged.connect(self._invalidate_wave_water_preview)
         self.workspace_root.textChanged.connect(self._invalidate_wave_water_preview)
         for control in (
-            self.wave_water_level, self.wave_cell_size, self.wave_domain_xmin,
-            self.wave_domain_xmax, self.wave_domain_ymin, self.wave_domain_ymax,
-            self.wave_dry_limit,
+            self.wave_water_level, self.wave_cell_size, self.wave_dry_limit,
         ):
             control.valueChanged.connect(self._invalidate_wave_water_preview)
-        self.wave_cell_size.editingFinished.connect(self._snap_wave_domain_after_cell_edit)
         results_index = self.workflow_tabs.indexOf(self.results_scroll)
         if results_index >= 0:
             self.workflow_tabs.removeTab(results_index)
@@ -941,88 +948,183 @@ class AvacDockWidget(QDockWidget):
         except Exception:  # Layer metadata can be incomplete for some providers.
             pass
 
-    def _snap_wave_domain_to_cell_size(self) -> bool:
-        """Keep the current rectangle valid when the WAVE cell size changes.
+    def start_wave_lake_polygon_capture(self) -> None:
+        """Arm one map click that seeds a water-level lake polygon."""
+        terrain = self.wave_lake_dem.currentLayer() if hasattr(self, "wave_lake_dem") else None
+        if terrain is None or not terrain.isValid() or not terrain.crs().isValid():
+            self.wave_setup_status.setText("Choose a valid terrain/bathymetry DEM before creating the lake polygon.")
+            return
+        if self.iface is None or self.iface.mapCanvas() is None:
+            self.wave_setup_status.setText("The QGIS map canvas is unavailable; the lake seed point cannot be captured.")
+            return
+        canvas = self.iface.mapCanvas()
+        self._lake_polygon_previous_map_tool = canvas.mapTool()
+        self._lake_polygon_map_tool = QgsMapToolEmitPoint(canvas)
+        self._lake_polygon_map_tool.canvasClicked.connect(self._create_wave_lake_polygon_from_point)
+        canvas.setMapTool(self._lake_polygon_map_tool)
+        self.wave_setup_status.setText(
+            f"Click inside the lake basin on the map. Connected DEM cells at or below "
+            f"{self.wave_water_level.value():g} m will define the lake polygon."
+        )
 
-        A WAVE rectangle may start on any native DEM cell; only its width and
-        height need to contain integral numbers of the coarser WAVE cells.
-        Preserve the user's current rectangle, expanding it only as needed and
-        shifting it inward at a DEM edge when that preserves full coverage.
-        """
+    def _finish_wave_lake_polygon_capture(self) -> None:
+        """Restore the map tool that was active before lake-point capture."""
+        if self.iface is None or self.iface.mapCanvas() is None or self._lake_polygon_map_tool is None:
+            self._lake_polygon_map_tool = None
+            self._lake_polygon_previous_map_tool = None
+            return
+        canvas = self.iface.mapCanvas()
+        try:
+            self._lake_polygon_map_tool.canvasClicked.disconnect(self._create_wave_lake_polygon_from_point)
+        except (TypeError, RuntimeError):
+            pass
+        if self._lake_polygon_previous_map_tool is not None:
+            canvas.setMapTool(self._lake_polygon_previous_map_tool)
+        else:
+            canvas.unsetMapTool(self._lake_polygon_map_tool)
+        self._lake_polygon_map_tool = None
+        self._lake_polygon_previous_map_tool = None
+
+    def _create_wave_lake_polygon_from_point(self, point, mouse_button) -> None:
+        """Create and select the connected water-level polygon at one click."""
+        if mouse_button == Qt.MouseButton.RightButton:
+            self._finish_wave_lake_polygon_capture()
+            self.wave_setup_status.setText("Lake-polygon point selection cancelled.")
+            return
+        try:
+            terrain = self.wave_lake_dem.currentLayer()
+            if terrain is None or not terrain.isValid():
+                raise ValueError("Terrain/bathymetry DEM is no longer available.")
+            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            selected = QgsPointXY(point)
+            if canvas_crs != terrain.crs():
+                selected = QgsCoordinateTransform(
+                    canvas_crs, terrain.crs(), QgsProject.instance().transformContext()
+                ).transform(selected)
+            # Lake delineation is an input-building operation, not a result
+            # operation.  It therefore uses only the selected terrain, water
+            # level, and map point.  The expanding native-resolution window
+            # avoids materializing a very large source DEM while still
+            # proving that the connected contour closes inside that DEM.
+            raster, mask = self._lake_raster_window_from_point(
+                terrain, selected.x(), selected.y(),
+            )
+            destination_root = validate_workspace(self.workspace_root.text()) / "derived_inputs"
+            destination_root.mkdir(exist_ok=True)
+            level_name = f"{self.wave_water_level.value():.3f}".replace("-", "minus_").replace(".", "_")
+            destination = destination_root / f"lake_at_{level_name}_m.gpkg"
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = destination_root / f"lake_at_{level_name}_m_{suffix:02d}.gpkg"
+            write_lake_polygon(
+                destination, raster, mask, water_level=self.wave_water_level.value(),
+                seed_x=selected.x(), seed_y=selected.y(),
+            )
+            layer = QgsVectorLayer(str(destination), f"Lake at {self.wave_water_level.value():g} m", "ogr")
+            if not layer.isValid():
+                raise ValueError(f"QGIS could not load the derived lake polygon: {destination}")
+            layer.renderer().setSymbol(QgsFillSymbol.createSimple({
+                "color": "0,120,255,45", "outline_color": "0,80,200,255", "outline_width": "0.7",
+            }))
+            layer.setCustomProperty("avac/derived_lake_polygon", True)
+            layer.setCustomProperty("avac/water_level", float(self.wave_water_level.value()))
+            QgsProject.instance().addMapLayer(layer)
+            self.wave_lake_boundary.setLayer(layer)
+            self._invalidate_wave_water_preview()
+            self.wave_setup_status.setText(
+                f"Created lake polygon from {int(np.count_nonzero(mask))} connected DEM cells: {destination}. "
+                "Preview Water Level to inspect the exact WAVE-grid initial state."
+            )
+        except Exception as exc:  # noqa: BLE001 - map/provider/GDAL failures are user-facing
+            self.wave_setup_status.setText(f"Lake polygon creation failed: {exc}")
+        finally:
+            self._finish_wave_lake_polygon_capture()
+
+    def _lake_raster_window_from_point(self, terrain, x: float, y: float):
+        """Read the smallest DEM window that fully encloses a seeded lake."""
+        source_extent = terrain.extent()
+        columns, rows = int(terrain.width()), int(terrain.height())
+        if columns <= 0 or rows <= 0:
+            raise ValueError("Terrain/bathymetry DEM has no raster cells.")
+        cell_x = float(source_extent.width()) / columns
+        cell_y = float(source_extent.height()) / rows
+        tolerance = max(abs(cell_x), abs(cell_y), 1.0) * 1e-8
+        if cell_x <= 0.0 or cell_y <= 0.0 or not np.isclose(
+            cell_x, cell_y, rtol=0.0, atol=tolerance,
+        ):
+            raise ValueError("Terrain/bathymetry DEM must have positive square cells.")
+        x, y = float(x), float(y)
+        xmin, ymin = float(source_extent.xMinimum()), float(source_extent.yMinimum())
+        xmax, ymax = float(source_extent.xMaximum()), float(source_extent.yMaximum())
+        if not (xmin <= x < xmax and ymin <= y < ymax):
+            raise ValueError("The selected point is outside the terrain DEM.")
+        seed_column = min(columns - 1, max(0, int(np.floor((x - xmin) / cell_x))))
+        seed_row = min(rows - 1, max(0, int(np.floor((y - ymin) / cell_y))))
+
+        half_cells = 256
+        while True:
+            left = max(0, seed_column - half_cells)
+            right = min(columns, seed_column + half_cells + 1)
+            bottom = max(0, seed_row - half_cells)
+            top = min(rows, seed_row + half_cells + 1)
+            window = QgsRectangle(
+                xmin + left * cell_x, ymin + bottom * cell_y,
+                xmin + right * cell_x, ymin + top * cell_y,
+            )
+            raster = raster_from_qgis_layer(terrain, extent=window)
+            seed = seed_cell(raster, x, y)
+            mask = connected_lake_mask(
+                raster.z, seed, self.wave_water_level.value(), require_closed=False,
+            )
+            touches = (
+                bool(mask[:, 0].any()), bool(mask[:, -1].any()),
+                bool(mask[0, :].any()), bool(mask[-1, :].any()),
+            )
+            source_edges = (left == 0, right == columns, bottom == 0, top == rows)
+            if any(touch and source_edge for touch, source_edge in zip(touches, source_edges)):
+                raise ValueError(
+                    "The connected water body reaches the terrain DEM edge, so its contour is not closed. "
+                    "Use a terrain DEM that fully encloses the water body, or lower the water level."
+                )
+            if not any(touches):
+                return raster, mask
+            if left == 0 and right == columns and bottom == 0 and top == rows:
+                raise ValueError("The connected water body does not form a closed contour inside the terrain DEM.")
+            half_cells *= 2
+
+    def _validated_wave_domain(self) -> dict[str, float]:
+        """Validate the completed AVAC domain against the selected WAVE grid."""
         terrain = self.wave_lake_dem.currentLayer() if hasattr(self, "wave_lake_dem") else None
         if terrain is None or not terrain.isValid():
-            return False
+            raise ValueError("Choose a valid terrain/bathymetry DEM.")
         domain = self._wave_domain()
-        if domain["xmax"] <= domain["xmin"] or domain["ymax"] <= domain["ymin"]:
-            return False
         source_x = float(terrain.rasterUnitsPerPixelX())
         source_y = float(terrain.rasterUnitsPerPixelY())
         cell_size = float(self.wave_cell_size.value())
-        if (
-            source_x <= 0.0 or source_y <= 0.0
-            or not np.isclose(source_x, source_y, rtol=0.0, atol=max(source_x, source_y, 1.0) * 1e-8)
-            or round(cell_size / source_x) < 1
-            or not np.isclose(cell_size / source_x, round(cell_size / source_x), rtol=0.0, atol=1e-8)
-        ):
-            return False
-
-        extent = terrain.extent()
-        source_cell = source_x
-        tolerance = max(source_cell, cell_size, 1.0) * 1e-8
-
-        def snapped_bounds(low: float, high: float, terrain_low: float, terrain_high: float) -> tuple[float, float]:
-            cell_count = max(2, int(np.ceil((high - low) / cell_size - tolerance)))
-            span = cell_count * cell_size
-            allowed_low = max(terrain_low, high - span)
-            allowed_high = min(low, terrain_high - span)
-            if allowed_low > allowed_high + tolerance:
+        tolerance = max(source_x, source_y, cell_size, 1.0) * 1e-8
+        if source_x <= 0.0 or source_y <= 0.0 or not np.isclose(source_x, source_y, rtol=0.0, atol=tolerance):
+            raise ValueError("Terrain/bathymetry DEM must have positive square cells.")
+        ratio = cell_size / source_x
+        if round(ratio) < 1 or not np.isclose(ratio, round(ratio), rtol=0.0, atol=1e-8):
+            raise ValueError(
+                f"Wave grid cell size ({cell_size:g} m) must equal the DEM resolution ({source_x:g} m) "
+                "or be a whole-number multiple of it."
+            )
+        for axis in ("x", "y"):
+            cells = (domain[f"{axis}max"] - domain[f"{axis}min"]) / cell_size
+            if cells < 2 or not np.isclose(cells, round(cells), rtol=0.0, atol=1e-8):
                 raise ValueError(
-                    f"Wave calculation domain cannot fit {cell_count} cells of {cell_size:g} m "
-                    "inside the selected terrain/bathymetry DEM."
+                    f"The completed AVAC {axis.upper()} span is not divisible into at least two "
+                    f"{cell_size:g} m WAVE cells. Choose a compatible coarser cell size."
                 )
-            # All limits are on the native DEM grid.  Round only to remove
-            # floating-point noise while retaining a rectangle that contains
-            # the previously selected domain.
-            result_low = terrain_low + round((allowed_high - terrain_low) / source_cell) * source_cell
-            if result_low > allowed_high + tolerance:
-                result_low -= source_cell
-            if result_low < allowed_low - tolerance:
-                result_low = terrain_low + np.ceil((allowed_low - terrain_low) / source_cell) * source_cell
-            result_high = result_low + span
-            if result_low < terrain_low - tolerance or result_high > terrain_high + tolerance:
-                raise ValueError("Wave calculation domain cannot be aligned to the selected terrain/bathymetry DEM.")
-            return float(result_low), float(result_high)
-
-        xmin, xmax = snapped_bounds(domain["xmin"], domain["xmax"], extent.xMinimum(), extent.xMaximum())
-        ymin, ymax = snapped_bounds(domain["ymin"], domain["ymax"], extent.yMinimum(), extent.yMaximum())
-        values = ((self.wave_domain_xmin, xmin), (self.wave_domain_xmax, xmax),
-                  (self.wave_domain_ymin, ymin), (self.wave_domain_ymax, ymax))
-        changed = any(not np.isclose(control.value(), value, rtol=0.0, atol=tolerance) for control, value in values)
-        if changed:
-            for control, value in values:
-                control.setValue(value)
-            self._invalidate_wave_water_preview()
-        return changed
-
-    def _snap_wave_domain_after_cell_edit(self) -> None:
-        """Show an immediate, non-blocking result after a user changes cell size."""
-        try:
-            if self._snap_wave_domain_to_cell_size():
-                self.wave_setup_status.setText(
-                    "Wave calculation domain aligned to the new grid cell size while preserving its selected coverage."
-                )
-        except ValueError as exc:
-            self.wave_setup_status.setText(f"Wave grid cell size is incompatible with the current calculation domain: {exc}")
-
-    def _set_wave_domain_from_terrain(self) -> None:
-        """Offer the terrain extent as a starting domain; users then place its boundary at the inflow."""
-        layer = self.wave_lake_dem.currentLayer() if hasattr(self, "wave_lake_dem") else None
-        if layer is None:
-            return
-        extent = layer.extent()
-        for control, value in ((self.wave_domain_xmin, extent.xMinimum()), (self.wave_domain_xmax, extent.xMaximum()),
-                               (self.wave_domain_ymin, extent.yMinimum()), (self.wave_domain_ymax, extent.yMaximum())):
-            control.setValue(value)
+        extent = terrain.extent()
+        if (
+            domain["xmin"] < extent.xMinimum() - tolerance or domain["xmax"] > extent.xMaximum() + tolerance
+            or domain["ymin"] < extent.yMinimum() - tolerance or domain["ymax"] > extent.yMaximum() + tolerance
+        ):
+            raise ValueError("Terrain/bathymetry DEM must fully cover the completed AVAC computation domain.")
+        return domain
 
     @staticmethod
     def _remove_wave_preview_layers(property_name: str) -> None:
@@ -1108,11 +1210,8 @@ class AvacDockWidget(QDockWidget):
         """Create, display and cache the exact lake state consumed by Prepare."""
         terrain = self.wave_lake_dem.currentLayer()
         boundary = self.wave_lake_boundary.currentLayer()
-        self._snap_wave_domain_to_cell_size()
+        domain = self._validated_wave_domain()
         signature = self._wave_water_preview_input_signature()
-        domain = self._wave_domain()
-        if domain["xmax"] <= domain["xmin"] or domain["ymax"] <= domain["ymin"]:
-            raise ValueError("Create or enter a valid Wave calculation domain before previewing water level.")
         lake_rings = rings_from_qgis_layer(boundary, terrain.crs())
         native_raster = self._wave_setup_terrain(terrain, domain, self.wave_cell_size.value())
         prepared = prepare_wave_lake(
@@ -1142,73 +1241,11 @@ class AvacDockWidget(QDockWidget):
             self._invalidate_wave_water_preview()
             self.wave_setup_status.setText(f"Water-level preview failed: {exc}")
 
-    def preview_wave_calculation_domain(self) -> None:
-        """Add a transparent, red-outline layer for the currently entered rectangle."""
-        try:
-            terrain = self.wave_lake_dem.currentLayer()
-            if terrain is None or not terrain.isValid() or not terrain.crs().isValid():
-                raise ValueError("Choose a valid terrain/bathymetry DEM first.")
-            self._snap_wave_domain_to_cell_size()
-            domain = self._wave_domain()
-            if domain["xmax"] <= domain["xmin"] or domain["ymax"] <= domain["ymin"]:
-                raise ValueError("Enter a Wave calculation domain with valid minimum and maximum coordinates.")
-            self._remove_wave_preview_layers("avac/wave_domain_preview")
-            layer = QgsVectorLayer(f"Polygon?crs={terrain.crs().authid()}", "Wave Calculation Domain Preview", "memory")
-            if not layer.isValid():
-                raise ValueError("QGIS could not create the Wave calculation-domain preview layer.")
-            ring = [
-                QgsPointXY(domain["xmin"], domain["ymin"]), QgsPointXY(domain["xmax"], domain["ymin"]),
-                QgsPointXY(domain["xmax"], domain["ymax"]), QgsPointXY(domain["xmin"], domain["ymax"]),
-                QgsPointXY(domain["xmin"], domain["ymin"]),
-            ]
-            feature = QgsFeature(layer.fields()); feature.setGeometry(QgsGeometry.fromPolygonXY([ring]))
-            layer.dataProvider().addFeatures([feature]); layer.updateExtents()
-            layer.renderer().setSymbol(QgsFillSymbol.createSimple({"color": "255,0,0,0", "outline_color": "255,0,0,255", "outline_width": "0.8"}))
-            layer.setCustomProperty("avac/wave_domain_preview", True)
-            QgsProject.instance().addMapLayer(layer)
-            self.wave_setup_status.setText("Wave calculation-domain preview added (transparent fill, red outline).")
-        except Exception as exc:  # noqa: BLE001 - user-facing selection validation
-            self.wave_setup_status.setText(f"Calculation-domain preview failed: {exc}")
-
-    def _set_wave_domain_from_lake_polygon(self) -> None:
-        """Make a buffered, grid-aligned Wave rectangle from the water-body polygon."""
-        terrain = self.wave_lake_dem.currentLayer() if hasattr(self, "wave_lake_dem") else None
-        lake = self.wave_lake_boundary.currentLayer() if hasattr(self, "wave_lake_boundary") else None
-        if terrain is None or lake is None:
-            self.wave_setup_status.setText("Choose both the terrain/bathymetry DEM and lake water-body polygon before creating a Wave domain.")
-            return
-        try:
-            extent = lake.extent()
-            if lake.crs() != terrain.crs():
-                transform = QgsCoordinateTransform(lake.crs(), terrain.crs(), QgsProject.instance())
-                extent = transform.transformBoundingBox(extent)
-            terrain_extent = terrain.extent()
-            cell_size = self.wave_cell_size.value()
-            if cell_size <= 0.0:
-                raise ValueError("Wave grid cell size must be positive.")
-            buffer = self.wave_domain_buffer.value()
-            # Snap outward from the terrain origin. The domain then contains
-            # an exact integer number of solver cells, as required by setrun.
-            import math
-            xmin = terrain_extent.xMinimum() + math.floor((extent.xMinimum() - buffer - terrain_extent.xMinimum()) / cell_size) * cell_size
-            xmax = terrain_extent.xMinimum() + math.ceil((extent.xMaximum() + buffer - terrain_extent.xMinimum()) / cell_size) * cell_size
-            ymin = terrain_extent.yMinimum() + math.floor((extent.yMinimum() - buffer - terrain_extent.yMinimum()) / cell_size) * cell_size
-            ymax = terrain_extent.yMinimum() + math.ceil((extent.yMaximum() + buffer - terrain_extent.yMinimum()) / cell_size) * cell_size
-            if xmin < terrain_extent.xMinimum() or xmax > terrain_extent.xMaximum() or ymin < terrain_extent.yMinimum() or ymax > terrain_extent.yMaximum():
-                raise ValueError("The buffered lake rectangle extends outside the selected terrain/bathymetry DEM. Use a smaller buffer or a DEM with wider coverage.")
-            for control, value in ((self.wave_domain_xmin, xmin), (self.wave_domain_xmax, xmax),
-                                   (self.wave_domain_ymin, ymin), (self.wave_domain_ymax, ymax)):
-                control.setValue(value)
-            self.wave_setup_status.setText(
-                "Wave calculation domain created from the lake polygon and buffer. "
-                "AVAC coupling will be applied independently along the initial wet shoreline."
-            )
-        except Exception as exc:  # noqa: BLE001 - report coordinate/coverage issues in the setup tab
-            self.wave_setup_status.setText(f"Could not create Wave domain from lake polygon: {exc}")
-
     def _wave_domain(self) -> dict[str, float]:
-        return {"xmin": self.wave_domain_xmin.value(), "xmax": self.wave_domain_xmax.value(),
-                "ymin": self.wave_domain_ymin.value(), "ymax": self.wave_domain_ymax.value()}
+        run = self.wave_avac_run_selector.currentData() if hasattr(self, "wave_avac_run_selector") else None
+        if not run:
+            raise ValueError("Choose a completed AVAC run.")
+        return avac_computation_domain(run)
 
     def _wave_parameters(self) -> dict[str, float | str]:
         return {"damping": self.wave_damping.value(), "land_strickler": self.wave_land_strickler.value(),
@@ -1330,10 +1367,7 @@ class AvacDockWidget(QDockWidget):
                 raise ValueError("Choose a valid terrain/bathymetry DEM with a defined CRS.")
             if lake is None or not lake.isValid() or lake.geometryType() != QgsWkbTypes.PolygonGeometry:
                 raise ValueError("Choose a valid lake water-body polygon layer.")
-            self._snap_wave_domain_to_cell_size()
-            domain = self._wave_domain()
-            if domain["xmax"] <= domain["xmin"] or domain["ymax"] <= domain["ymin"]:
-                raise ValueError("Create or enter a valid WAVE calculation domain.")
+            domain = self._validated_wave_domain()
             validate_wave_source_compatibility(avac_run, terrain.crs().authid(), domain)
             rings = rings_from_qgis_layer(lake, terrain.crs())
             if not rings:
@@ -1362,8 +1396,7 @@ class AvacDockWidget(QDockWidget):
         self.wave_prepare_progress.setValue(5); self.wave_prepare_progress.setFormat("Preparing Wave run: %p%")
         QgsApplication.processEvents()
         try:
-            self._snap_wave_domain_to_cell_size()
-            domain = self._wave_domain()
+            domain = self._validated_wave_domain()
             wave_cell = self.wave_cell_size.value()
             terrain_layer = self.wave_lake_dem.currentLayer()
             validate_wave_source_compatibility(avac_run, terrain_layer.crs().authid(), domain)
@@ -1426,7 +1459,9 @@ class AvacDockWidget(QDockWidget):
             f"{float(wave_timing['t_max']):g} s / {int(wave_timing['nb_simul'])}.\n"
             f"Wet shoreline faces: {boundary.shoreline_faces}; active source cells: {boundary.active_source_cells}; "
             f"active AVAC shoreline samples: {boundary.active_samples}; estimated injected water volume: "
-            f"{boundary.injected_water_volume_m3:.3f} m³; samples outside AVAC coverage zeroed: "
+            f"{boundary.injected_water_volume_m3:.3f} m³; injected water momentum (X, Y): "
+            f"({boundary.injected_water_momentum_x_kg_m_s:.3f}, "
+            f"{boundary.injected_water_momentum_y_kg_m_s:.3f}) kg·m/s; samples outside AVAC coverage zeroed: "
             f"{boundary.outside_avac_coverage_zeroed}."
         )
         if boundary.active_samples == 0:
@@ -1537,7 +1572,12 @@ class AvacDockWidget(QDockWidget):
             if product is None:
                 raise ValueError("Requested Wave time series was not materialized.")
             previous = QgsProject.instance().timeSettings().temporalRange()
-            layer = self._add_raster(root / product["path"], f"WAVE {self.temporal_variable.currentText().split('—')[-1].strip()} (Temporal) — {task.discovery.root.name}", product["range"], product["unit"])
+            layer = self._add_raster(
+                root / product["path"],
+                f"WAVE {self.temporal_variable.currentText().split('—')[-1].strip()} (Temporal) — {task.discovery.root.name}",
+                product["range"], product["unit"],
+                transparent_zero=variable == "surface_displacement",
+            )
             properties = layer.temporalProperties(); properties.setIsActive(True); properties.setMode(QgsRasterLayerTemporalProperties.FixedRangePerBand); properties.setIntervalHandlingMethod(Qgis.TemporalIntervalMatchMethod.MatchUsingWholeRange)
             times = [float(value) for value in manifest["simulation_time_seconds"]]
             ranges = self._temporal_band_ranges(self._temporal_origin(manifest), times)
@@ -1983,7 +2023,7 @@ class AvacDockWidget(QDockWidget):
         # Retained as non-visible controls for complete-schema compatibility
         # and the explicit advanced/test API.  They are not normal user
         # controls; duration/cadence is the normal workflow.
-        for path, value in (("computation.nb_simul", 150), ("animation.n_out", 150)):
+        for path, value in (("computation.nb_simul", 150), ("animation.n_out", 151)):
             control = QSpinBox(); control.setRange(1, 1_000_000); control.setValue(value)
             self._parameter_control(path, control)
             control.valueChanged.connect(self._use_raw_timing)
@@ -1991,8 +2031,8 @@ class AvacDockWidget(QDockWidget):
             control = QDoubleSpinBox(); control.setRange(minimum, maximum); control.setSingleStep(.05); control.setValue(value); form.addRow(label, self._parameter_control(path, control))
         computational_cell = QDoubleSpinBox(); computational_cell.setDecimals(6); computational_cell.setRange(.01, 10000.0); computational_cell.setValue(1.0); computational_cell.setSuffix(" m")
         form.addRow("Computational cell size", self._parameter_control("computation.cell_size", computational_cell))
-        for path, label, choices, value in (("computation.boundary", "Boundary", ["wall", "extrap", "user"], "extrap"), ("computation.limiter", "Limiter", ["none", "minmod", "superbee", "mc", "vanleer"], "vanleer")):
-            control = QComboBox(); control.addItems(choices); control.setCurrentText(value); form.addRow(label, self._parameter_control(path, control))
+        limiter = QComboBox(); limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); limiter.setCurrentText("superbee")
+        form.addRow("Limiter", self._parameter_control("computation.limiter", limiter))
         page.setLayout(form); return page
 
     def _controlled_parameters(self) -> dict[str, object]:
@@ -2013,14 +2053,15 @@ class AvacDockWidget(QDockWidget):
         if self._timing_mode == "interval":
             duration = float(values["computation.t_max"])
             interval = float(self.output_interval_control.value())
-            # Both AVAC products receive the same count for newly configured
-            # runs.  Clawpack places the final output exactly at t_max.
-            count = max(1, int(np.ceil(duration / interval)))
-            values["computation.nb_simul"] = count
-            values["animation.n_out"] = count
+            # ``num_output_times`` counts intervals after t=0, whereas FGout
+            # ``nout`` counts frames including t=0 and t_max.  One extra
+            # FGout frame therefore gives both products the same exact clock.
+            interval_count = max(1, int(np.ceil(duration / interval)))
+            values["computation.nb_simul"] = interval_count
+            values["animation.n_out"] = interval_count + 1
         # Keep output products standardized even when a loaded template or a
         # legacy saved configuration contained different values.
-        values.update(self.FIXED_OUTPUT_PARAMETERS)
+        values.update(self.FIXED_RUN_PARAMETERS)
         return values
 
     def _set_controlled_parameters(self, values: dict[str, object]) -> None:
@@ -2057,12 +2098,11 @@ class AvacDockWidget(QDockWidget):
             self.rheology_zones.clear()
             self.rheology_zones.blockSignals(blocked)
         duration = float(values.get("computation.t_max", self.parameter_controls["computation.t_max"].value()))
-        count = int(values.get("animation.n_out", values.get("computation.nb_simul", 1)))
+        count = int(values.get("computation.nb_simul", max(1, int(values.get("animation.n_out", 2)) - 1)))
         if hasattr(self, "output_interval_control"):
-            # fgout is an endpoint-inclusive frame series when multiple
-            # frames exist (e.g. 0, 7/3, 14/3, 7 for n_out=4).
+            # Solver output count is the number of intervals after t=0.
             blocked = self.output_interval_control.blockSignals(True)
-            self.output_interval_control.setValue(duration / max(1, count - 1))
+            self.output_interval_control.setValue(duration / max(1, count))
             self.output_interval_control.blockSignals(blocked)
         self._timing_mode = "raw"
 
@@ -2403,20 +2443,12 @@ class AvacDockWidget(QDockWidget):
             "lake_polygon": self._saved_layer_reference(self.wave_lake_boundary.currentLayer(), "Lake water-body polygon"),
             "water_level": float(self.wave_water_level.value()),
             "cell_size": float(self.wave_cell_size.value()),
-            "calculation_domain": {
-                "xmin": float(self.wave_domain_xmin.value()),
-                "xmax": float(self.wave_domain_xmax.value()),
-                "ymin": float(self.wave_domain_ymin.value()),
-                "ymax": float(self.wave_domain_ymax.value()),
-                "buffer": float(self.wave_domain_buffer.value()),
-            },
             "model": dict(self._wave_parameters()),
         }
 
     def _apply_wave_setup_state(self, state) -> list[str]:
         """Apply a saved WAVE setup and return non-fatal AVAC-source warnings."""
         state = self._configuration_mapping(state, "wave.setup")
-        domain = self._configuration_mapping(state.get("calculation_domain"), "wave.setup.calculation_domain")
         model = self._configuration_mapping(state.get("model"), "wave.setup.model")
         required_model = ("damping", "land_strickler", "water_strickler", "friction_depth_limit", "dry_limit",
                           "wave_tolerance_flag", "cfl_target", "cfl_max", "limiter")
@@ -2429,11 +2461,6 @@ class AvacDockWidget(QDockWidget):
         self.wave_lake_boundary.setLayer(lake)
         self._set_configuration_spin(self.wave_water_level, state.get("water_level"), "wave.setup.water_level")
         self._set_configuration_spin(self.wave_cell_size, state.get("cell_size"), "wave.setup.cell_size")
-        self._set_configuration_spin(self.wave_domain_xmin, domain.get("xmin"), "wave.setup.calculation_domain.xmin")
-        self._set_configuration_spin(self.wave_domain_xmax, domain.get("xmax"), "wave.setup.calculation_domain.xmax")
-        self._set_configuration_spin(self.wave_domain_ymin, domain.get("ymin"), "wave.setup.calculation_domain.ymin")
-        self._set_configuration_spin(self.wave_domain_ymax, domain.get("ymax"), "wave.setup.calculation_domain.ymax")
-        self._set_configuration_spin(self.wave_domain_buffer, domain.get("buffer"), "wave.setup.calculation_domain.buffer")
         self._set_configuration_spin(self.wave_damping, model["damping"], "wave.setup.model.damping")
         self._set_configuration_spin(self.wave_land_strickler, model["land_strickler"], "wave.setup.model.land_strickler")
         self._set_configuration_spin(self.wave_water_strickler, model["water_strickler"], "wave.setup.model.water_strickler")
@@ -3282,7 +3309,14 @@ class AvacDockWidget(QDockWidget):
         self._cancel_pending_results_action()
 
     @staticmethod
-    def _style_raster(layer: QgsRasterLayer, limits, unit: str, *, event_time: bool = False) -> None:
+    def _style_raster(
+        layer: QgsRasterLayer,
+        limits,
+        unit: str,
+        *,
+        event_time: bool = False,
+        transparent_zero: bool = False,
+    ) -> None:
         """Apply explicit physical renderer limits; never provider byte defaults."""
         minimum, maximum = (float(limits[0]), float(limits[1])) if isinstance(limits, (tuple, list)) else (0.0, float(limits))
         maximum = max(maximum, minimum + 1e-9)
@@ -3299,7 +3333,11 @@ class AvacDockWidget(QDockWidget):
                      QgsColorRampShader.ColorRampItem(maximum, QColor(220, 30, 30), f"{maximum:g} {unit}")]
         elif minimum < 0.0:
             items = [QgsColorRampShader.ColorRampItem(minimum, QColor(65, 105, 225), f"{minimum:g} {unit}"),
-                     QgsColorRampShader.ColorRampItem(0.0, QColor(245, 245, 245), f"0 {unit}"),
+                     QgsColorRampShader.ColorRampItem(
+                         0.0,
+                         QColor(245, 245, 245, 0 if transparent_zero else 255),
+                         f"0 {unit}",
+                     ),
                      QgsColorRampShader.ColorRampItem(maximum, QColor(220, 30, 30), f"{maximum:g} {unit}")]
         else:
             span = maximum - minimum
@@ -3321,11 +3359,24 @@ class AvacDockWidget(QDockWidget):
         layer.setCustomProperty("avac/display_minimum", minimum)
         layer.setCustomProperty("avac/display_maximum", maximum)
 
-    def _add_raster(self, path: Path, name: str, limits, unit: str, *, event_time: bool = False) -> QgsRasterLayer:
+    def _add_raster(
+        self,
+        path: Path,
+        name: str,
+        limits,
+        unit: str,
+        *,
+        event_time: bool = False,
+        transparent_zero: bool = False,
+    ) -> QgsRasterLayer:
         layer = QgsRasterLayer(str(path), name)
         if not layer.isValid():
             raise ValueError(f"QGIS could not load derived raster: {path}")
-        self._style_raster(layer, limits, unit, event_time=event_time)
+        self._style_raster(
+            layer, limits, unit,
+            event_time=event_time,
+            transparent_zero=transparent_zero,
+        )
         QgsProject.instance().addMapLayer(layer)
         return layer
 
@@ -4811,6 +4862,7 @@ class AvacDockWidget(QDockWidget):
         if self._shutting_down:
             return
         self._shutting_down = True
+        self._finish_wave_lake_polygon_capture()
         self._frame_player_timer.stop()
         project = QgsProject.instance()
         for signal in (project.layersAdded, project.layersRemoved):

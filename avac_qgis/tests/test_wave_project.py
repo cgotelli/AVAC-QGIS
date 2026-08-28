@@ -10,6 +10,7 @@ from avac_qgis.core.preprocessing import AvacRaster
 from avac_qgis.core.wave_project import (
     WAVE_MARKER,
     _write_force_dry_mask,
+    avac_computation_domain,
     prepare_wave_lake,
     prepare_wave_scenario,
     shoreline_faces_from_wet_mask,
@@ -30,7 +31,11 @@ def test_wave_preparation_is_isolated_and_reuses_previewed_lake(tmp_path, monkey
         json.dumps({"format": 1, "status": "completed", "created_at": source_origin,
                     "temporal_origin_iso": source_origin}), encoding="utf-8",
     )
-    (avac_root / "AVAC" / "AVAC_configuration.yaml").write_text("computation:\n  t_max: 42\n  nb_simul: 21\n", encoding="utf-8")
+    (avac_root / "AVAC" / "AVAC_configuration.yaml").write_text(
+        "dem_extent:\n  xmin: 0\n  xmax: 2\n  ymin: 0\n  ymax: 2\n"
+        "computation:\n  t_max: 42\n  nb_simul: 21\n",
+        encoding="utf-8",
+    )
     before = (avac_root / ".avac_qgis_run.json").read_bytes()
     raster = AvacRaster(np.array([-.5, .5, 1.5, 2.5]), np.array([-.5, .5, 1.5, 2.5]), np.ones((4, 4)),
                         {"xmin": -1., "xmax": 3., "ymin": -1., "ymax": 3., "ncols": 4, "nrows": 4, "cellsize": 1., "nodata_value": -9999.}, "EPSG:2056", 1)
@@ -86,6 +91,7 @@ def test_wave_preparation_is_isolated_and_reuses_previewed_lake(tmp_path, monkey
     assert faces.shape[1] == 7 and faces.shape[0] == 8
     assert config["computation"]["t_max"] == 42.0
     assert config["computation"]["nb_simul"] == 21
+    assert config["output"]["delta_t"] == 2.0
     assert config["topo_files"]["mask_raster"] == "mask.asc"
     assert config["topo_files"]["shoreline_guard_cells"] == 0
     assert config["topo_files"]["shoreline_guard_rim_cells"] == 0
@@ -159,6 +165,24 @@ def test_wave_source_rejects_a_different_case_crs_and_nonoverlapping_domain(tmp_
         validate_wave_source_compatibility(avac_root, "EPSG:2154", domain)
 
 
+def test_wave_domain_is_exactly_the_completed_avac_domain(tmp_path):
+    avac_root = tmp_path / "run"
+    output = avac_root / "AVAC" / "_output"
+    output.mkdir(parents=True)
+    (output / "fort.q0000").write_text("fixture", encoding="utf-8")
+    (avac_root / ".avac_qgis_run.json").write_text(
+        json.dumps({"format": 1, "status": "completed"}), encoding="utf-8",
+    )
+    (avac_root / "AVAC" / "AVAC_configuration.yaml").write_text(
+        "dem_extent:\n  xmin: 10.5\n  xmax: 30.5\n  ymin: 40\n  ymax: 70\n",
+        encoding="utf-8",
+    )
+
+    assert avac_computation_domain(avac_root) == {
+        "xmin": 10.5, "xmax": 30.5, "ymin": 40., "ymax": 70.,
+    }
+
+
 def test_wave_preparation_accepts_a_coarser_whole_number_grid(tmp_path):
     workspace = tmp_path / "workspace"
     avac_root = workspace / "runs" / "completed"; output = avac_root / "AVAC" / "_output"
@@ -171,6 +195,9 @@ def test_wave_preparation_accepts_a_coarser_whole_number_grid(tmp_path):
     ring = [(np.array([[0., 0.], [4., 0.], [4., 4.], [0., 4.], [0., 0.]]), [])]
     root = prepare_wave_scenario(workspace, avac_root, raster, ring, water_level=30., cell_size=2.,
                                  domain={"xmin": 0., "xmax": 4., "ymin": 0., "ymax": 4.})
+    configuration = yaml.safe_load((root / "impulse_configuration.yaml").read_text(encoding="utf-8"))
+    assert configuration["computation"]["limiter"] == "vanleer"
+    assert configuration["computation"]["boundary"] == "extrap"
     header = (root / "Topo" / "topography_lake.asc").read_text(encoding="utf-8").splitlines()[:6]
     assert int(header[0].split()[1]) == 4 and int(header[1].split()[1]) == 4
     assert float(header[2].split()[1]) == -2.0 and float(header[3].split()[1]) == -2.0

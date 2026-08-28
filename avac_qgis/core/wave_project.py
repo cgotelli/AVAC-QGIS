@@ -115,6 +115,28 @@ def validate_wave_source_compatibility(
     return metadata
 
 
+def avac_computation_domain(avac_root: str | Path) -> dict[str, float]:
+    """Return the exact rectangular domain of a completed AVAC run.
+
+    WAVE no longer owns a second user-defined calculation rectangle.  Both
+    solvers use these AVAC bounds, while their cell sizes may still differ.
+    """
+    avac_root = Path(avac_root).expanduser().resolve()
+    _validate_source(avac_root)
+    path = avac_root / "AVAC" / "AVAC_configuration.yaml"
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        extent = payload["dem_extent"]
+        result = {key: float(extent[key]) for key in ("xmin", "xmax", "ymin", "ymax")}
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Completed AVAC run has no valid computation domain: {path}") from exc
+    if not all(np.isfinite(value) for value in result.values()):
+        raise ValueError("Completed AVAC computation-domain coordinates must be finite.")
+    if result["xmax"] <= result["xmin"] or result["ymax"] <= result["ymin"]:
+        raise ValueError("Completed AVAC computation domain has invalid bounds.")
+    return result
+
+
 def _source_timing(avac_root: Path) -> tuple[float, int]:
     """Read the completed AVAC duration and output count for the Wave run."""
     path = avac_root / "AVAC" / "AVAC_configuration.yaml"
@@ -228,7 +250,7 @@ def _wave_config(domain: dict[str, float], cell_size: float, water_level: float,
                         "mode": "internal_shoreline", "nb_grid": max(nx, ny), "nb_simul": int(output_count), "refinement": 1,
                         "t_0": 0.0, "t_max": float(duration)},
         "gauges": {"gauge_recording": False},
-        "output": {"delta_t": 1.0, "output_directory": "_output", "output_format": "binary", "verbosity": 0},
+        "output": {"delta_t": float(duration) / int(output_count), "output_directory": "_output", "output_format": "binary", "verbosity": 0},
         "rheology": {"Strickler": [parameters["land_strickler"], parameters["water_strickler"]], "friction": True,
                       "friction_break_elevation": float(water_level), "friction_depth_limit": parameters["friction_depth_limit"],
                       "gravity": 9.81, "rho": 1000.0, "wave_tolerance_flag": parameters["wave_tolerance_flag"]},
@@ -569,7 +591,7 @@ def prepare_wave_scenario(workspace: str | Path, avac_root: str | Path, lake_ras
     if not np.isfinite(lake_raster.z).any():
         raise ValueError("Lake/bathymetry DEM has no finite elevation cells.")
     wave_domain = _validated_domain(lake_raster, domain, float(cell_size))
-    defaults = {"damping": .3, "cfl_target": .5, "cfl_max": 1.0, "limiter": "mc", "dry_limit": .0001,
+    defaults = {"damping": .3, "cfl_target": .5, "cfl_max": 1.0, "limiter": "vanleer", "dry_limit": .0001,
                 "land_strickler": 10.0, "water_strickler": 30.0, "friction_depth_limit": 20.0, "wave_tolerance_flag": .2}
     settings = {**defaults, **(parameters or {})}
     if not 0.0 <= float(settings["damping"]) <= .4:

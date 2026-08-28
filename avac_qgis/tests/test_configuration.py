@@ -18,7 +18,7 @@ TEMPLATE = Path(__file__).resolve().parents[1] / "resources" / "AVAC_configurati
 def main() -> None:
     template = load_complete_configuration(TEMPLATE)
     values = controlled_values(template)
-    assert values["computation.t_max"] == 150 and values["computation.nb_simul"] == 150 and values["animation.n_out"] == 150
+    assert values["computation.t_max"] == 150 and values["computation.nb_simul"] == 150 and values["animation.n_out"] == 151
     assert values["rheology.z_breaks"] == []
     assert not validate_grid_contract(template, 1.0)
     incompatible_grid = apply_controlled_values(template, {"computation.cell_size": 1.5})

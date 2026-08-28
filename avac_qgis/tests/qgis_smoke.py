@@ -45,6 +45,13 @@ def verify() -> None:
         dock = AvacDockWidget()
         assert Path(dock.configuration_template.text()) == Path(default_template_path())
 
+        # A historical ISeeSnow validation run also wrote its generated
+        # driver template to QGIS settings.  That file is not a supported
+        # user default and is deliberately not published with the plugin.
+        settings.setValue(template_key, "/private/tmp/Validation-ISeeSnow/IdealizedTopo/avac_iseesnow_template.yaml")
+        iseessnow_dock = AvacDockWidget()
+        assert Path(iseessnow_dock.configuration_template.text()) == Path(default_template_path())
+
         # An unrelated user file with the same basename must remain explicit,
         # rather than being mistaken for a prior plugin installation.
         custom_template = "/private/tmp/custom-case/AVAC_configuration100.yaml"
@@ -89,6 +96,7 @@ def verify() -> None:
     assert isinstance(dock.avac_frame_slider, QSlider)
     assert isinstance(dock.wave_frame_slider, QSlider)
     assert dock.avac_play_button.text() == "Play"
+    assert dock.stop_button.text() == "Stop"
     assert dock.wave_play_button.text() == "Play"
     assert dock.help_button.toolTip() == "Open the AVAC4QGIS User Interface Guide"
     assert dock.wave_plot_volume_button.text() == "Plot Lake Volume History"
@@ -102,11 +110,13 @@ def verify() -> None:
     assert dock.wave_progress.format() == "No prepared Wave simulation"
     assert dock.wave_stop_button.text() == "Stop"
     assert not dock.wave_stop_button.isEnabled()
-    assert dock.wave_domain_from_lake_button.text() == "Create from Lake Polygon"
-    assert not hasattr(dock, "wave_domain_from_corners_button")
-    assert not hasattr(dock, "wave_domain_corner_layer")
+    assert dock.wave_create_lake_polygon_button.text() == "Create Lake Polygon from Map Point"
+    assert not hasattr(dock, "wave_domain_xmin")
+    assert not hasattr(dock, "wave_domain_xmax")
+    assert not hasattr(dock, "wave_domain_ymin")
+    assert not hasattr(dock, "wave_domain_ymax")
+    assert not hasattr(dock, "wave_domain_buffer")
     assert dock.wave_preview_water_button.text() == "Preview Water Level"
-    assert dock.wave_preview_domain_button.text() == "Preview Calculation Domain"
     # A Wave water-level preview reads only the lake envelope, rather than a
     # potentially huge terrain/bathymetry raster.
     small = QgsRasterLayer(str(Path(__file__).resolve().parents[2] / "avac-main" / "src" / "Topo" / "topography.asc"), "preview terrain")
@@ -134,9 +144,8 @@ def verify() -> None:
         assert np.isfinite(window.z[[0, -1], :]).any() and np.isfinite(window.z[:, [0, -1]]).any()
         assert elapsed < 5.0, f"solver-grid terrain window took {elapsed:.3f} s"
         print(f"Large Wave terrain window: {window.z.shape} in {elapsed:.3f} s")
-    assert dock.wave_domain_buffer.value() == 20.0
     assert dock.wave_damping.value() == 0.3
-    assert dock.wave_limiter.currentText() == "mc"
+    assert dock.wave_limiter.currentText() == "vanleer"
     assert dock.wave_load_map_button.text() == "Load Map"
     assert dock.wave_load_temporal_button.text() == "Load Time Series"
     assert dock.wave_check_button.text() == "Check Environment"
@@ -166,6 +175,23 @@ def verify() -> None:
         # filtering.  Undefined UI-only playback symbols are otherwise not
         # caught by a Python compilation test.
         from osgeo import gdal
+        # Lake-polygon delineation is available before AVAC preparation.  It
+        # reads only a DEM, water level, and map point; no run selector or
+        # completed-run metadata participates in this path.
+        lake_dem_path = Path(temporary) / "lake_dem.tif"
+        lake_dataset = gdal.GetDriverByName("GTiff").Create(str(lake_dem_path), 9, 9, 1, gdal.GDT_Float32)
+        lake_dataset.SetGeoTransform((0., 1., 0., 9., 0., -1.))
+        lake_dataset.SetProjection(QgsCoordinateReferenceSystem("EPSG:2056").toWkt())
+        lake_values = np.full((9, 9), 10., dtype=np.float32)
+        lake_values[3:6, 3:6] = 4.
+        lake_dataset.GetRasterBand(1).WriteArray(lake_values)
+        lake_dataset = None
+        lake_dem_layer = QgsRasterLayer(str(lake_dem_path), "independent lake DEM")
+        assert lake_dem_layer.isValid()
+        dock.wave_water_level.setValue(5.)
+        lake_raster, lake_mask = dock._lake_raster_window_from_point(lake_dem_layer, 4.5, 4.5)
+        assert lake_raster.z.shape == (9, 9) and np.count_nonzero(lake_mask) == 9
+
         temporal_path = Path(temporary) / "temporal.tif"
         dataset = gdal.GetDriverByName("GTiff").Create(str(temporal_path), 2, 2, 2, gdal.GDT_Float32)
         dataset.SetGeoTransform((0., 1., 0., 2., 0., -1.))
@@ -180,6 +206,12 @@ def verify() -> None:
         assert renderer.classificationMin() == -2. and renderer.classificationMax() == 2.
         legend_labels = [label for label, _color in renderer.legendSymbologyItems()]
         assert legend_labels and all(any(character.isdigit() for character in label) for label in legend_labels)
+
+        displacement_layer = QgsRasterLayer(str(temporal_path), "surface displacement transparency")
+        dock._style_raster(displacement_layer, (-2., 2.), "m", transparent_zero=True)
+        displacement_items = displacement_layer.renderer().shader().rasterShaderFunction().colorRampItemList()
+        zero_items = [item for item in displacement_items if item.value == 0.]
+        assert len(zero_items) == 1 and zero_items[0].color.alpha() == 0
         temporal_layer.setCustomProperty("avac/temporal_variable", "depth")
         temporal_layer.setCustomProperty("avac/simulation_times_seconds", [0., 10.])
         temporal_layer.setCustomProperty("avac/temporal_origin_iso", "2026-01-01T00:00:00Z")
@@ -198,7 +230,11 @@ def verify() -> None:
             "format": 1, "status": "completed", "avac_directory": "AVAC",
             "updated_at": "2026-01-01T00:00:00+00:00",
         }), encoding="utf-8")
-        (avac_run / "AVAC" / "AVAC_configuration.yaml").write_text("computation:\n  t_max: 42\n  nb_simul: 21\n", encoding="utf-8")
+        (avac_run / "AVAC" / "AVAC_configuration.yaml").write_text(
+            "dem_extent:\n  xmin: 0\n  xmax: 2\n  ymin: 0\n  ymax: 2\n"
+            "computation:\n  t_max: 42\n  nb_simul: 21\n",
+            encoding="utf-8",
+        )
         raster = AvacRaster(np.array([-.5, .5, 1.5, 2.5]), np.array([-.5, .5, 1.5, 2.5]), np.ones((4, 4)),
                             {"xmin": -1., "xmax": 3., "ymin": -1., "ymax": 3., "ncols": 4, "nrows": 4,
                              "cellsize": 1., "nodata_value": -9999.}, "EPSG:2056", 1)
@@ -214,6 +250,7 @@ def verify() -> None:
         assert float(mask_header[2].split()[0]) == -0.5 and float(mask_header[3].split()[0]) == 0.5
         wave_cfg = yaml.safe_load((wave_root / "impulse_configuration.yaml").read_text(encoding="utf-8"))
         assert wave_cfg["computation"]["t_max"] == 42.0 and wave_cfg["computation"]["nb_simul"] == 21
+        assert wave_cfg["output"]["delta_t"] == 2.0
         assert wave_cfg["computation"]["boundary"] == "extrap"
         assert wave_cfg["computation"]["mode"] == "internal_shoreline"
         assert (wave_root / "CL" / "shoreline_faces.txt").is_file()
@@ -375,11 +412,6 @@ def verify() -> None:
         dock.wave_lake_boundary.setLayer(lake_layer)
         dock.wave_water_level.setValue(1.5)
         dock.wave_cell_size.setValue(1.)
-        dock.wave_domain_xmin.setValue(0.)
-        dock.wave_domain_xmax.setValue(2.)
-        dock.wave_domain_ymin.setValue(0.)
-        dock.wave_domain_ymax.setValue(2.)
-        dock.wave_domain_buffer.setValue(7.)
         dock.wave_damping.setValue(.2)
         # The source-run selector normally lists completed workspace runs.
         # The small fixture intentionally has no AVAC solver raster output,
@@ -396,6 +428,7 @@ def verify() -> None:
         wave_payload = yaml.safe_load(wave_setup_path.read_text(encoding="utf-8"))
         assert wave_payload["format"] == dock.WAVE_SETUP_CONFIGURATION_FORMAT
         assert wave_payload["setup"]["model"]["damping"] == .2
+        assert "calculation_domain" not in wave_payload["setup"]
         assert "outflow_edge" not in wave_payload["setup"]
         dock.wave_damping.setValue(.4)
         with patch.object(QFileDialog, "getOpenFileName", return_value=(str(wave_setup_path), "YAML (*.yaml)")):
@@ -478,10 +511,16 @@ def verify() -> None:
     assert dock.parameter_controls["rheology.model"].findText("cohesive_Voellmy") >= 0
     assert dock.parameter_controls["rheology.C"] is not None
     assert dock.results_toolbox.count() == 5
-    assert dock.wave_parameter_toolbox.count() == 4
+    assert dock.wave_parameter_toolbox.count() == 3
     assert [dock.parameter_toolbox.itemText(index) for index in range(dock.parameter_toolbox.count())] == [
         "AVAC Inputs", "Release / initial conditions", "Rheology", "Simulation / numerical",
     ]
+    assert "computation.boundary" not in dock.parameter_controls
+    assert dock.parameter_controls["computation.limiter"].currentText() == "superbee"
+    assert dock.output_interval_control.value() == 1.0
+    assert dock._controlled_parameters()["computation.nb_simul"] == 150
+    assert dock._controlled_parameters()["animation.n_out"] == 151
+    assert dock._controlled_parameters()["computation.boundary"] == "extrap"
     assert dock._controlled_parameters()["output.delta_t"] == 1.0
     assert dock._controlled_parameters()["output.verbosity"] == 0
     assert dock.results_toolbox.widget(0).minimumHeight() >= 225

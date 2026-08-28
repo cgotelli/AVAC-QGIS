@@ -2,7 +2,7 @@ animation:
   animation_directory: AVAC-QGIS
   label_step: 500
   making_html: false
-  n_out: 150
+  n_out: 151
   variable: depth
 computation:
   boundary: extrap
@@ -12,7 +12,7 @@ computation:
   dry_limit: 0.0001
   force_stop: false
   initial_mass: true
-  limiter: vanleer
+  limiter: superbee
   mass_frac_stop: 0.01
   mass_threshold_velocity: 0.01
   max_iter: 100000

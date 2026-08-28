@@ -26,7 +26,7 @@ def results_ready() -> None:
     output = ROOT / "AVAC" / "_output"
     if manifest is None or not manifest.get("static"):
         fail("static result manifest was not loaded"); return
-    if len(list(output.glob("fort.t*"))) != 121 or len(list(output.glob("fgout0001.t*"))) != 120:
+    if len(list(output.glob("fort.t*"))) != 121 or len(list(output.glob("fgout0001.t*"))) != 121:
         fail("full-duration frame counts are incomplete"); return
     print(
         "QGIS_300YEAR=True "
@@ -41,7 +41,7 @@ def complete(exit_code: int, normal: bool) -> None:
     if exit_code != 0 or not normal:
         fail(f"runner exit={exit_code} normal={normal} log={dock.log.toPlainText()[-1500:]}"); return
     config = (ROOT / "AVAC" / "AVAC_configuration.yaml").read_text(encoding="utf-8")
-    for text in ("t_max: 120", "nb_simul: 120", "n_out: 120", "d0: 1.75", "mu: 0.225", "xi: 1200"):
+    for text in ("t_max: 120", "nb_simul: 120", "n_out: 121", "d0: 1.75", "mu: 0.225", "xi: 1200"):
         if text not in config:
             fail(f"missing 300-year configuration value {text}"); return
     dock.results_run_root.setText(str(ROOT))
