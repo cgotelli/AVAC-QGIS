@@ -12,8 +12,6 @@
 \usepackage{longtable}
 \usepackage{enumitem}
 \usepackage{xcolor}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric}
 \usepackage{fancyhdr}
 \usepackage{hyperref}
 
@@ -26,7 +24,7 @@
   urlcolor=avacblue,
   pdftitle={AVAC4QGIS User Interface Guide},
   pdfauthor={LHE--EPFL},
-  pdfsubject={AVAC4QGIS 0.5.10 user interface reference}
+  pdfsubject={AVAC4QGIS 0.5.11 user interface reference}
 }
 \setlist[itemize]{leftmargin=*,itemsep=3pt,topsep=4pt}
 \setlist[enumerate]{leftmargin=*,itemsep=5pt,topsep=4pt}
@@ -37,7 +35,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small AVAC4QGIS User Interface Guide}
-\fancyhead[R]{\small Version 0.5.10}
+\fancyhead[R]{\small Version 0.5.11}
 \fancyfoot[C]{\thepage}
 
 \newcommand{\control}[1]{\textbf{#1}}
@@ -56,7 +54,7 @@
 }
 
 \title{\textbf{AVAC4QGIS User Interface Guide}\\[6pt]
-       \large Interface reference for AVAC4QGIS 0.5.10}
+       \large Interface reference for AVAC4QGIS 0.5.11}
 \author{LHE--EPFL, Switzerland}
 \date{August 28, 2026}
 
@@ -224,37 +222,6 @@ snow-surface product equals the DEM.
 The initial-depth preview should be inspected when corrections are active.
 The code replaces nonfinite corrected values with zero, but does not silently
 substitute a different scientific correction model.
-
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[
-  node distance=11mm and 12mm,
-  block/.style={draw=avacblue,rounded corners,fill=avaclight,align=center,
-                minimum width=34mm,minimum height=12mm,font=\small},
-  result/.style={draw=avacgray,rounded corners,align=center,
-                 minimum width=38mm,minimum height=12mm,font=\small},
-  arrow/.style={-{Latex[length=2.5mm]},thick,avacblue}
-]
-  \node[block] (dem) {Terrain DEM\\$z(x,y)$};
-  \node[block,right=of dem] (mask) {Release polygon\\indicator $I_R(x,y)$};
-  \node[block,below=of dem] (base) {Base depth $d_0$\\and elevation correction};
-  \node[block,below=of mask] (slope) {DEM slope\\and optional slope factor};
-  \node[result,below=15mm of $(base)!0.5!(slope)$] (depth)
-       {Mobile initial depth\\$h_0=I_R\,d_{corrected}$};
-  \node[result,below=of depth] (surface)
-       {Preview Initial Snow Surface\\$\eta_0=z+h_0$};
-  \draw[arrow] (dem) -- (base);
-  \draw[arrow] (dem) -- (slope);
-  \draw[arrow] (mask) -- (depth);
-  \draw[arrow] (base) -- (depth);
-  \draw[arrow] (slope) -- (depth);
-  \draw[arrow] (dem) |- (surface);
-  \draw[arrow] (depth) -- (surface);
-\end{tikzpicture}
-\caption{How the visible Release / initial conditions controls produce the
-mobile initial depth and its display surface. Outside the release polygon,
-$I_R=0$ and therefore $h_0=0$.}
-\end{figure}
 
 \uiscreenshot{ui_avac_parameters_release.png}{AVAC Parameters with Release / initial conditions open.}
 
