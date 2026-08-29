@@ -7,6 +7,17 @@ without requiring users to configure Clawpack or a compiler.
 
 The current release is **0.5.12** and targets **QGIS 3.44 LTS**.
 
+## Interface overview
+
+AVAC4QGIS runs as a dock inside the normal QGIS workspace, so simulation
+inputs, derived layers, and results remain visible alongside the Browser and
+Layers panels. The map below shows a hillshaded terrain with avalanche-release
+polygons in orange and a derived lake polygon in translucent blue. The plugin
+dock on the right groups the workflow into AVAC Parameters, AVAC Run, optional
+WAVE pages, and a shared Results page.
+
+![AVAC4QGIS docked in QGIS with avalanche releases and a derived lake polygon](docs/tutorial/images/QGIS.png)
+
 ## Installation
 
 1. Download the installable package from the
@@ -36,18 +47,17 @@ The [AVAC4QGIS Tutorial](docs/tutorial/AVAC4QGIS_TUTORIAL.pdf) is a
 figure-rich, step-by-step example from avalanche setup through optional
 avalanche--lake coupling and result inspection.
 
-The animation below shows a small simulated avalanche entering the water body
-and generating an impulse wave. It combines AVAC snow depth outside the lake
-with WAVE water-surface displacement, as recommended in the tutorial.
-
-![AVAC4QGIS avalanche-generated impulse-wave example](docs/tutorial/images/wave_surface_displacement_5fps.gif)
-
 ## Basic workflow
 
-Choose an **AVAC Working Directory**, select the terrain DEM and release
-polygon, configure the physical parameters, and prepare and run AVAC. The
-working directory contains copied inputs, isolated runs, results, and exports;
-the managed runtime remains separate.
+An AVAC simulation needs two spatial inputs: a terrain DEM and one or more
+avalanche-release polygons. Choose an **AVAC Working Directory**, select those
+layers, configure the physical parameters, and prepare and run AVAC. The
+working directory contains copied inputs, isolated runs, results, previews,
+and exports; the managed runtime remains separate.
+
+The repository's [`tutorial`](tutorial/) directory provides a 1 m terrain DEM
+and release polygons for following the published tutorial. Its georeferenced
+satellite image is an optional visual background and is not a solver input.
 
 The optional **Enable Lake-Wave Extension** switch adds the WAVE parameter and
 run pages. A WAVE scenario reads a completed AVAC result without modifying it
@@ -57,6 +67,15 @@ QGIS or derived directly from the terrain DEM by entering a water-surface
 elevation and clicking a point inside the connected basin. AVAC and WAVE maps,
 profiles, gauges, and time series are handled together in the final
 **Results** page.
+
+### Example coupled result
+
+The animation below shows a small simulated avalanche entering a water body
+and generating an impulse wave. It combines AVAC snow depth outside the lake
+with WAVE water-surface displacement, which keeps the avalanche and water
+contributions physically distinct in the final visualization.
+
+![AVAC4QGIS avalanche-generated impulse-wave example](docs/tutorial/images/wave_surface_displacement_5fps.gif)
 
 ## Validation notebooks
 
