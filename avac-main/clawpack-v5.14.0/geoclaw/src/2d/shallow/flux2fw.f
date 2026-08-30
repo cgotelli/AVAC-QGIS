@@ -105,9 +105,6 @@ c
       dimension  fwave(meqn, mwaves, 1-mbc:maxm+mbc)
       dimension  amdq(meqn, 1-mbc:maxm+mbc)
       dimension  apdq(meqn, 1-mbc:maxm+mbc)
-#ifdef AVAC_PATCH_EDGE_LIMITER
-      dimension  fwave_edge(meqn,mwaves,2)
-#endif
 c
       logical limit, relimit
 
@@ -184,77 +181,7 @@ c     # modify F fluxes for second order q_{xx} correction terms:
 c     -----------------------------------------------------------
 c
 c     # apply limiter to fwaves:
-#ifdef AVAC_PATCH_EDGE_LIMITER
-c     Preserve the two physical patch-edge waves before the standard limiter.
-c     AVAC's four-cell static-yield test cannot be evaluated at the outer
-c     ghost interfaces used by that limiter, so those neighboring f-waves are
-c     not patch invariant with two ghost cells.
-      do mw=1,mwaves
-         do m=1,meqn
-            fwave_edge(m,mw,1) = fwave(m,mw,1)
-            fwave_edge(m,mw,2) = fwave(m,mw,mx+1)
-         enddo
-      enddo
-#endif
       if (limit) call limiter(maxm,meqn,mwaves,mbc,mx,fwave,s,mthlim)
-#ifdef AVAC_PATCH_EDGE_LIMITER
-c     Replace only the two patch-edge limiter values with a two-ghost,
-c     patch-invariant slope projection.  The central state jump and its
-c     upwind neighboring jump are available on both patches sharing the
-c     interface.  Interior interfaces keep Clawpack's wave-family limiter.
-      if (limit) then
-         do ked=1,2
-            if (ked.eq.1) then
-               ie=1
-            else
-               ie=mx+1
-            endif
-            do mw=1,mwaves
-               if (mthlim(mw).eq.0) then
-                  wlimitr=1.d0
-               else
-                  wnorm2_edge=0.d0
-                  dot_edge=0.d0
-                  do m=1,meqn
-                     dq_edge=q1d(m,ie)-q1d(m,ie-1)
-                     if (s(mw,ie).gt.0.d0) then
-                        dq_upwind=q1d(m,ie-1)-q1d(m,ie-2)
-                     else
-                        dq_upwind=q1d(m,ie+1)-q1d(m,ie)
-                     endif
-                     wnorm2_edge=wnorm2_edge+dq_edge**2
-                     dot_edge=dot_edge+dq_edge*dq_upwind
-                  enddo
-                  if (wnorm2_edge.gt.0.d0) then
-                     r_edge=dot_edge/wnorm2_edge
-                     if (mthlim(mw).eq.1) then
-                        wlimitr=dmax1(0.d0,dmin1(1.d0,r_edge))
-                     elseif (mthlim(mw).eq.2) then
-                        wlimitr=dmax1(0.d0,dmin1(1.d0,2.d0*r_edge),
-     &                                      dmin1(2.d0,r_edge))
-                     elseif (mthlim(mw).eq.3) then
-                        wlimitr=(r_edge+dabs(r_edge)) /
-     &                           (1.d0+dabs(r_edge))
-                     elseif (mthlim(mw).eq.4) then
-                        c_edge=0.5d0*(1.d0+r_edge)
-                        wlimitr=dmax1(0.d0,dmin1(c_edge,2.d0,
-     &                                                   2.d0*r_edge))
-                     elseif (mthlim(mw).eq.5) then
-                        wlimitr=r_edge
-                     else
-                        stop 'Invalid limiter method'
-                     endif
-                  else
-                     wlimitr=0.d0
-                  endif
-               endif
-               do m=1,meqn
-                  fwave(m,mw,ie)=wlimitr*fwave_edge(m,mw,ked)
-               enddo
-            enddo
-         enddo
-      endif
-#endif
 c
       do 120 i = 1, mx+1
 c

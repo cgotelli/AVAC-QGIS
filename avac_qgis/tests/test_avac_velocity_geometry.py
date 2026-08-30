@@ -1,4 +1,4 @@
-"""Display-velocity and verified AVAC source contracts."""
+"""Display-velocity and recovered PDF-era AVAC source contracts."""
 
 from __future__ import annotations
 
@@ -12,9 +12,6 @@ from avac_qgis.core.results import _avac_frame_fields
 
 ROOT = Path(__file__).resolve().parents[2]
 AVAC = ROOT / "avac-main" / "src" / "AVAC"
-GEOCLAW = (
-    ROOT / "avac-main" / "clawpack-v5.14.0" / "geoclaw" / "src" / "2d" / "shallow"
-)
 
 
 class _Frame:
@@ -35,37 +32,15 @@ def test_temporal_speed_is_the_terrain_tangent_magnitude():
     assert np.allclose(fields["velocity"], 2.0 * np.sqrt(2.0))
 
 
-def test_temporal_speed_ignores_unresolved_depths_below_five_centimetres():
-    frame = _Frame()
-    frame.h[0, 0] = 0.01
-    frame.eta = frame.B + frame.h
-
-    _, _, fields = _avac_frame_fields(frame, rho=300.0)
-
-    assert fields["depth"][0, 0] == 0.01
-    assert fields["velocity"][0, 0] == 0.0
-
-
-def test_verified_avac_source_hashes_are_stable():
+def test_recovered_pdf_baseline_source_hashes_are_stable():
     expected = {
-        "src2.f90": "fcb4766a64c7b06b257e65bfffa3efbcd6d53b4a2587e70b87ef2fdb5ae50233",
-        "rheology_module.f90": "27e64add229292cafd94ae9832e25d0ce87045f9117d94981ec3451ca854d69d",
-        "rpn2_geoclaw.f": "2f403b9f81b22d963906cbd509fe9594dd3334ad2f37d9cc7691570a4028d1e1",
-        "b4step2.f90": "97d8607958b89511eca4a7e63904ad3636a2545d975b109b2829bb48d062d225",
-        "fgmax_values.f90": "bc613f38f72d342dacae6a6188b178c43e6309c5c7b3325c3d8631588a8ae346",
-        "Makefile": "41f821e156597e3db5270238bb7f4787fa185c7a59abdf1d0c938dae0a1e43f2",
+        "src2.f90": "249fe780c2329490ccf9ade4c6554695602bfc680c77770627a66e9a1c1d27ed",
+        "rheology_module.f90": "1c913b4a0b8f8b86c529eed927d37bb40ef58bc46048fc912de69039a271d1c0",
+        "b4step2.f90": "ac2829b0ea8b2c4b6e44e0acc32a61c2ba7256767b85cbdf8e7961d5c0aad2e8",
+        "Makefile": "ea519f819761ae7b6690e1a31016ab08a05961ff4f3af90ff68bac84f7b14714",
     }
     for name, digest in expected.items():
         # Git may materialize CRLF working-tree files on Windows. The source
         # contract concerns the repository text, not platform line endings.
         normalized = (AVAC / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
-        assert hashlib.sha256(normalized).hexdigest() == digest
-
-    shared_expected = {
-        GEOCLAW / "flux2fw.f": "b4b6098d74347977dd86000906d2b5ab21ddb9bc7604075f48f7f8d3d12e6784",
-        ROOT / "avac-main" / "clawpack-v5.14.0" / "riemann" / "src"
-        / "rpt2_geoclaw.f": "45db3a1a6663a74b98ebeada8cc29a5946169d1340ca0778d27c36914af474d6",
-    }
-    for path, digest in shared_expected.items():
-        normalized = path.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == digest

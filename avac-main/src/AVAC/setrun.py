@@ -234,9 +234,7 @@ def setrun(claw_pkg='geoclaw'):
     # --------------------
     # Boundary conditions:
     # --------------------
-    # Two ghost cells cover AVAC's second-order normal and transverse
-    # stencils.  Keep this numerical method identical for every rheology and
-    # for both verification and operational runs.
+    # Number of ghost cells (usually 2)
     clawdata.num_ghost = 2
 
     # Choice of BCs at xlower and xupper:
@@ -506,9 +504,6 @@ def setrun(claw_pkg='geoclaw'):
     probdata.add_param('rho',    Rheol["rho"],           'snow density (kg/m3)')
     #probdata.add_param('C',      Rheol.get("C", 0.0),   'cohesion (Pa)')
     probdata.add_param('u_cr',   Rheol.get("u_cr", 0.0),'stopping velocity threshold (m/s)')
-    probdata.add_param('velocity_depth_threshold',
-                       Param.get("velocity_depth_threshold", 0.05),
-                       'minimum depth for a reported velocity (m)')
     probdata.add_param('n_zones', n_zones,               'number of altitude rheology zones')
     for k, z in enumerate(z_breaks):
         probdata.add_param(f'z_break_{k}', float(z),
@@ -587,9 +582,9 @@ def setgeo(rundata):
     # For granular flows, flag ONLY moving cells (speed > threshold).
     # wave_tolerance is set very large to disable the wave-height criterion:
     # with topography of O(metres), every wet cell would otherwise be flagged,
-    # including the stopped deposit.  Refining the deposit halves the map-plane
-    # Coulomb threshold (thresh = mu*dx) without halving the inter-cell height
-    # differences, causing the stopping criterion to fail on the fine grid.
+    # including the stopped deposit.  Refining the deposit halves the Coulomb
+    # threshold (thresh = mu*cos(theta)*dx) without halving the inter-cell
+    # height differences, causing the stopping criterion to fail on the fine grid.
     refinement_data                = rundata.refinement_data
     refinement_data.wave_tolerance = 1.e6   # disabled: use speed criterion only
     # One entry is required for every transition from level L to L+1.

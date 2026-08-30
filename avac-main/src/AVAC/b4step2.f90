@@ -33,9 +33,7 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
     use storm_module, only: set_storm_fields
 
     ! Store current grid spacings for the D-Claw static yield check in rpn2
-    use rheology_module, only: dx_avac, dy_avac, dt_avac, imodel_rh, &
-                               velocity_depth_threshold_rh, &
-                               regularized_velocity
+    use rheology_module, only: dx_avac, dy_avac, dt_avac
 
     implicit none
 
@@ -49,15 +47,12 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
 
     ! Local variables
     integer :: i, j
-    real(kind=8) :: h, s, sratio, u, v, h_eps
+    real(kind=8) :: h, s, sratio
 
     ! Store grid spacings for use in rpn2_geoclaw.f (D-Claw yield check)
     dx_avac = dx
     dy_avac = dy
     dt_avac = dt
-    h_eps = max(dry_tolerance, &
-                min(2.d0 * velocity_depth_threshold_rh, &
-                    0.02d0 * min(dx, dy)))
 
     ! Check for NaNs in the solution
     call check4nans(meqn, mbc, mx, my, q, t, 1)
@@ -78,12 +73,6 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
     do j = 1-mbc, my+mbc
         do i = 1-mbc, mx+mbc
             if (q(1,i,j) > 0.d0) then
-                if (imodel_rh >= 1 .and. q(1,i,j) > dry_tolerance) then
-                    call regularized_velocity(q(1,i,j), q(2,i,j), &
-                                               q(3,i,j), h_eps, u, v)
-                    q(2,i,j) = q(1,i,j) * u
-                    q(3,i,j) = q(1,i,j) * v
-                end if
                 s = sqrt((q(2,i,j)**2 + q(3,i,j)**2)) / q(1,i,j)
                 if (s > speed_limit) then
                     sratio = speed_limit / s
