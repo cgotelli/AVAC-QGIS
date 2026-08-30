@@ -70,8 +70,14 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
     integer :: icom,jcom
 
     ! Parameters
-    ! Relimit fluxes to maintain positivity
+    ! AVAC enables GeoClaw's conservative positivity relimiter at compile
+    ! time.  WAVE retains the upstream GeoClaw setting unless its build also
+    ! defines AVAC_POSITIVITY_RELIMITER.
+#ifdef AVAC_POSITIVITY_RELIMITER
+    logical, parameter :: relimit = .true.
+#else
     logical, parameter :: relimit = .false.
+#endif
 
     cflgrid = 0.d0
     dtdx = dt/dx

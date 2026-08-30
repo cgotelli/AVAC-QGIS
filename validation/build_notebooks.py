@@ -81,20 +81,32 @@ def avac_notebooks() -> None:
             "triangular wedge $h=H_0(1-x/x_b)$ on $x_b\\leq x\\leq0$, with $H_0=1$ m and "
             "$x_b=-H_0/\\tan(10°)$. The upstream boundary is a wall, the downstream boundary "
             "is extrapolating, and the transverse boundaries are periodic. AVAC is configured "
-            "in its frictionless water mode; no avalanche rheology contributes to this run.\n"
+            "in its frictionless water mode; no avalanche rheology contributes to this run. "
+            "Three AMR levels use two successive 4:1 longitudinal refinements. Narrow, "
+            "overlapping space--time corridors are prescribed around the two independently "
+            "known analytical boundary paths; the analytical values allocate resolution but "
+            "are never supplied to the state or flux. Distant cells remain on the 40 mm base mesh. "
+            "The triangular qinit raster is sampled independently at the 2.5 mm finest spacing, "
+            "so the coarse far field does not alter the analytical initial profile. The downstream "
+            "limit is extended from the tutorial's 40 m to 60 m so the advancing front remains "
+            "inside the computational domain through the final output.\n"
         ),
         code(
-            "DX_M = 0.005\nT_FINAL_S = 5.0\nOUTPUT_FRAMES = 100\n"
-            "case.run('run_avac_validation.py', '--dx', DX_M, '--t-final', T_FINAL_S, "
-            "'--nout', OUTPUT_FRAMES, '--cores', CORES)\n"
+            "BASE_DX_M = 0.04\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
+            "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 5.0\nOUTPUT_FRAMES = 20\n"
+            "RUN_NAME = 'publication_amr'\n"
+            "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--t-final', T_FINAL_S, "
+            "'--nout', OUTPUT_FRAMES, '--cores', CORES, '--amr-levels', AMR_LEVELS, "
+            "'--amr-ratio', AMR_RATIO, '--speed-tolerance', SPEED_TOLERANCE_M_S, "
+            "'--ny', 5, '--max1d', 1000, '--output-root', case.path / RUN_NAME)\n"
         ),
         markdown("## Quantitative diagnostics\n\nThe summary reports front errors, rear-wave errors, initial-condition error, mass variation, grid spacing, core count, and the exact solver hash.\n"),
-        code("summary = case.json('results/summary.json')\nsummary\n"),
+        code("summary = case.json(f'{RUN_NAME}/results/summary.json')\nsummary\n"),
         markdown("## Comparison with theory\n\nThe marker curves are AVAC centerline measurements; continuous analytical curves are evaluated independently by the driver.\n"),
         code(
-            "case.show('figures/wrr_characteristics_avac_vs_theory.png', "
-            "'figures/wrr_depth_profiles_avac_vs_theory.png', "
-            "'figures/wrr_surface_profile_avac.png')\n"
+            "case.show(f'{RUN_NAME}/figures/wrr_characteristics_avac_vs_theory.png', "
+            "f'{RUN_NAME}/figures/wrr_depth_profiles_avac_vs_theory.png', "
+            "f'{RUN_NAME}/figures/wrr_surface_profile_avac.png')\n"
         ),
     ]
     write(f"AVAC/{name}/WRR_sloping_bed.ipynb", cells)
@@ -112,21 +124,27 @@ def avac_notebooks() -> None:
             "A one-meter-deep column spreads on a horizontal bed with basal Coulomb coefficient "
             "$\\mu=0.1$. The state is uniform across a five-cell wall-bounded strip. There is "
             "no Voellmy turbulent term and no fitted stopping threshold; arrest must follow from "
-            "the Coulomb/static-yield implementation.\n"
+            "the Coulomb/static-yield implementation. Three AMR levels refine narrow corridors "
+            "around the independently known boundary paths from a 40 mm base mesh to a 2.5 mm "
+            "finest mesh while leaving distant regions coarse.\n"
         ),
         code(
-            "DX_M = 0.01\nT_FINAL_S = 10.0\nOUTPUT_FRAMES = 200\n"
-            "case.run('run_avac_validation.py', '--dx', DX_M, '--t-final', T_FINAL_S, "
-            "'--nout', OUTPUT_FRAMES, '--cores', CORES)\n"
+            "BASE_DX_M = 0.04\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
+            "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 10.0\nOUTPUT_FRAMES = 40\n"
+            "RUN_NAME = 'publication_amr'\n"
+            "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--t-final', T_FINAL_S, "
+            "'--nout', OUTPUT_FRAMES, '--cores', CORES, '--case-name', RUN_NAME, "
+            "'--amr-levels', AMR_LEVELS, '--amr-ratio', AMR_RATIO, "
+            "'--speed-tolerance', SPEED_TOLERANCE_M_S, '--max1d', 1000)\n"
         ),
         markdown("## Quantitative diagnostics\n\nFront/rear errors, arrested-state measures, mass history, and solver identity are written by the same run.\n"),
-        code("summary = case.json('results/summary.json')\nsummary\n"),
+        code("summary = case.json(f'{RUN_NAME}/results/summary.json')\nsummary\n"),
         markdown("## Comparison with Kerswell theory\n"),
         code(
-            "case.show('figures/figure_8_7_avac_vs_theory.png', "
-            "'figures/figure_8_10_avac_vs_theory.png', "
-            "'figures/profiles_avac_vs_theory.png', "
-            "'figures/avac_arrest_and_mass.png')\n"
+            "case.show(f'{RUN_NAME}/figures/figure_8_7_avac_vs_theory.png', "
+            "f'{RUN_NAME}/figures/figure_8_10_avac_vs_theory.png', "
+            "f'{RUN_NAME}/figures/profiles_avac_vs_theory.png', "
+            "f'{RUN_NAME}/figures/avac_arrest_and_mass.png')\n"
         ),
     ]
     write(f"AVAC/{name}/Kerswell_Coulomb.ipynb", cells)
@@ -143,14 +161,19 @@ def avac_notebooks() -> None:
         markdown(
             "## Physical and numerical definition\n\n"
             "The released depth is $H_0=1$ m, the Coulomb coefficient is $\\mu=0.2$, and the "
-            "bed angle is 5°. One transverse cell preserves the intended one-dimensional state. "
-            "Level-2 AMR refines the 5 mm base cells without introducing case-specific physics.\n"
+            "bed angle is 5°. A five-cell transverse strip preserves the intended one-dimensional state. "
+            "Three AMR levels refine narrow corridors around the independently known boundary "
+            "paths from a 30 mm base mesh to a 1.875 mm finest mesh; this is finer at the "
+            "fronts than the preceding 2.5 mm result.\n"
         ),
         code(
-            "DX_M = 0.005\nT_FINAL_S = 6.0\nOUTPUT_FRAMES = 60\nRUN_NAME = 'notebook_run'\n"
-            "case.run('run_avac_validation.py', '--dx', DX_M, '--ny', 1, '--t-final', "
+            "BASE_DX_M = 0.03\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
+            "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 6.0\nOUTPUT_FRAMES = 30\n"
+            "RUN_NAME = 'publication_amr'\n"
+            "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--ny', 5, '--t-final', "
             "T_FINAL_S, '--nout', OUTPUT_FRAMES, '--case-name', RUN_NAME, '--cores', CORES, "
-            "'--amr-levels', 2, '--replace')\n"
+            "'--amr-levels', AMR_LEVELS, '--amr-ratio', AMR_RATIO, "
+            "'--speed-tolerance', SPEED_TOLERANCE_M_S, '--max1d', 1000, '--replace')\n"
         ),
         code("summary = case.json(f'{RUN_NAME}/results/summary.json')\nsummary\n"),
         markdown("## Analytical comparison\n"),
@@ -162,6 +185,36 @@ def avac_notebooks() -> None:
         ),
     ]
     write(f"AVAC/{name}/Coulomb_sloping_bed.ipynb", cells)
+
+    name = "Paper_figures"
+    cells = [
+        markdown(
+            "# AVAC analytical-verification figures\n\n"
+            "This notebook creates the Section 4 manuscript figures exclusively from the "
+            "saved `publication_amr/results` products of the three AVAC case notebooks. It "
+            "does not launch either solver, so later style and layout changes do not require "
+            "new simulations.\n"
+        ),
+        *environment("AVAC", name),
+        markdown(
+            "## Required numerical products\n\n"
+            "Run the WRR, Kerswell horizontal-Coulomb, and inclined-Coulomb notebooks first. "
+            "Their summaries retain the solver hash, AMR controls, and achieved levels. The "
+            "two Coulomb rows are postprocessed with one boundary definition: the wet support "
+            "uses the solver dry tolerance and the undisturbed rear uses a 0.1% relative-depth "
+            "tolerance so AMR interpolation noise is not mistaken for motion. Both the raw run "
+            "summaries and the common manuscript diagnostics are archived with the figures.\n"
+        ),
+        code(
+            "case.run('make_avac_verification_figures.py', '--output-root', "
+            "REPOSITORY / 'docs' / 'article' / 'figures')\n"
+        ),
+        code(
+            "case.show('../../../docs/article/figures/avac_coulomb_verification.png', "
+            "'../../../docs/article/figures/avac_wrr_water_limit.png')\n"
+        ),
+    ]
+    write(f"AVAC/{name}/AVAC_verification_figures.ipynb", cells)
 
 
 def wave_notebooks() -> None:
@@ -248,6 +301,64 @@ def wave_notebooks() -> None:
     ]
     write(f"WAVE/{folder}/WRR_sloping_bed.ipynb", cells)
 
+    folder = "Paper_figures"
+    cells = [
+        markdown(
+            "# WAVE analytical-verification figure\n\n"
+            "This notebook creates the main-paper WAVE figure from already completed lake-at-rest "
+            "and Thacker simulations. It does not launch WAVE, so stylistic revisions remain "
+            "independent of the numerical runs.\n"
+        ),
+        *environment("WAVE", folder),
+        code("case.run('make_wave_verification_figures.py')\ncase.run('make_wave_appendix_figures.py')\n"),
+        code(
+            "case.show('../../../docs/article/figures/wave_analytical_verification.png', "
+            "'../../../docs/article/figures/wave_additional_benchmarks.png', "
+            "'../../../docs/article/figures/wave_numerical_diagnostics.png')\n"
+        ),
+    ]
+    write(f"WAVE/{folder}/WAVE_verification_figures.ipynb", cells)
+
+
+def coupling_notebook() -> None:
+    folder = "Paper_figures"
+    cells = [
+        markdown(
+            "# AVAC-to-WAVE coupling verification\n\n"
+            "This notebook prescribes smooth synthetic AVAC shoreline states and sends them through "
+            "the production AVAC reader, conservative source converter, written source file, WAVE "
+            "Fortran source update, and current WAVE executable. It checks transferred volume and both "
+            "horizontal momentum components on uniform and AMR grids, plus source-time convergence and "
+            "a stair-step shoreline representation.\n"
+        ),
+        *environment("COUPLING", folder),
+        markdown(
+            "## Numerical experiment\n\n"
+            "The domain is periodic, has a uniform initial lake depth, and is frictionless, so its global changes in depth "
+            "and depth-integrated momentum must equal the coupling ledger. The smooth pulse has a known "
+            "continuous-time integral. All finest AMR cells are integrated without double-counting the "
+            "underlying coarse grid.\n"
+        ),
+        code(
+            "case.run(case.path.parent / 'run_coupling_verification.py', '--cores', CORES, "
+            "'--output-root', case.path.parent / 'publication', cwd=case.path.parent)\n"
+        ),
+        code("summary = case.json('../publication/results/summary.json')\nsummary\n"),
+    ]
+    write(f"COUPLING/{folder}/Coupling_verification.ipynb", cells)
+
+    cells = [
+        markdown(
+            "# AVAC-to-WAVE coupling figure\n\n"
+            "This notebook reads only the archived coupling ledgers and WAVE closure metrics. "
+            "It can revise the manuscript figure without rerunning either solver.\n"
+        ),
+        *environment("COUPLING", folder),
+        code("case.run('make_coupling_figure.py')\n"),
+        code("case.show('../../../docs/article/figures/coupling_verification.png')\n"),
+    ]
+    write(f"COUPLING/{folder}/Coupling_verification_figures.ipynb", cells)
+
 
 def iseesnow_notebooks() -> None:
     descriptions = {
@@ -300,10 +411,27 @@ def iseesnow_notebooks() -> None:
             ])
         write(f"ISeeSnow/{folder}/{folder}.ipynb", cells)
 
+    folder = "Paper_figures"
+    cells = [
+        markdown(
+            "# ISeeSnow three-case manuscript figure\n\n"
+            "This notebook creates the cross-case AVAC4QGIS intercomparison figure from archived "
+            "exact-grid field summaries. It does not rerun AVAC or modify any participating-model field.\n"
+        ),
+        *environment("ISeeSnow", folder),
+        code("case.run('make_iseesnow_case_figure.py')\ncase.run('make_iseesnow_figures.py')\n"),
+        code(
+            "case.show('../../../docs/article/figures/iseesnow_case_setup.png', "
+            "'../../../docs/article/figures/iseesnow_intercomparison.png')\n"
+        ),
+    ]
+    write(f"ISeeSnow/{folder}/ISeeSnow_intercomparison_figures.ipynb", cells)
+
 
 def main() -> None:
     avac_notebooks()
     wave_notebooks()
+    coupling_notebook()
     iseesnow_notebooks()
 
 

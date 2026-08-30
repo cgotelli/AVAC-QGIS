@@ -9,6 +9,7 @@
 !   rho               snow density (kg/m³)
 !   C                 cohesion (Pa) !!! removed
 !   u_cr              stopping velocity threshold (m/s)
+!   velocity_depth_threshold  minimum depth for a reported velocity (m)
 !   n_zones           number of altitude zones (>= 1)
 !   z_break_0 .. z_break_{n-2}   altitude thresholds (m), one per line, ascending
 !   mu_0 .. mu_{n-1}             Coulomb coefficients, one per line
@@ -29,7 +30,7 @@ subroutine setprob
     character*12 fname, free_surface
     integer iunit, k
     !double precision :: rho, C, u_cr
-    double precision :: rho, u_cr
+    double precision :: rho, u_cr, velocity_depth_threshold
     double precision :: d_0, x_b, theta
     integer :: imodel, itype_init, n_zones
     character(len=20) :: constitutive_model
@@ -49,6 +50,7 @@ subroutine setprob
     read(7,*) rho
     !read(7,*) C
     read(7,*) u_cr
+    read(7,*) velocity_depth_threshold
 
     !     # Number of altitude zones
     read(7,*) n_zones
@@ -118,12 +120,15 @@ subroutine setprob
 
     rho_rh = rho
     u_cr_rh = u_cr
+    velocity_depth_threshold_rh = max(0.d0, velocity_depth_threshold)
     imodel_rh = imodel
     conserve_depth_amr = .true.
 
     print *, 'rho (snow density) = ', rho
     !print *, 'C (cohesion, Pa)   = ', C
     print *, 'u_cr (m/s)         = ', u_cr
+    print *, 'velocity depth threshold (m) = ', &
+             velocity_depth_threshold_rh
     print *, 'constitutive_model = ', trim(constitutive_model), &
              '  (imodel=', imodel, ')'
     print *, 'number of altitude zones = ', n_zones

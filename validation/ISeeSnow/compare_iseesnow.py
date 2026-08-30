@@ -214,11 +214,11 @@ def finite_max(*fields: np.ndarray) -> float:
 def comparison_display_max(avac: np.ndarray, peers: np.ndarray) -> tuple[float, float]:
     """Return an honest but readable map limit and the uncapped maximum.
 
-    A single numerical velocity spike must remain visible in metrics and the
-    report, but allowing it to set the full color range makes every physically
-    relevant peer value indistinguishable from zero.  Only the visualization
-    is capped, at no less than the largest peer value and the AVAC 99th
-    percentile of positive cells.  Ordinary fields retain their full range.
+    An isolated velocity outlier must remain visible in metrics and the report,
+    but allowing one value to set the full color range can make every other
+    value indistinguishable from zero. Only the visualization is capped, at no
+    less than the largest peer value and the AVAC 99th percentile of positive
+    cells. Ordinary fields retain their full range.
     """
     raw_max = finite_max(avac, peers)
     positive = avac[np.isfinite(avac) & (avac > 0.0)]
@@ -230,8 +230,8 @@ def comparison_display_max(avac: np.ndarray, peers: np.ndarray) -> tuple[float, 
     return raw_max, raw_max
 
 
-def fgmax_peak_velocity_audit(case_dir: Path) -> dict[str, float] | None:
-    """Read the raw at-step velocity peak and its recorded occurrence time."""
+def fgmax_peak_velocity_audit(case_dir: Path, dem: Grid) -> dict[str, float] | None:
+    """Audit the native velocity maximum without classifying it a priori."""
     path = case_dir / "Run" / "AVAC" / "_output" / "fgmax0001.txt"
     if not path.is_file():
         return None
@@ -239,11 +239,22 @@ def fgmax_peak_velocity_audit(case_dir: Path) -> dict[str, float] | None:
     if values.shape[1] < 8:
         return None
     index = int(np.nanargmax(values[:, 5]))
+    x_peak, y_peak = float(values[index, 0]), float(values[index, 1])
+    terrain = np.flipud(np.asarray(dem.values_north, dtype=float))
+    if np.any(~np.isfinite(terrain)):
+        terrain = np.where(np.isfinite(terrain), terrain, float(np.nanmean(terrain)))
+    dz_dy, dz_dx = np.gradient(terrain, dem.cell_size)
+    column = int(np.argmin(np.abs(dem.x_centres - x_peak)))
+    row = int(np.argmin(np.abs(dem.y_centres - y_peak)))
+    slope = np.degrees(np.arctan(np.hypot(dz_dx[row, column], dz_dy[row, column])))
     return {
         "fgmax_peak_velocity_mps": float(values[index, 5]),
         "fgmax_peak_velocity_time_s": float(values[index, 7]),
-        "fgmax_peak_velocity_x_m": float(values[index, 0]),
-        "fgmax_peak_velocity_y_m": float(values[index, 1]),
+        "fgmax_peak_velocity_x_m": x_peak,
+        "fgmax_peak_velocity_y_m": y_peak,
+        "maximum_depth_at_peak_cell_m": float(values[index, 4]),
+        "local_dem_slope_degrees": float(slope),
+        "kinetic_head_at_peak_m": float(values[index, 5] ** 2 / (2.0 * 9.81)),
     }
 
 
@@ -348,19 +359,18 @@ def main(cases: tuple[str, ...] = CASES) -> None:
         "`pft` is peak flow thickness normal to terrain. `pfv` is peak flow velocity. "
         "The field integral is a grid-cell sum (not an independently reconstructed volume).", "",
         "## Velocity formulation audited in this rerun", "",
-        "AVAC stores vertical depth and horizontal map-grid momentum, whereas the ISeeSnow "
-        "rheological parameters and submitted PFV describe motion tangent to the terrain. "
-        "This solver therefore projects gravity and basal resistance consistently between "
-        "those coordinate systems and reconstructs terrain-tangent PFV from the DEM gradient.", "",
-        "At a granular wet/dry front, finite momentum divided by nearly zero depth is not a "
-        "resolved physical velocity. AVAC now applies the momentum-consistent "
-        "Kurganov--Petrova desingularization below a mesh-scaled shallow-depth threshold and "
-        "enables GeoClaw's conservative positivity relimiter. Above that threshold the "
-        "desingularization factor is exactly one. No physical velocity ceiling or "
-        "post-processing clipping is used.", "",
+        "AVAC stores vertical depth and horizontal map-grid momentum. The submitted PFV is "
+        "the physical terrain-tangent magnitude sqrt(u^2 + v^2 + (u*Bx + v*By)^2), evaluated "
+        "inside the native fgmax routine at every solver step. This is consistent with the "
+        "terrain-tangent speed used by the slope-corrected Voellmy law and avoids reconstructing "
+        "a vector direction from an already maximized scalar field.", "",
+        "The velocity diagnostic requires a local depth above 0.05 m, an explicit "
+        "cell-average velocity threshold of the type documented by the ISeeSnow protocol. "
+        "No physical velocity ceiling or post-processing clipping is used.", "",
     ]
     speed_cap_rows: list[dict[str, object]] = []
     run_diagnostic_rows: list[dict[str, object]] = []
+    velocity_audit_rows: list[dict[str, object]] = []
     peak_outlier_rows: list[dict[str, object]] = []
     plot_paths: list[Path] = []
     plot_directory = ROOT / "plots"
@@ -377,6 +387,9 @@ def main(cases: tuple[str, ...] = CASES) -> None:
             if not matches:
                 raise RuntimeError(f"AVAC submission {item.path}: {reason}")
             scalar_rows.append({"case": case, "model": "AVAC4QGIS", "variable": variable, **scalar_metrics(item.values_north, target.cell_size, variable)})
+        velocity_audit = fgmax_peak_velocity_audit(case_dir, target)
+        if velocity_audit is not None:
+            velocity_audit_rows.append({"case": case, **velocity_audit})
         speed_limit = avac_speed_limit(case_dir)
         if speed_limit is not None:
             speed_cap_rows.append({
@@ -394,7 +407,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
                     "initial_volume_m3": initial_volume,
                     "final_volume_m3": final_volume,
                     "relative_volume_change": (final_volume - initial_volume) / initial_volume if initial_volume else math.nan,
-                    "practical_rest_time_s": summary.get("flow_stopped_at_seconds", "not reached"),
+                    "practical_rest_time_s": summary.get("flow_stopped_at_seconds") or "not reached",
                     "simulation_ceiling_s": summary.get("simulation_end_ceiling_seconds", ""),
                     "spatial_order": summary.get("spatial_order", ""),
                     "limiter": summary.get("limiter", ""),
@@ -440,7 +453,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
                         "ratio": avac_peak / peer_peak,
                     }
                     if variable == "pfv":
-                        row.update(fgmax_peak_velocity_audit(case_dir) or {})
+                        row.update(velocity_audit or {})
                     peak_outlier_rows.append(row)
         plot_paths.extend(write_case_pngs(case, target, avac, comparable_peers, plot_directory))
         report.extend([f"## {case}", "", f"Comparable peer submissions: {len(used_models)} — {', '.join(used_models) if used_models else 'none'}.", ""])
@@ -456,7 +469,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
     elif orders == {2}:
         numerical_description = (
             "This rerun uses GeoClaw's second-order update (`spatial_order = 2`) at the user's request. "
-            "AVAC enables GeoClaw's conservative positivity relimiter and applies a mesh-scaled Kurganov--Petrova velocity desingularization only in unresolved granular wet/dry-front films. "
+            "The AVAC dry-state update zeros momentum at and below the configured dry tolerance. "
             "The native mass histories below disclose the measured volume change and no result field was normalized, rescaled, shifted, clipped, padded, or matched to a peer result."
         )
     else:
@@ -471,6 +484,20 @@ def main(cases: tuple[str, ...] = CASES) -> None:
         "The count should therefore be zero; it is retained as an auditable check of the data used for each comparison.", "",
     ])
     report.extend(table(speed_cap_rows, ["case", "runtime_speed_limit_mps", "submitted_pfv_cells_equal_limit"]))
+    report.append("")
+    report.extend([
+        "## Native peak-velocity audit", "",
+        "The raw fgmax occurrence is reported for every case. `maximum_depth_at_peak_cell_m` "
+        "is the maximum depth attained at the same grid cell over the run, not necessarily the "
+        "instantaneous depth at the velocity-peak time. A substantial value rules out a location "
+        "that remained only a dry-tolerance film throughout the calculation.", "",
+    ])
+    report.extend(table(velocity_audit_rows, [
+        "case", "fgmax_peak_velocity_mps", "fgmax_peak_velocity_time_s",
+        "fgmax_peak_velocity_x_m", "fgmax_peak_velocity_y_m",
+        "maximum_depth_at_peak_cell_m", "local_dem_slope_degrees",
+        "kinetic_head_at_peak_m",
+    ]))
     report.append("")
     report.extend([
         "## Native mass and completion diagnostics", "",
@@ -493,11 +520,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
             "case", "variable", "avac_raw_peak", "maximum_comparable_peer_peak", "ratio",
             "fgmax_peak_velocity_time_s", "fgmax_peak_velocity_x_m", "fgmax_peak_velocity_y_m",
         ]))
-        report.extend([
-            "",
-            "The CoulombOnly PFV event is a numerical dry-front velocity spike while the solver speed limit is deliberately disabled. "
-            "It is not supported by the neighboring model ensemble and means this raw PFV result must not be interpreted as a physical avalanche speed.",
-        ])
+        report.extend(["", "Any listed event must be classified from its raw peak depth, location, and time before it is interpreted as a numerical dry-front value."])
     else:
         report.append("None.")
     report.append("")
@@ -506,6 +529,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
     write_csv(ROOT / "comparison_exclusions.csv", exclusions)
     write_csv(ROOT / "avac_runtime_speed_limit.csv", speed_cap_rows)
     write_csv(ROOT / "avac_run_diagnostics.csv", run_diagnostic_rows)
+    write_csv(ROOT / "peak_velocity_audit.csv", velocity_audit_rows)
     report.extend(["## PNG comparisons", ""])
     if plot_paths:
         report.extend([f"- [{path.name}]({path.relative_to(ROOT).as_posix()})" for path in plot_paths])

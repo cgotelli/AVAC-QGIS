@@ -1,0 +1,258 @@
+Gridding level   1 at t =  0.000000E+00:     1 grids with         200 cells
+  max threads set to            8
+
+ amrclaw parameters:
+
+ error tol            -0.10000E+01
+ spatial error tol     0.50000E-01
+ order of integrator             2
+ error checking interval         3
+ buffer zone size                2
+ nghost                          2
+ volume ratio cutoff   0.70000E+00
+ max. refinement level           2
+ user sub. calling times 999999999
+ cfl # (if var. delt)  0.25000E+00
+
+ xupper(upper corner)  0.20000E+01
+ yupper(upper corner)  0.10000E+01
+ xlower(lower corner)  0.00000E+00
+ ylower(lower corner)  0.00000E+00
+ nx = no. cells in x dir.       20
+ ny = no. cells in y dir.       10
+ refinement ratios       
+ refinement ratios:          10    0
+ refinement ratios:          10    0
+ no. auxiliary vars.             1
+       var     1 of type center    
+ the subtree is
+ +---------------------------------------------------------------------------+
+ ! grid no:     1                                                            !
+ ! nestlevel=  1, time mult=    0.000000000000000E+00, level ptr =     0     !
+ ! storage locs =       1345          1  bndry locs =      96785          0  !
+ ! corners of rectangle:                                                     !
+ !           (   0.0000000,    1.0000000)(   2.0000000,    1.0000000)        !
+ !           (   0.0000000,    0.0000000)(   2.0000000,    0.0000000)        !
+ ! integer index space :                                                     !
+ !                   (       0,        9)(      19,        9)                !
+ !                   (       0,        0)(      19,        0)                !
+ ! hrow=      0.10000000000, hcol=      0.10000000000, ktime=     0.005000000!
+ +---------------------------------------------------------------------------+
+
+    1 grids at level     1 go from         0        0 to       19        9
+
+ +---------------------------------------------------------------------------+
+ ! grid no:     9                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     7     !
+ ! storage locs =      84001          0  bndry locs =          0      95665  !
+ ! corners of rectangle:                                                     !
+ !           (   1.5000000,    1.0000000)(   2.0000000,    1.0000000)        !
+ !           (   1.5000000,    0.5000000)(   2.0000000,    0.5000000)        !
+ ! integer index space :                                                     !
+ !                   (     150,       99)(     199,       99)                !
+ !                   (     150,       50)(     199,       50)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     7                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     8     !
+ ! storage locs =      72337          0  bndry locs =          0      95805  !
+ ! corners of rectangle:                                                     !
+ !           (   1.5000000,    0.5000000)(   2.0000000,    0.5000000)        !
+ !           (   1.5000000,    0.0000000)(   2.0000000,    0.0000000)        !
+ ! integer index space :                                                     !
+ !                   (     150,       49)(     199,       49)                !
+ !                   (     150,        0)(     199,        0)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     8                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     3     !
+ ! storage locs =      60673          0  bndry locs =          0      95945  !
+ ! corners of rectangle:                                                     !
+ !           (   1.0000000,    1.0000000)(   1.5000000,    1.0000000)        !
+ !           (   1.0000000,    0.5000000)(   1.5000000,    0.5000000)        !
+ ! integer index space :                                                     !
+ !                   (     100,       99)(     149,       99)                !
+ !                   (     100,       50)(     149,       50)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     3                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     6     !
+ ! storage locs =      49009          0  bndry locs =          0      96085  !
+ ! corners of rectangle:                                                     !
+ !           (   1.0000000,    0.5000000)(   1.5000000,    0.5000000)        !
+ !           (   1.0000000,    0.0000000)(   1.5000000,    0.0000000)        !
+ ! integer index space :                                                     !
+ !                   (     100,       49)(     149,       49)                !
+ !                   (     100,        0)(     149,        0)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     6                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     4     !
+ ! storage locs =      37345          0  bndry locs =          0      96225  !
+ ! corners of rectangle:                                                     !
+ !           (   0.5000000,    1.0000000)(   1.0000000,    1.0000000)        !
+ !           (   0.5000000,    0.5000000)(   1.0000000,    0.5000000)        !
+ ! integer index space :                                                     !
+ !                   (      50,       99)(      99,       99)                !
+ !                   (      50,       50)(      99,       50)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     4                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     5     !
+ ! storage locs =      25681          0  bndry locs =          0      96365  !
+ ! corners of rectangle:                                                     !
+ !           (   0.5000000,    0.5000000)(   1.0000000,    0.5000000)        !
+ !           (   0.5000000,    0.0000000)(   1.0000000,    0.0000000)        !
+ ! integer index space :                                                     !
+ !                   (      50,       49)(      99,       49)                !
+ !                   (      50,        0)(      99,        0)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     5                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     2     !
+ ! storage locs =      14017          0  bndry locs =          0      96505  !
+ ! corners of rectangle:                                                     !
+ !           (   0.0000000,    1.0000000)(   0.5000000,    1.0000000)        !
+ !           (   0.0000000,    0.5000000)(   0.5000000,    0.5000000)        !
+ ! integer index space :                                                     !
+ !                   (       0,       99)(      49,       99)                !
+ !                   (       0,       50)(      49,       50)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------+
+ ! grid no:     2                                                            !
+ ! nestlevel=  2, time mult=    0.000000000000000E+00, level ptr =     0     !
+ ! storage locs =       2353          0  bndry locs =          0      96645  !
+ ! corners of rectangle:                                                     !
+ !           (   0.0000000,    0.5000000)(   0.5000000,    0.5000000)        !
+ !           (   0.0000000,    0.0000000)(   0.5000000,    0.0000000)        !
+ ! integer index space :                                                     !
+ !                   (       0,       49)(      49,       49)                !
+ !                   (       0,        0)(      49,        0)                !
+ ! hrow=      0.01000000000, hcol=      0.01000000000, ktime=     0.001000000!
+ +---------------------------------------------------------------------------+
+
+    8 grids at level     2 go from         0        0 to      199       99
+
+   original total mass ...
+time t =  0.00000E+00,  total mass =  0.100000000000000E+01  diff =  0.0000E+00
+time t =  0.50000E-02,  total mass =  0.100000006315957E+01  diff =  0.6316E-07
+time t =  0.16288E-01,  total mass =  0.100000067025420E+01  diff =  0.6703E-06
+time t =  0.27576E-01,  total mass =  0.100000192127635E+01  diff =  0.1921E-05
+time t =  0.38864E-01,  total mass =  0.100000381892442E+01  diff =  0.3819E-05
+time t =  0.50152E-01,  total mass =  0.100000636434847E+01  diff =  0.6364E-05
+time t =  0.61440E-01,  total mass =  0.100000955746748E+01  diff =  0.9557E-05
+time t =  0.72727E-01,  total mass =  0.100001339819565E+01  diff =  0.1340E-04
+time t =  0.84014E-01,  total mass =  0.100001788514425E+01  diff =  0.1789E-04
+time t =  0.95301E-01,  total mass =  0.100002301548936E+01  diff =  0.2302E-04
+time t =  0.10000E+00,  total mass =  0.100002534131824E+01  diff =  0.2534E-04
+time t =  0.11129E+00,  total mass =  0.100003137823217E+01  diff =  0.3138E-04
+time t =  0.12257E+00,  total mass =  0.100003804999639E+01  diff =  0.3805E-04
+time t =  0.13386E+00,  total mass =  0.100004535253004E+01  diff =  0.4535E-04
+time t =  0.14514E+00,  total mass =  0.100005327740298E+01  diff =  0.5328E-04
+time t =  0.15642E+00,  total mass =  0.100006182156756E+01  diff =  0.6182E-04
+time t =  0.16771E+00,  total mass =  0.100007097259875E+01  diff =  0.7097E-04
+time t =  0.17899E+00,  total mass =  0.100008072759698E+01  diff =  0.8073E-04
+time t =  0.19027E+00,  total mass =  0.100009107148862E+01  diff =  0.9107E-04
+time t =  0.20000E+00,  total mass =  0.100010046028193E+01  diff =  0.1005E-03
+time t =  0.21128E+00,  total mass =  0.100011188035675E+01  diff =  0.1119E-03
+time t =  0.22256E+00,  total mass =  0.100012386039464E+01  diff =  0.1239E-03
+time t =  0.23384E+00,  total mass =  0.100013639158577E+01  diff =  0.1364E-03
+time t =  0.24512E+00,  total mass =  0.100014945486586E+01  diff =  0.1495E-03
+time t =  0.25640E+00,  total mass =  0.100016304440465E+01  diff =  0.1630E-03
+time t =  0.26768E+00,  total mass =  0.100017713625890E+01  diff =  0.1771E-03
+time t =  0.27896E+00,  total mass =  0.100019172521401E+01  diff =  0.1917E-03
+time t =  0.29024E+00,  total mass =  0.100020678531541E+01  diff =  0.2068E-03
+time t =  0.30000E+00,  total mass =  0.100022019623819E+01  diff =  0.2202E-03
+time t =  0.31128E+00,  total mass =  0.100023610169711E+01  diff =  0.2361E-03
+time t =  0.32255E+00,  total mass =  0.100025243181497E+01  diff =  0.2524E-03
+time t =  0.33383E+00,  total mass =  0.100026917361316E+01  diff =  0.2692E-03
+time t =  0.34511E+00,  total mass =  0.100028629880657E+01  diff =  0.2863E-03
+time t =  0.35638E+00,  total mass =  0.100030379919977E+01  diff =  0.3038E-03
+time t =  0.36766E+00,  total mass =  0.100032164121309E+01  diff =  0.3216E-03
+time t =  0.37894E+00,  total mass =  0.100033981770880E+01  diff =  0.3398E-03
+time t =  0.39021E+00,  total mass =  0.100035829402855E+01  diff =  0.3583E-03
+time t =  0.40000E+00,  total mass =  0.100037456858809E+01  diff =  0.3746E-03
+time t =  0.41127E+00,  total mass =  0.100039356109991E+01  diff =  0.3936E-03
+time t =  0.42255E+00,  total mass =  0.100041279339915E+01  diff =  0.4128E-03
+time t =  0.43382E+00,  total mass =  0.100043224951891E+01  diff =  0.4322E-03
+time t =  0.44510E+00,  total mass =  0.100045189448614E+01  diff =  0.4519E-03
+time t =  0.45637E+00,  total mass =  0.100047171853027E+01  diff =  0.4717E-03
+time t =  0.46765E+00,  total mass =  0.100049168148891E+01  diff =  0.4917E-03
+time t =  0.47892E+00,  total mass =  0.100051177496429E+01  diff =  0.5118E-03
+time t =  0.49019E+00,  total mass =  0.100053195878108E+01  diff =  0.5320E-03
+time t =  0.50000E+00,  total mass =  0.100054958343277E+01  diff =  0.5496E-03
+time t =  0.51127E+00,  total mass =  0.100056988602348E+01  diff =  0.5699E-03
+time t =  0.52255E+00,  total mass =  0.100059021088841E+01  diff =  0.5902E-03
+time t =  0.53382E+00,  total mass =  0.100061054057878E+01  diff =  0.6105E-03
+time t =  0.54509E+00,  total mass =  0.100063083672073E+01  diff =  0.6308E-03
+time t =  0.55636E+00,  total mass =  0.100065108886412E+01  diff =  0.6511E-03
+time t =  0.56764E+00,  total mass =  0.100067125407999E+01  diff =  0.6713E-03
+time t =  0.57891E+00,  total mass =  0.100069132349221E+01  diff =  0.6913E-03
+time t =  0.59018E+00,  total mass =  0.100071125526340E+01  diff =  0.7113E-03
+time t =  0.60000E+00,  total mass =  0.100072849404078E+01  diff =  0.7285E-03
+time t =  0.61127E+00,  total mass =  0.100074811674203E+01  diff =  0.7481E-03
+time t =  0.62255E+00,  total mass =  0.100076753229732E+01  diff =  0.7675E-03
+time t =  0.63382E+00,  total mass =  0.100078672346938E+01  diff =  0.7867E-03
+time t =  0.64509E+00,  total mass =  0.100080565225607E+01  diff =  0.8057E-03
+time t =  0.65636E+00,  total mass =  0.100082430854416E+01  diff =  0.8243E-03
+time t =  0.66764E+00,  total mass =  0.100084265091768E+01  diff =  0.8427E-03
+time t =  0.67891E+00,  total mass =  0.100086067090246E+01  diff =  0.8607E-03
+time t =  0.69018E+00,  total mass =  0.100087832915732E+01  diff =  0.8783E-03
+time t =  0.70000E+00,  total mass =  0.100089340245382E+01  diff =  0.8934E-03
+time t =  0.71127E+00,  total mass =  0.100091033604565E+01  diff =  0.9103E-03
+time t =  0.72255E+00,  total mass =  0.100092684383196E+01  diff =  0.9268E-03
+time t =  0.73382E+00,  total mass =  0.100094291049208E+01  diff =  0.9429E-03
+time t =  0.74509E+00,  total mass =  0.100095850229325E+01  diff =  0.9585E-03
+time t =  0.75637E+00,  total mass =  0.100097361053588E+01  diff =  0.9736E-03
+time t =  0.76764E+00,  total mass =  0.100098819958087E+01  diff =  0.9882E-03
+time t =  0.77892E+00,  total mass =  0.100100226219406E+01  diff =  0.1002E-02
+time t =  0.79019E+00,  total mass =  0.100101576572256E+01  diff =  0.1016E-02
+time t =  0.80000E+00,  total mass =  0.100102704914471E+01  diff =  0.1027E-02
+time t =  0.81128E+00,  total mass =  0.100103946853942E+01  diff =  0.1039E-02
+time t =  0.82255E+00,  total mass =  0.100105127731608E+01  diff =  0.1051E-02
+time t =  0.83383E+00,  total mass =  0.100106246373938E+01  diff =  0.1062E-02
+time t =  0.84510E+00,  total mass =  0.100107300197827E+01  diff =  0.1073E-02
+time t =  0.85638E+00,  total mass =  0.100108288550563E+01  diff =  0.1083E-02
+time t =  0.86766E+00,  total mass =  0.100109208835570E+01  diff =  0.1092E-02
+time t =  0.87893E+00,  total mass =  0.100110060527208E+01  diff =  0.1101E-02
+time t =  0.89021E+00,  total mass =  0.100110841382559E+01  diff =  0.1108E-02
+time t =  0.90000E+00,  total mass =  0.100111461185405E+01  diff =  0.1115E-02
+time t =  0.91128E+00,  total mass =  0.100112107164333E+01  diff =  0.1121E-02
+time t =  0.92256E+00,  total mass =  0.100112678981439E+01  diff =  0.1127E-02
+time t =  0.93383E+00,  total mass =  0.100113175956071E+01  diff =  0.1132E-02
+time t =  0.94511E+00,  total mass =  0.100113596593989E+01  diff =  0.1136E-02
+time t =  0.95639E+00,  total mass =  0.100113940559580E+01  diff =  0.1139E-02
+time t =  0.96767E+00,  total mass =  0.100114206536311E+01  diff =  0.1142E-02
+time t =  0.97895E+00,  total mass =  0.100114394278445E+01  diff =  0.1144E-02
+time t =  0.99023E+00,  total mass =  0.100114502848861E+01  diff =  0.1145E-02
+time t =  0.10000E+01,  total mass =  0.100114532681927E+01  diff =  0.1145E-02
+
+
+for level   1 average num. grids =       1.00 over          1 regridding steps
+for level   1  current num. grids =       1
+for level   2 average num. grids =       8.00 over         31 regridding steps
+for level   2  current num. grids =       8
+
+
+alloc array statistics:
+    current alloc usage =        97589
+    maximum alloc usage =       188976
+required alloc memsize >=       188977
+
+number of cells advanced for time integration =      19438200.000000
+   # cells advanced on level    1 =             18200.00
+   # cells advanced on level    2 =          19420000.00
+number of cells advanced for error estimation =             0.000000
+
+ percentage of cells advanced in time  =     100.00
+ maximum Courant number seen =       0.25
+
+
+ ------  end of AMRCLAW integration --------  

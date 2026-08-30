@@ -90,6 +90,7 @@ SIMULATION_END_S = 1200.0
 # each solver step; saving state every ten seconds does not subsample pft/pfv.
 OUTPUT_INTERVAL_S = 10.0
 VELOCITY_FLOW_THRESHOLD_MPS = 0.01
+VELOCITY_DEPTH_THRESHOLD_M = 0.05
 REST_CONSECUTIVE_OUTPUTS = 3
 # A strict pointwise velocity criterion is not useful at a dry front: a tiny
 # residual cell can retain an unrepresentative speed long after the avalanche
@@ -518,7 +519,7 @@ def native_state_statistics(runtime: Path, output_dir: Path) -> list[dict[str, f
             signed_volume += float(np.sum(finite_h) * area)
             positive = np.maximum(finite_h, 0.0)
             positive_volume += float(np.sum(positive) * area)
-            wet = positive > 0.0
+            wet = positive >= VELOCITY_DEPTH_THRESHOLD_M
             speed = np.zeros_like(positive)
             speed[wet] = np.hypot(hu[wet], hv[wet]) / positive[wet]
             speed = np.where(np.isfinite(speed), speed, 0.0)
@@ -612,6 +613,7 @@ def write_configuration_record(
         f"limiter = {limiter}",
         f"cfl_target = {cfl_target}",
         f"rest_speed_threshold_mps = {VELOCITY_FLOW_THRESHOLD_MPS}",
+        f"reported_velocity_depth_threshold_m = {VELOCITY_DEPTH_THRESHOLD_M}",
         f"rest_moving_volume_fraction = {REST_MOVING_VOLUME_FRACTION}",
         f"rest_consecutive_output_frames = {REST_CONSECUTIVE_OUTPUTS}",
         f"practical_rest_condition_first_met_s = {stopped_time_s if stopped_time_s is not None else 'not reached by ceiling'}",
@@ -630,8 +632,8 @@ def write_configuration_record(
         f"release_thickness_normal_m = {NORMAL_RELEASE_THICKNESS_M}",
         "initialization = h_vertical = h_normal / cos(local DEM slope) inside supplied release polygon",
         "submitted_pft = maximum AVAC vertical h multiplied by cos(local DEM slope)",
-        "submitted_pfv = AVAC maximum terrain-tangent speed reconstructed from horizontal momentum and the local DEM gradient",
-        "granular_wet_dry_velocity = Kurganov-Petrova desingularization below max(dry_tolerance, 0.01*local_cell_size); exact above that depth",
+        "submitted_pfv = AVAC native peak terrain-tangent speed sqrt(u^2 + v^2 + (u*Bx + v*By)^2) where h > 0.05 m",
+        "granular_wet_dry_velocity = Kurganov-Petrova velocity desingularization; reported velocity requires h > 0.05 m; no velocity cap or clipping",
         "release_elevation_correction = false",
         "release_slope_correction = false",
         "benchmark_grid_contract = GeoClaw fixed-grid endpoints equal supplied ISeeSnow cell centres",
@@ -702,7 +704,11 @@ def run_case(
     write_init_xyz(prepared.init_path, raster, vertical_depth)
     write_esri_ascii(case_root / "initial_depth_normal.asc", dem, np.flipud(np.where(prepared.mask, NORMAL_RELEASE_THICKNESS_M, 0.0)))
     write_esri_ascii(case_root / "initial_depth_vertical.asc", dem, np.flipud(vertical_depth))
-    output_dir = prepare_runtime_execution(runtime, prepared.avac_dir)
+    output_dir = prepare_runtime_execution(
+        runtime,
+        prepared.avac_dir,
+        setrun_override=PROJECT_ROOT / "avac-main" / "src" / "AVAC" / "setrun.py",
+    )
     configured_speed_limit = disable_speed_limit(output_dir / "geoclaw.data")
     spatial_order = set_spatial_order(output_dir / "claw.data", spatial_order)
     wall_s, cpu_s = launch_solver(solver, output_dir, case_root / "solver.log", workers)

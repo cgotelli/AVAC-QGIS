@@ -181,17 +181,18 @@ def _load_fgout(discovery: ResultDiscovery, frame_id: int) -> tuple[float, np.nd
 def _avac_frame_fields(frame, rho: float, frame_id: int = 0) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Extract correctly oriented GIS fields from one AVAC FGout frame."""
     wet = frame.h >= 0.001
+    velocity_wet = frame.h >= 0.05
     depth = np.asarray(np.ma.masked_where(~wet, frame.h).filled(0.0), dtype=float)
     has_velocity_components = hasattr(frame, "u") and hasattr(frame, "v")
     if has_velocity_components:
-        u = np.asarray(np.ma.masked_where(~wet, frame.u).filled(0.0), dtype=float)
-        v = np.asarray(np.ma.masked_where(~wet, frame.v).filled(0.0), dtype=float)
+        u = np.asarray(np.ma.masked_where(~velocity_wet, frame.u).filled(0.0), dtype=float)
+        v = np.asarray(np.ma.masked_where(~velocity_wet, frame.v).filled(0.0), dtype=float)
         scalar_speed = None
     else:
         # Older/synthetic FGout-like objects may expose only GeoClaw's
         # horizontal scalar speed.  Preserve that supported input shape; a
         # terrain-tangent reconstruction is impossible without direction.
-        scalar_speed = np.asarray(np.ma.masked_where(~wet, frame.s).filled(0.0), dtype=float)
+        scalar_speed = np.asarray(np.ma.masked_where(~velocity_wet, frame.s).filled(0.0), dtype=float)
         u = v = None
     bed = np.asarray(frame.B if hasattr(frame, "B") else frame.eta - frame.h, dtype=float)
     # ``eta`` is the exact AVAC/GeoClaw free-surface state h + B.  In dry
@@ -202,6 +203,7 @@ def _avac_frame_fields(frame, rho: float, frame_id: int = 0) -> tuple[np.ndarray
     x, y = np.asarray(frame.x, dtype=float), np.asarray(frame.y, dtype=float)
     if depth.shape == (x.size, y.size):
         depth = depth.T
+        velocity_wet = velocity_wet.T
         if has_velocity_components:
             u = u.T
             v = v.T
@@ -233,7 +235,7 @@ def _avac_frame_fields(frame, rho: float, frame_id: int = 0) -> tuple[np.ndarray
         if scalar_speed.shape != depth.shape:
             raise ValueError(f"Unexpected AVAC scalar-velocity orientation for frame {frame_id}")
         velocity = scalar_speed
-    velocity[~np.asarray(wet.T if wet.shape == (x.size, y.size) else wet, dtype=bool)] = 0.0
+    velocity[~np.asarray(velocity_wet, dtype=bool)] = 0.0
     return x, y, {
         "depth": depth,
         "velocity": velocity,

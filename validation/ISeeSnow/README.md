@@ -16,5 +16,8 @@ Each notebook:
    clipping, padding, or resampling them.
 
 Generated submissions, copied inputs, reports, plots, and raw solver results
-are intentionally not committed. See the [validation suite index](../README.md)
-for links and requirements.
+are intentionally not committed. The development-only
+[Idealized Coulomb velocity audit](IDEALIZED_COULOMB_VELOCITY_AUDIT.md)
+records the wet--dry numerical issue found during the manuscript reruns and
+the corrected full-run diagnostics; it is not manuscript text. See the
+[validation suite index](../README.md) for links and requirements.

@@ -30,6 +30,7 @@ the case definition and recreates the quantities it presents.
 - [2008 WRR dry-bottom sloping bed](AVAC/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb)
 - [Kerswell horizontal Coulomb dam break](AVAC/Kerswell_Coulomb/Kerswell_Coulomb.ipynb)
 - [Coulomb dam break on a sloping bed](AVAC/Coulomb_sloping_bed/Coulomb_sloping_bed.ipynb)
+- [Section 4 AVAC verification figures](AVAC/Paper_figures/AVAC_verification_figures.ipynb)
 
 ## WAVE water verification
 
@@ -42,16 +43,28 @@ the case definition and recreates the quantities it presents.
 - [Baines flow over a bump and lake at rest](WAVE/07_baines_flow_over_bump/Baines_flow_over_bump.ipynb)
 - [AMR and OpenMP reproducibility](WAVE/08_amr_parallel/AMR_OpenMP.ipynb)
 - [2008 WRR dry-bottom sloping bed](WAVE/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb)
+- [Main-paper WAVE verification figure](WAVE/Paper_figures/WAVE_verification_figures.ipynb)
 
 The six SWASHES notebooks build the pinned 1.05.01 analytical generator
 included under vendor; the generator's CeCILL licenses are retained with its
 source.
+
+## AVAC-to-WAVE coupling verification
+
+- [Production-path source and conservation runs](COUPLING/Paper_figures/Coupling_verification.ipynb)
+- [Coupling manuscript figure without solver reruns](COUPLING/Paper_figures/Coupling_verification_figures.ipynb)
+
+The source notebook writes prescribed native AVAC frames, calls the same
+shoreline converter used by the plugin, runs the WAVE Fortran source update,
+and checks volume and both horizontal momentum components on uniform and AMR
+grids. The separate figure notebook reads only the archived ledgers.
 
 ## ISeeSnow intercomparison
 
 - [Idealized topography, Voellmy](ISeeSnow/IdealizedTopo/IdealizedTopo.ipynb)
 - [Real topography, Voellmy](ISeeSnow/RealTopo/RealTopo.ipynb)
 - [Idealized topography, Coulomb only](ISeeSnow/CoulombOnly/CoulombOnly.ipynb)
+- [Three-case manuscript figure](ISeeSnow/Paper_figures/ISeeSnow_intercomparison_figures.ipynb)
 
 These notebooks download the official ISeeSnow 1.0 repository, use its
 prescribed inputs without calibration, create standard-format AVAC submissions,

@@ -26,7 +26,12 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq
 
 from avac4qgis_validation.kerswell import position_riemann, time_riemann
-from avac4qgis_validation.runtime import solver_executable
+from avac4qgis_validation.runtime import (
+    configure_front_amr,
+    maximum_written_amr_level,
+    moving_front_corridors,
+    solver_executable,
+)
 
 
 HERE = Path(__file__).resolve().parent
@@ -44,7 +49,7 @@ XLOWER, XUPPER = -10.0, 20.0
 # single transverse computational cell: AVAC remains a 2-D solver, while the
 # uniform strip supplies the centerline benchmark.
 T_FINAL, NOUT = 6.0, 60
-NY = 1
+NY = 5
 
 
 def sha256(path: Path) -> str:
@@ -172,7 +177,7 @@ def activate_clawpack() -> None:
 
 
 def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
-            amr_levels: int) -> Path:
+            amr_levels: int, amr_ratio: int, speed_tolerance: float) -> Path:
     if case.exists():
         if not replace:
             raise FileExistsError(f"{case} exists; use --replace to regenerate this exact case")
@@ -195,9 +200,6 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
     finally:
         os.chdir(previous)
 
-    # The primary level-1 validation
-    # suppresses regridding; explicit AMR sensitivity cases retain AVAC's
-    # normal speed-based level flagging.
     replace_data_value(work / "geoclaw.data", "manning_coefficient", "0.0")
     # Chapter 8 overrides GeoClaw's default explicitly; this very small value
     # is part of the reference problem and must not be inferred from defaults.
@@ -207,18 +209,26 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
     replace_data_value(work / "claw.data", "limiter", "2 2 2")
     replace_data_value(work / "claw.data", "dt_initial", f"{0.2 * dx / np.sqrt(G):.15g}")
     replace_data_value(work / "claw.data", "verbosity", "0")
-    # The primary validation is uniform.  Sensitivity controls may retain
-    # AVAC's normal speed-based flagging to test dynamic AMR explicitly.
-    replace_data_value(
-        work / "amr.data", "flag2refine", "F" if amr_levels == 1 else "T"
-    )
     longitudinal_cells = round((XUPPER - XLOWER) / dx)
     patch_maximum = longitudinal_cells if max1d is None else max1d
     if not 2 <= patch_maximum <= longitudinal_cells:
         raise ValueError(f"max1d must lie between 2 and {longitudinal_cells}")
-    replace_data_value(work / "amr.data", "max1d", str(patch_maximum))
-
-    controls = {
+    _mu_effective, x0, t0 = scales()
+    corridor_interval = 0.05
+    corridor_margin = 0.15
+    corridors = moving_front_corridors(
+        lambda values: x0 * theory_front(np.asarray(values) / t0),
+        lambda values: x0 * theory_rear(np.asarray(values) / t0),
+        t_final=T_FINAL, interval=corridor_interval, margin=corridor_margin,
+        xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=NY * dx,
+        level=amr_levels,
+    )
+    controls = configure_front_amr(
+        work, base_dx=dx, xlower=XLOWER, xupper=XUPPER,
+        levels=amr_levels, ratio=amr_ratio,
+        speed_tolerance=speed_tolerance, output_ny=1,
+        max1d=patch_maximum, forced_regions=corridors,
+    ) | {
         "solver": str(SOLVER), "solver_sha256": sha256(SOLVER),
         "source_setrun": str(AVAC_SOURCE / "setrun.py"),
         "clawpack_source": str(CLAW_SOURCE), "dx_m": dx, "dy_m": dx, "ny": NY,
@@ -226,8 +236,9 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
         "mu": MU, "gravity_m_s2": G, "initial_depth_m": H0,
         "t_final_s": T_FINAL, "outputs": NOUT, "cfl_desired": 0.25, "cfl_max": 0.5,
         "dry_tolerance_m": 1.0e-12,
-        "limiter": "Superbee", "amr_levels": amr_levels,
-        "max1d": patch_maximum,
+        "limiter": "Superbee",
+        "corridor_interval_s": corridor_interval,
+        "corridor_margin_m": corridor_margin,
     }
     (case / "controls.json").write_text(json.dumps(controls, indent=2) + "\n", encoding="utf-8")
     return work
@@ -368,7 +379,7 @@ def kerswell_profile(tau: float, step: float = 0.01) -> tuple[np.ndarray, np.nda
     return x, h, u
 
 
-def extract(case: Path) -> tuple[dict[str, float], Path]:
+def extract(case: Path) -> tuple[dict[str, object], Path]:
     work = case / "AVAC"
     times, x, bed, depth, velocity = read_frames(work)
     dx = float(np.median(np.diff(x)))
@@ -400,7 +411,12 @@ def extract(case: Path) -> tuple[dict[str, float], Path]:
     tau = times / t0
     mass = np.sum(depth, axis=1) * dx
     final_speed_raw = float(np.max(np.abs(velocity[-1])))
+    controls = json.loads((case / "controls.json").read_text(encoding="utf-8"))
     summary = {
+        **controls,
+        "diagnostic_dx_m": dx,
+        "maximum_amr_level_seen": maximum_written_amr_level(work),
+        "final_amr_level": maximum_written_amr_level(work, final_only=True),
         "effective_coulomb_coefficient": mu_effective,
         "length_scale_m": x0,
         "time_scale_s": t0,
@@ -609,8 +625,8 @@ def plot(case: Path) -> None:
 def main() -> None:
     global T_FINAL, NOUT, NY
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dx", type=float, default=0.005, help="uniform AVAC x/y cell size in m")
-    parser.add_argument("--case-name", default="AVAC_current", help="subdirectory below this validation case")
+    parser.add_argument("--dx", type=float, default=0.005, help="base AVAC x/y cell size in m")
+    parser.add_argument("--case-name", default="publication_amr", help="subdirectory below this validation case")
     parser.add_argument("--cores", type=int, default=8)
     parser.add_argument(
         "--ny", type=int, default=NY,
@@ -619,9 +635,11 @@ def main() -> None:
     parser.add_argument("--t-final", type=float, default=T_FINAL)
     parser.add_argument("--nout", type=int, default=NOUT)
     parser.add_argument(
-        "--amr-levels", type=int, default=2,
+        "--amr-levels", type=int, default=3,
         help="maximum AMR levels in the established AVAC validation setup",
     )
+    parser.add_argument("--amr-ratio", type=int, default=2)
+    parser.add_argument("--speed-tolerance", type=float, default=0.02)
     parser.add_argument(
         "--max1d", type=int, default=250,
         help="maximum base-patch dimension of the established AVAC setup",
@@ -629,10 +647,11 @@ def main() -> None:
     parser.add_argument("--replace", action="store_true", help="replace only the named generated case")
     args = parser.parse_args()
     if (args.dx <= 0.0 or args.cores < 1 or args.ny < 1
-            or args.amr_levels < 1
-            or args.t_final <= 0.0 or args.nout < 1):
+            or args.amr_levels < 2 or args.amr_ratio < 2
+            or args.speed_tolerance <= 0.0
+            or args.t_final <= 0.0 or args.nout < 3):
         raise ValueError(
-            "dx, cores, ny, amr-levels, t-final, and nout must be positive"
+            "Invalid run controls: AMR needs levels>=2 and ratio>=2, and nout>=3"
         )
     longitudinal_cells = (XUPPER - XLOWER) / args.dx
     if not np.isclose(longitudinal_cells, round(longitudinal_cells)):
@@ -640,7 +659,8 @@ def main() -> None:
     T_FINAL, NOUT, NY = float(args.t_final), int(args.nout), int(args.ny)
     case = HERE / args.case_name
     work = prepare(
-        case, args.dx, args.replace, args.max1d, args.amr_levels
+        case, args.dx, args.replace, args.max1d, args.amr_levels,
+        args.amr_ratio, args.speed_tolerance,
     )
     run(work, args.cores)
     summary, _results = extract(case)

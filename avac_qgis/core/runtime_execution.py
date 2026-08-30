@@ -11,7 +11,12 @@ from .clawpack_logging import suppress_pyclaw_file_logging
 from .runtime import RuntimeValidationError, validate_runtime
 
 
-def prepare_runtime_execution(runtime_root: str | Path, avac_dir: str | Path) -> Path:
+def prepare_runtime_execution(
+    runtime_root: str | Path,
+    avac_dir: str | Path,
+    *,
+    setrun_override: str | Path | None = None,
+) -> Path:
     """Use QGIS Python + bundled Clawpack to write `.data`, then stage output.
 
     ``xgeoclaw`` follows Clawpack's established ``runclaw`` contract: it reads
@@ -21,7 +26,13 @@ def prepare_runtime_execution(runtime_root: str | Path, avac_dir: str | Path) ->
     """
     runtime_root, avac_dir = Path(runtime_root).expanduser().resolve(), Path(avac_dir).expanduser().resolve()
     manifest = validate_runtime(runtime_root)
-    backend = runtime_root / "backend" / "AVAC" / "setrun.py"
+    backend = (
+        Path(setrun_override).expanduser().resolve()
+        if setrun_override is not None
+        else runtime_root / "backend" / "AVAC" / "setrun.py"
+    )
+    if not backend.is_file():
+        raise RuntimeValidationError(f"AVAC setrun backend is missing: {backend}")
     has_qinit = any((avac_dir / name).is_file() for name in ("init.avacbin", "init.xyz"))
     if not (avac_dir / "AVAC_configuration.yaml").is_file() or not (avac_dir.parent / "Topo" / "topography.asc").is_file() or not has_qinit:
         raise RuntimeValidationError("Prepared AVAC inputs are incomplete; prepare the run again before execution.")

@@ -28,9 +28,10 @@ c   rheology_module: rho_rh, imodel_rh and get_mu_xi (set by setprob.f90)
 
       use storm_module, only: pressure_forcing, pressure_index
 
-      use rheology_module, only: dx_avac, dy_avac, dt_avac, rho_rh,
+      use rheology_module, only: dx_avac, dy_avac, rho_rh,
      &                           imodel_rh, get_mu_xi,
-     &                           friction_speed_after
+     &                           regularized_velocity,
+     &                           velocity_depth_threshold_rh
 
       implicit none
 
@@ -64,15 +65,13 @@ c   rheology_module: rho_rh, imodel_rh and get_mu_xi (set by setprob.f90)
       double precision mu_rp, xi_rp, C_rp
 
       ! Local variables for the static yield check
-      double precision dh_n, dh_span, db_n, dx_n, costh_n
+      double precision dh_n, dh_span, dx_n
       double precision thresh_n, h_avg_n
       double precision spd_LL, spd_L, spd_R, spd_RR
       double precision h_LL, h_RR, hu_stencil, hv_stencil
-      double precision speed_after_L, speed_after_R
-      double precision speed_after_LL, speed_after_RR
+      double precision h_eps
       double precision eta_LL, eta_Lc, eta_Rc, eta_RR
       double precision deta_L, deta_C, deta_R, slope_eta_L, slope_eta_R
-      logical stops_LL, stops_L, stops_R, stops_RR
       logical rests_LL, rests_L, rests_R, rests_RR
 
       ! In case there is no pressure forcing
@@ -138,10 +137,17 @@ c        !set normal direction
          hvL=qr(nv,i-1)
          hvR=ql(nv,i)
 
+c        Kurganov--Petrova wet/dry velocity desingularization.  Recompute
+c        interface momentum after evaluating velocity so the state remains
+c        consistent.  The formula is exact for h >= h_eps.
+         h_eps = max(drytol,min(2.d0*velocity_depth_threshold_rh,
+     &               0.02d0*min(dx_avac,dy_avac)))
+
          !check for wet/dry boundary
          if (hR.gt.drytol) then
-            uR=huR/hR
-            vR=hvR/hR
+            call regularized_velocity(hR,huR,hvR,h_eps,uR,vR)
+            huR=hR*uR
+            hvR=hR*vR
             phiR = 0.5d0*g*hR**2 + huR**2/hR
          else
             hR = 0.d0
@@ -153,8 +159,9 @@ c        !set normal direction
          endif
 
          if (hL.gt.drytol) then
-            uL=huL/hL
-            vL=hvL/hL
+            call regularized_velocity(hL,huL,hvL,h_eps,uL,vL)
+            huL=hL*uL
+            hvL=hL*vL
             phiL = 0.5d0*g*hL**2 + huL**2/hL
          else
             hL=0.d0
@@ -188,13 +195,8 @@ c           Right cell dry, left cell wet and exactly at rest
             if (hR .le. drytol .and. hL .gt. drytol .and.
      &          dsqrt(uL**2 + vL**2) .eq. 0.d0) then
                dh_n     = max(0.d0, hL + bL - bR)
-               db_n     = dabs(bR - bL)
-               costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
-c              Threshold uses mu*dx (not mu*cos(theta)*dx) to match the
-c              physical Coulomb condition tan(theta) > mu.  The SW equations
-c              overestimate the driving force by 1/cos(theta) relative to
-c              the true slope-parallel gravity component g*h*sin(theta);
-c              removing costh_n compensates for this approximation.
+c              In map-plane coordinates, the free-surface head increment and
+c              mu*dx give the Coulomb condition tan(theta) <= mu.
                thresh_n = mu_rp * dx_n
                if (dh_n .le. thresh_n) go to 30
             endif
@@ -202,8 +204,6 @@ c           Left cell dry, right cell wet and exactly at rest
             if (hL .le. drytol .and. hR .gt. drytol .and.
      &          dsqrt(uR**2 + vR**2) .eq. 0.d0) then
                dh_n     = max(0.d0, hR + bR - bL)
-               db_n     = dabs(bR - bL)
-               costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
                thresh_n = mu_rp * dx_n
                if (dh_n .le. thresh_n) go to 30
             endif
@@ -249,14 +249,12 @@ c               bL=hstartest+bR
 
 c        ---- D-Claw static yield check (George & Iverson 2014) ----
 c
-c        Applied only when the wet local stencil is exactly at rest under
-c        the current closed-form source update:
-c          vnorm_new = friction_speed_after(vnorm,dt,...)
-c        The classification uses the closed-form local source update, so no
-c        user-selected stopping velocity (u_cr) is introduced.
+c        Applied only when the wet local four-cell stencil is exactly at rest.
+c        The exact zero is produced by src2's closed-form moving-state source;
+c        no user-selected stopping velocity (u_cr) is introduced here.
 c
 c        The FREE-SURFACE gradient |d(h+b)/dn| is compared with the
-c        static Coulomb yield threshold mu*cos(theta)*dx.
+c        map-plane static Coulomb/cohesive yield threshold.
 c        If the gradient is below the threshold, static friction balances
 c        the full interface force and both mass and momentum f-waves are
 c        zero.  The depth states are deliberately not equalised: a stopped
@@ -271,25 +269,17 @@ c        averaging it would itself cause unphysical mass creep.
             call get_mu_xi(0.5d0*(bL+bR),mu_rp,xi_rp,C_rp)
             if (mu_rp .gt. 0.d0 .or. C_rp .gt. 0.d0) then
 
-            speed_after_L = friction_speed_after(spd_L,dt_avac,hL,
-     &           mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
-            speed_after_R = friction_speed_after(spd_R,dt_avac,hR,
-     &           mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
-            stops_L = speed_after_L .le. 0.d0
-            stops_R = speed_after_R .le. 0.d0
             rests_L = spd_L .eq. 0.d0
             rests_R = spd_R .eq. 0.d0
 
 c           A static interface also requires the immediately adjacent cells
-c           to stop during this step.  This prevents the yield limiter from
+c           to be at rest.  This prevents the yield limiter from
 c           pinning the rear edge of a still-moving rarefaction merely
 c           because the two reconstructed interface states happen to have
 c           zero momentum.  Once the local four-cell stencil is genuinely
 c           at rest, the same Coulomb complementarity condition suppresses
 c           pressure-driven mass creep.  No empirical velocity threshold is
-c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
-            stops_LL = .true.
-            stops_RR = .true.
+c           introduced.
             rests_LL = .true.
             rests_RR = .true.
             if (i .ge. 3-mbc .and. i .le. mx+mbc-1) then
@@ -299,9 +289,6 @@ c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
                   hv_stencil = 0.5d0 * (ql(3,i-2) + qr(3,i-2))
                   spd_LL = dsqrt(hu_stencil**2 + hv_stencil**2)
      &                   / h_LL
-                  speed_after_LL = friction_speed_after(spd_LL,dt_avac,
-     &                 h_LL,mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
-                  stops_LL = speed_after_LL .le. 0.d0
                   rests_LL = spd_LL .eq. 0.d0
                endif
                h_RR = 0.5d0 * (ql(1,i+1) + qr(1,i+1))
@@ -310,9 +297,6 @@ c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
                   hv_stencil = 0.5d0 * (ql(3,i+1) + qr(3,i+1))
                   spd_RR = dsqrt(hu_stencil**2 + hv_stencil**2)
      &                   / h_RR
-                  speed_after_RR = friction_speed_after(spd_RR,dt_avac,
-     &                 h_RR,mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
-                  stops_RR = speed_after_RR .le. 0.d0
                   rests_RR = spd_RR .eq. 0.d0
                endif
             endif
@@ -353,20 +337,13 @@ c           the same stencil rather than a maximum-gradient or fitted test.
                dh_n = dabs((hR + bR) - (hL + bL))
                dh_span = dh_n
             endif
-            db_n   = dabs(bR - bL)
             if (ixy .eq. 1) then
                dx_n = dx_avac
             else
                dx_n = dy_avac
             endif
-c           cos(theta) at this interface: dx / sqrt(dx^2 + db^2)
-            costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
             h_avg_n  = 0.5d0 * (hL + hR)
-c           Threshold uses mu*dx (not mu*cos(theta)*dx) to match the
-c           physical Coulomb condition tan(theta) > mu.  The SW equations
-c           overestimate the driving force by 1/cos(theta) relative to
-c           the true slope-parallel gravity component g*h*sin(theta);
-c           removing costh_n compensates for this approximation.
+c           Map-plane Coulomb threshold: |Delta eta|/dx <= mu.
             thresh_n = mu_rp * dx_n
 c           Cohesive Voellmy: cohesion raises the static threshold
             if (imodel_rh .eq. 3) then
@@ -375,14 +352,11 @@ c           Cohesive Voellmy: cohesion raises the static threshold
             endif
 c           Below yield, set-valued static friction exactly cancels the
 c           pressure/topography force, but only after the full local stencil
-c           has actually reached rest.  A moving state that kinetic friction
-c           is predicted to stop later in this step remains dynamic here;
+c           has actually reached rest.  A moving state remains dynamic here;
 c           otherwise a rarefaction can be pinned before its characteristic
 c           crosses the interface.  The exact zero is produced by src2's
-c           closed-form Coulomb update, so this adds no velocity threshold.
-            if (stops_LL .and. stops_L .and.
-     &          stops_R .and. stops_RR .and.
-     &          rests_LL .and. rests_L .and.
+c           closed-form source update, so this adds no velocity threshold.
+            if (rests_LL .and. rests_L .and.
      &          rests_R .and. rests_RR .and.
      &          dh_n .le. thresh_n .and.
      &          dh_span .le. thresh_n) go to 30

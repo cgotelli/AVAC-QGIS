@@ -23,10 +23,15 @@ def test_pdf_baseline_clears_momentum_at_geoclaw_dry_tolerance():
     assert "if (qr(1,i-1) <= drytol .and. ql(1,i) <= drytol)" in riemann
 
 
-def test_pdf_baseline_uses_geoclaw_fgmax_implementation():
+def test_avac_peak_velocity_uses_the_depth_aware_fgmax_implementation():
     makefile = (AVAC / "Makefile").read_text(encoding="utf-8")
     geoclaw_makefile = (GEOCLAW / "Makefile.geoclaw").read_text(encoding="utf-8")
+    fgmax = (AVAC / "fgmax_values.f90").read_text(encoding="utf-8")
 
-    assert not (AVAC / "fgmax_values.f90").exists()
-    assert "./fgmax_values.f90" not in makefile
+    assert "$(GEOLIB)/fgmax_values.f90" in makefile
+    assert "./fgmax_values.f90" in makefile
     assert "$(GEOLIB)/fgmax_values.f90" in geoclaw_makefile
+    assert "q(1,i,j) > velocity_depth" in fgmax
+    assert "velocity_depth_threshold_rh" in fgmax
+    assert "w = u*dzdx + v*dzdy" in fgmax
+    assert "sqrt(u**2 + v**2 + w**2)" in fgmax

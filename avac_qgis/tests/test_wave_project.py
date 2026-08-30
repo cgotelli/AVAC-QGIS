@@ -98,7 +98,9 @@ def test_wave_preparation_is_isolated_and_reuses_previewed_lake(tmp_path, monkey
     assert config["lake"] == {"topography": "topography_lake.asc", "water_level": 1.5,
                               "xmin": 0., "xmax": 2., "ymin": 0., "ymax": 2.}
     assert (config["computation"]["damping"], config["computation"]["cfl_target"], config["computation"]["cfl_max"], config["computation"]["limiter"]) == (.25, .45, .9, "vanleer")
-    assert config["rheology"]["Strickler"] == [11., 31.]
+    # GeoClaw selects the first coefficient below the water-level break and
+    # the second above it: water roughness must therefore precede land.
+    assert config["rheology"]["Strickler"] == [31., 11.]
     assert config["gauges"] == {"gauge_recording": True, "0": {"x": 1., "y": 1., "name": "Centre gauge"}}
     assert "postprocessing" not in config
     marker = json.loads((root / WAVE_MARKER).read_text(encoding="utf-8"))

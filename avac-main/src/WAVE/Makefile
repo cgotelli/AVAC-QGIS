@@ -25,6 +25,10 @@ PLOTDIR = _plots               # Directory for plots
 # LAPACK/BLAS are link libraries, not compiler flags.  Keep OpenMP at link
 # time too: Clawpack objects are compiled with it.
 FFLAGS ?= -O2 -fopenmp
+# The shared GeoClaw step2 source contains an AVAC-only conditional. WAVE
+# preprocesses that source without defining the AVAC macro, retaining the
+# upstream relimiter setting.
+FFLAGS += -cpp
 LFLAGS ?= -fopenmp -llapack -lblas
 OMP_NUM_THREADS = 8
 

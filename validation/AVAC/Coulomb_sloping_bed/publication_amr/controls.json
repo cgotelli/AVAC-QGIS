@@ -1,0 +1,41 @@
+{
+  "amr_levels": 3,
+  "refinement_ratios": [
+    4,
+    4
+  ],
+  "transverse_refinement_ratios": [
+    1,
+    1
+  ],
+  "base_dx_m": 0.03,
+  "finest_dx_m": 0.001875,
+  "speed_tolerance_m_s": 0.02,
+  "amr_flagging": "prescribed moving front corridors",
+  "forced_region_count": 240,
+  "fgout_nx": 16000,
+  "fgout_ny": 1,
+  "fgmax_enabled": false,
+  "max1d": 1000,
+  "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/AVAC/xgeoclaw",
+  "solver_sha256": "6a208dac3259c5cad007e9f544154449de9f1be5ad0a52599741072ac82d1d1d",
+  "source_setrun": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/AVAC/setrun.py",
+  "clawpack_source": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/clawpack-v5.14.0",
+  "dx_m": 0.03,
+  "dy_m": 0.03,
+  "ny": 5,
+  "xlower_m": -10.0,
+  "xupper_m": 20.0,
+  "slope_degrees": -5.0,
+  "mu": 0.2,
+  "gravity_m_s2": 9.81,
+  "initial_depth_m": 1.0,
+  "t_final_s": 6.0,
+  "outputs": 30,
+  "cfl_desired": 0.25,
+  "cfl_max": 0.5,
+  "dry_tolerance_m": 1e-12,
+  "limiter": "Superbee",
+  "corridor_interval_s": 0.05,
+  "corridor_margin_m": 0.15
+}

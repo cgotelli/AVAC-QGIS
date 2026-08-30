@@ -4,20 +4,24 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     ! Called to update q by solving source term equation
     ! $q_t = \psi(q)$ over time dt starting at time t.
     !
-    ! Explicit stopping treatment of the basal friction source term.
+    ! Moving-state steep-slope and basal-resistance source term.
     ! Supported constitutive laws (selected via imodel_rh in rheology_module):
     !
-    !   imodel = 1  Coulomb:          tau = mu * rho * g * h * cos(theta)
-    !   imodel = 2  Voellmy:          tau = mu * rho * g * h * cos(theta)
+    !   imodel = 1  Coulomb:          tau = mu * sigma
+    !   imodel = 2  Voellmy:          tau = mu * sigma
     !                                     + rho * g / xi * speed^2
-    !   imodel = 3  Cohesive Voellmy: tau = C + mu * rho * g * h * cos(theta)
+    !   imodel = 3  Cohesive Voellmy: tau = C + mu * sigma
     !                                     + rho * g / xi * speed^2
     !
-    ! where speed = sqrt(u^2 + v^2) and theta is the local bed slope angle
-    ! computed from the topography gradient (aux(1,:,:)).
+    ! AVAC evolves vertical depth and horizontal map velocity.  The source
+    ! uses the bed-surface Cartesian correction of Hergarten and Robl (2015)
+    ! so that the physical normal depth, total speed, normal stress, and the
+    ! excessive large-slope part of GeoClaw gravity are transformed together.
+    ! The static planar yield condition remains tan(theta) = mu.
     !
-    ! Closed-form update of dv/dt = -a - b*v^2, with a floor at zero:
-    !   speed_new = friction_speed_after(...)
+    ! Closed-form update of dv/dt = -a - b*v^2, with a floor at zero when
+    ! positive resistance arrests the flow:
+    !   speed_new = cartesian_speed_after(...)
     !   (hu)^{n+1} = (hu / speed) * h * speed_new
     !   (hv)^{n+1} = (hv / speed) * h * speed_new
     !
@@ -40,12 +44,16 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
 
     ! Locals
     integer :: i, j, nman
-    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio
+    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio, h_eps
     real(kind=8) :: dzdx, dzdy, theta_local
     real(kind=8) :: tau_driving_rho, tau_static_rho
     real(kind=8) :: mu_local, xi_local, C_local   ! altitude-zoned rheology (from get_mu_xi)
     real(kind=8) :: coeff, gamma
     logical :: at_rest
+
+    h_eps = max(dry_tolerance, &
+                min(2.d0 * velocity_depth_threshold_rh, &
+                    0.02d0 * min(dx, dy)))
 
     if (friction_forcing) then
         do j = 1, my
@@ -78,6 +86,15 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                         cycle
                     end if
 
+                    ! Desingularize the map velocity in the unresolved
+                    ! wet/dry fringe and reconstruct a consistent momentum.
+                    ! Above h_eps this is exactly u=hu/h and v=hv/h.
+                    call regularized_velocity(h, hu, hv, h_eps, u, v)
+                    hu = h * u
+                    hv = h * v
+                    q(2,i,j) = hu
+                    q(3,i,j) = hv
+
                     ! Altitude-dependent rheology: pick mu and xi for this cell's bed elevation
                     call get_mu_xi(aux(1,i,j), mu_local, xi_local, C_local)
 
@@ -86,23 +103,24 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                     dzdy = (aux(1,i,j+1) - aux(1,i,j-1)) / (2.d0*dy)
                     theta_local = datan(dsqrt(dzdx**2 + dzdy**2))
 
-                    ! Current speed
-                    u = hu / h
-                    v = hv / h
+                    ! Current regularized speed
                     speed = dsqrt(u**2 + v**2)
 
                     ! Static yield test (Mohr-Coulomb): keep cells at rest if their
                     ! momentum is exactly zero and the driving stress is below yield.
                     ! A cell in motion must NOT be stopped here — it decelerates via
                     ! kinetic friction until speed_new reaches zero (see below).
-                    !   tau_driving / rho = g * h * sin(theta)
-                    !   tau_static  / rho = [C/rho +] mu * g * h * cos(theta)
+                    !   tau_driving / rho = g * h * tan(theta)
+                        !   tau_static  / rho = mu * g * h
+                        !                              [+ C/(rho*cos(theta)^2)]
                     ! (turbulent Voellmy term vanishes at v=0 => same for imodel=2)
-                    tau_driving_rho = g * h * dsin(theta_local)
+                    tau_driving_rho = g * h * dtan(theta_local)
                     if (imodel_rh == 3) then
-                        tau_static_rho = C_local/rho_rh + mu_local * g * h !* dcos(theta_local)
+                            tau_static_rho = C_local / &
+                                             (rho_rh * dcos(theta_local)**2) + &
+                                             mu_local * g * h
                     else
-                        tau_static_rho = mu_local * g * h !* dcos(theta_local)
+                        tau_static_rho = mu_local * g * h
                     end if
                     at_rest = (speed == 0.d0) .and. (tau_driving_rho <= tau_static_rho)
                     if (at_rest) then
@@ -120,7 +138,8 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                         ! (tau_driving > tau_static) must NOT be zeroed, otherwise
                         ! the slope re-accelerates it on the next step, creating a
                         ! freeze/restart oscillation that violates the CFL.
-                        speed_new = friction_speed_after(speed, dt, h, mu_local, &
+                        speed_new = cartesian_speed_after(speed, dt, h, u, v, &
+                                                         dzdx, dzdy, mu_local, &
                                                          xi_local, C_local, rho_rh, &
                                                          g, imodel_rh)
                         if (speed_new <= 0.d0 .and. &

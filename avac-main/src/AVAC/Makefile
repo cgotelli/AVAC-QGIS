@@ -24,6 +24,7 @@ PLOTDIR = _plots               # Directory for plots
 
 # Compiler flags can be specified here or set as an environment variable
 FFLAGS ?= -O2 -fopenmp
+FFLAGS += -DAVAC_POSITIVITY_RELIMITER
 OMP_NUM_THREADS = 8
 
 
@@ -45,6 +46,7 @@ EXCLUDE_MODULES = \
 EXCLUDE_SOURCES = \
   $(GEOLIB)/b4step2.f90 \
   $(GEOLIB)/bc2amr.f90 \
+  $(GEOLIB)/fgmax_values.f90 \
 
 # ----------------------------------------
 # List of custom sources for this program:
@@ -71,6 +73,7 @@ SOURCES = \
   ./setprob.f90 \
   ./b4step2.f90 \
   ./bc2amr.f90 \
+  ./fgmax_values.f90 \
   ./rpn2_geoclaw.f \
   $(CLAW)/riemann/src/rpt2_geoclaw.f \
   $(CLAW)/riemann/src/geoclaw_riemann_utils.f \

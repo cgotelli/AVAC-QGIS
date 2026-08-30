@@ -251,7 +251,10 @@ def _wave_config(domain: dict[str, float], cell_size: float, water_level: float,
                         "t_0": 0.0, "t_max": float(duration)},
         "gauges": {"gauge_recording": False},
         "output": {"delta_t": float(duration) / int(output_count), "output_directory": "_output", "output_format": "binary", "verbosity": 0},
-        "rheology": {"Strickler": [parameters["land_strickler"], parameters["water_strickler"]], "friction": True,
+        # GeoClaw applies coefficient 1 below the first elevation break and
+        # coefficient 2 above it.  The lake bed is below the water level, so
+        # write the water value first and the dry-land value second.
+        "rheology": {"Strickler": [parameters["water_strickler"], parameters["land_strickler"]], "friction": True,
                       "friction_break_elevation": float(water_level), "friction_depth_limit": parameters["friction_depth_limit"],
                       "gravity": 9.81, "rho": 1000.0, "wave_tolerance_flag": parameters["wave_tolerance_flag"]},
     }

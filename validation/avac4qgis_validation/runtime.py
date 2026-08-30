@@ -248,6 +248,152 @@ def _replace_data_value(path: Path, label: str, value: str) -> None:
     raise KeyError(f"Could not find {label!r} in {path}")
 
 
+def _replace_commented_value(path: Path, comment: str, value: str) -> None:
+    """Replace one value on a generated Clawpack line identified by its comment."""
+    lines = path.read_text().splitlines()
+    marker = f"# {comment}"
+    for index, line in enumerate(lines):
+        if marker in line:
+            lines[index] = f"{value:<28}{marker}"
+            path.write_text("\n".join(lines) + "\n")
+            return
+    raise KeyError(f"Could not find comment {comment!r} in {path}")
+
+
+def configure_front_amr(
+    work: Path,
+    *,
+    base_dx: float,
+    xlower: float,
+    xupper: float,
+    levels: int,
+    ratio: int = 2,
+    transverse_ratio: int = 1,
+    speed_tolerance: float = 0.02,
+    output_ny: int = 1,
+    max1d: int | None = None,
+    forced_regions: list[tuple[int, int, float, float, float, float, float, float]] | None = None,
+) -> dict[str, object]:
+    """Configure dynamic quasi-1D AMR and finest-spacing centreline output.
+
+    With ``forced_regions``, narrow benchmark-defined corridors allocate fine
+    cells around the two analytical boundaries and the general speed flagger
+    is disabled; otherwise the standard flagger follows resolvable motion.
+    Fixed-grid output is sampled at the finest possible longitudinal spacing
+    so front positions are not quantized by the base grid.  A single
+    transverse output row is sufficient because these verification problems
+    are exactly uniform in that direction; :func:`fgout_centerline` handles
+    that valid GeoClaw form.
+    """
+    if (base_dx <= 0.0 or levels < 2 or ratio < 2
+            or transverse_ratio < 1 or speed_tolerance <= 0.0):
+        raise ValueError("Front AMR requires base_dx>0, levels>=2, ratio>=2, transverse_ratio>=1, and speed_tolerance>0")
+    ratios = [int(ratio)] * (int(levels) - 1)
+    ratio_text = " ".join(str(value) for value in ratios)
+    transverse_ratio_text = " ".join(str(int(transverse_ratio)) for _ in ratios)
+    amr_data = work / "amr.data"
+    _replace_data_value(amr_data, "amr_levels_max", str(int(levels)))
+    _replace_data_value(amr_data, "refinement_ratios_x", ratio_text)
+    _replace_data_value(amr_data, "refinement_ratios_y", transverse_ratio_text)
+    _replace_data_value(amr_data, "refinement_ratios_t", ratio_text)
+    _replace_data_value(amr_data, "flag_richardson", "F")
+    _replace_data_value(amr_data, "flag2refine", "F" if forced_regions else "T")
+    if max1d is not None:
+        if max1d < 6:
+            raise ValueError("max1d must leave room for interior and ghost cells")
+        _replace_data_value(amr_data, "max1d", str(int(max1d)))
+    _replace_data_value(
+        work / "refinement.data",
+        "speed_tolerance",
+        " ".join(f"{float(speed_tolerance):.12g}" for _ in ratios),
+    )
+    if forced_regions:
+        if any(
+            region[0] < 1 or region[1] < region[0] or region[1] > levels
+            for region in forced_regions
+        ):
+            raise ValueError("Forced-region levels must lie within the configured AMR levels")
+        lines = [
+            "########################################################",
+            "### Validation-controlled moving front corridors      ###",
+            "########################################################",
+            "",
+            f"{len(forced_regions)}                    =: num_regions",
+        ]
+        lines.extend(" ".join(f"{value:.16g}" for value in region) for region in forced_regions)
+        (work / "regions.data").write_text("\n".join(lines) + "\n")
+
+    refinement_factor = int(np.prod(ratios))
+    finest_dx = float(base_dx) / refinement_factor
+    nx_float = (float(xupper) - float(xlower)) / finest_dx
+    if not np.isclose(nx_float, round(nx_float)):
+        raise ValueError("The finest AMR spacing must divide the longitudinal domain exactly")
+    if output_ny < 1:
+        raise ValueError("output_ny must be positive")
+    _replace_commented_value(
+        work / "fgout_grids.data", "nx,ny", f"{round(nx_float)}  {int(output_ny)}"
+    )
+    # These verification drivers never consume fgmax.  Leaving the generated
+    # full-domain grid enabled would update peak fields at every fine time
+    # step and dominate the cost of a front-local AMR calculation.
+    _replace_data_value(work / "fgmax_grids.data", "num_fgmax_grids", "0")
+    return {
+        "amr_levels": int(levels),
+        "refinement_ratios": ratios,
+        "transverse_refinement_ratios": [int(transverse_ratio)] * len(ratios),
+        "base_dx_m": float(base_dx),
+        "finest_dx_m": finest_dx,
+        "speed_tolerance_m_s": float(speed_tolerance),
+        "amr_flagging": "prescribed moving front corridors" if forced_regions else "resolved speed",
+        "forced_region_count": len(forced_regions or []),
+        "fgout_nx": round(nx_float),
+        "fgout_ny": int(output_ny),
+        "fgmax_enabled": False,
+        "max1d": int(max1d) if max1d is not None else None,
+    }
+
+
+def moving_front_corridors(
+    front,
+    rear,
+    *,
+    t_final: float,
+    interval: float,
+    margin: float,
+    xlower: float,
+    xupper: float,
+    ylower: float,
+    yupper: float,
+    level: int,
+) -> list[tuple[int, int, float, float, float, float, float, float]]:
+    """Return narrow, overlapping AMR regions around two known benchmark fronts.
+
+    The analytical locations are used only to allocate resolution; they are
+    never passed to the AVAC state or numerical flux.  Each interval samples
+    both endpoints and its midpoint, then adds a fixed spatial margin.  A
+    half-interval overlap prevents a front from crossing a corridor boundary
+    between regridding events.
+    """
+    if (t_final <= 0.0 or interval <= 0.0 or margin <= 0.0 or level < 2
+            or xupper <= xlower or yupper <= ylower):
+        raise ValueError("Invalid moving-front corridor controls")
+    edges = np.linspace(0.0, t_final, int(np.ceil(t_final / interval)) + 1)
+    regions: list[tuple[int, int, float, float, float, float, float, float]] = []
+    for left, right in zip(edges[:-1], edges[1:]):
+        sample_times = np.asarray([left, 0.5 * (left + right), right])
+        time_low = max(0.0, left - 0.5 * interval)
+        time_high = min(t_final, right + 0.5 * interval)
+        for location in (front, rear):
+            positions = np.asarray(location(sample_times), dtype=float)
+            region_left = max(xlower, float(np.nanmin(positions)) - margin)
+            region_right = min(xupper, float(np.nanmax(positions)) + margin)
+            if region_right > region_left:
+                regions.append(
+                    (level, level, time_low, time_high, region_left, region_right, ylower, yupper)
+                )
+    return regions
+
+
 def _write_qinit_data(path: Path, depth_file: Path, qinit_type: int = 1) -> None:
     path.write_text(
         "########################################################\n"
@@ -375,6 +521,7 @@ def prepare_wave_hydraulic_case(
     boundary_south: str = "wall", boundary_north: str = "wall",
     hydraulic_boundaries: dict[int, tuple[int, float, float]] | None = None,
     limiter: str = "mc", max1d: int | None = None,
+    dry_tolerance: float = 1.0e-12,
     refinement: int = 1,
     forced_regions: list[tuple[int, int, float, float, float, float, float, float]] | None = None,
 ) -> Path:
@@ -425,7 +572,7 @@ def prepare_wave_hydraulic_case(
         },
         "computation": {
             "boundary": "extrap", "cell_size": dx, "cfl_max": 0.5,
-            "cfl_target": 0.25, "damping": 1.0, "dry_limit": 1.0e-12,
+            "cfl_target": 0.25, "damping": 1.0, "dry_limit": float(dry_tolerance),
             "initial_mass": False, "limiter": limiter, "max_iter": 5000000,
             "mode": "internal_shoreline", "nb_grid": round((xupper-xlower)/dx),
             "nb_simul": nout, "refinement": int(refinement),
@@ -469,7 +616,7 @@ def prepare_wave_hydraulic_case(
         # setrun writes one coefficient per Strickler zone; keep that complete
         # generated vector instead of replacing it with a scalar.
         _replace_data_value(work/"geoclaw.data","friction_depth","1.e12")
-    _replace_data_value(work/"geoclaw.data","dry_tolerance","1.e-12")
+    _replace_data_value(work/"geoclaw.data","dry_tolerance",f"{float(dry_tolerance):.12g}")
     _replace_data_value(work/"claw.data","cfl_desired","0.25")
     _replace_data_value(work/"claw.data","cfl_max","0.5")
     _replace_data_value(work/"amr.data","flag2refine","F")
@@ -497,8 +644,11 @@ def prepare_wave_hydraulic_case(
 
 
 def prepare_avac_coulomb_case(case: Path, *, xlower: float, xupper: float, ylower: float, yupper: float,
-                              dx: float, t_final: float, nout: int, mu: float, depth) -> Path:
+                              dx: float, t_final: float, nout: int, mu: float, depth,
+                              refinement: int = 1) -> Path:
     """Prepare a quasi-1D Coulomb case with the packaged AVAC runtime."""
+    if refinement < 1:
+        raise ValueError("refinement must be at least 1")
     case = case.resolve()
     clean_case(case)
     x, y, _ = write_topography(case, xlower, xupper, ylower, yupper, dx, lambda X, Y: np.zeros_like(X))
@@ -510,7 +660,7 @@ def prepare_avac_coulomb_case(case: Path, *, xlower: float, xupper: float, ylowe
                         "cfl_max": 1.0, "cfl_target": 0.8, "dry_limit": 1.0e-8, "force_stop": False,
                         "initial_mass": False, "limiter": "mc", "mass_frac_stop": 0.0,
                         "mass_threshold_velocity": 0.0, "max_iter": 2000000, "nb_simul": nout,
-                        "output_directory": "_output", "refinement": 1, "t_max": t_final,
+                        "output_directory": "_output", "refinement": int(refinement), "t_max": t_final,
                         "topo_dir": "", "track_mass": False, "xlower": xlower, "xupper": xupper,
                         "ylower": ylower, "yupper": yupper, "dx": dx, "dy": dx},
         "dem_extent": {"cell_size": dx, "nbx": round((xupper-xlower)/dx), "nby": round((yupper-ylower)/dx),
@@ -550,7 +700,9 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
                             dx: float, t_final: float, nout: int, bed, depth,
                             boundary_west: str = "wall", boundary_east: str = "extrap",
                             boundary_south: str = "wall", boundary_north: str = "wall",
-                            limiter: str = "mc", max1d: int | None = None) -> Path:
+                            limiter: str = "mc", max1d: int | None = None,
+                            refinement: int = 1,
+                            qinit_dx: float | None = None) -> Path:
     """Prepare a frictionless quasi-1D water case with the packaged AVAC solver.
 
     The AVAC executable includes GeoClaw's shallow-water solver.  Disabling
@@ -559,10 +711,27 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
     its ``setrun`` configuration path, topography reader, qinit reader, and
     fgout writer.
     """
+    if refinement < 1:
+        raise ValueError("refinement must be at least 1")
+    qinit_dx = dx if qinit_dx is None else float(qinit_dx)
+    if qinit_dx <= 0.0:
+        raise ValueError("qinit_dx must be positive")
+    qinit_cells = (xupper - xlower) / qinit_dx
+    if not np.isclose(qinit_cells, round(qinit_cells)):
+        raise ValueError("qinit_dx must divide the longitudinal domain exactly")
     case = case.resolve()
     clean_case(case)
     x, y, _ = write_topography(case, xlower, xupper, ylower, yupper, dx, bed)
-    write_depth_xyz(case / "AVAC" / "init.xyz", x, y, depth)
+    # Sample qinit independently at the finest longitudinal AMR spacing.  A
+    # deliberately coarse far field must not degrade an analytical initial
+    # profile before refinement is created.  The quasi-1D state is uniform in
+    # y, so retaining the base-grid transverse sampling avoids a large file.
+    qinit_ghost_cells = 2
+    qinit_x = xlower + (
+        np.arange(round(qinit_cells) + 2 * qinit_ghost_cells)
+        - qinit_ghost_cells + 0.5
+    ) * qinit_dx
+    write_depth_xyz(case / "AVAC" / "init.xyz", qinit_x, y, depth)
     config = {
         "animation": {"animation_directory": "validation", "label_step": 1,
                       "making_html": False, "n_out": nout, "variable": "depth"},
@@ -573,7 +742,7 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
             "cfl_target": 0.25, "dry_limit": 1.0e-12, "force_stop": False,
             "initial_mass": False, "limiter": limiter, "mass_frac_stop": 0.0,
             "mass_threshold_velocity": 0.0, "max_iter": 2000000,
-            "nb_simul": nout, "output_directory": "_output", "refinement": 1,
+            "nb_simul": nout, "output_directory": "_output", "refinement": int(refinement),
             "t_max": t_final, "topo_dir": "", "track_mass": False,
             "xlower": xlower, "xupper": xupper, "ylower": ylower,
             "yupper": yupper, "dx": dx, "dy": dx,
@@ -599,11 +768,11 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
             "gradient_hypso": 0.0, "nu": 0.0, "period_return": 0, "theta_cr": 0,
             "z_ref": 0, "theta": 0.0, "free_surface": 0.0, "xb": 0.0,
         },
-        # Zero-stress water mode: the source hook is used only to clear
-        # momentum from cells that have become dry.  Coulomb, Voellmy, and
-        # Manning stresses are identically zero.
+        # Select AVAC's explicit water branch, not a zero-friction Coulomb
+        # surrogate.  Besides disabling granular stress, this retains
+        # GeoClaw's free-surface-preserving AMR interpolation on sloping beds.
         "rheology": {
-            "C": 0.0, "beta": 0.0, "model": "Coulomb", "mu": 0.0,
+            "C": 0.0, "beta": 0.0, "model": "Water", "mu": 0.0,
             "rho": 1000.0, "u_cr": 0.0, "xi": 1.0e12, "z_breaks": [],
         },
     }
@@ -619,7 +788,7 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
     _replace_data_value(work / "geoclaw.data", "dry_tolerance", "1.e-12")
     _replace_data_value(work / "claw.data", "cfl_desired", "0.25")
     _replace_data_value(work / "claw.data", "cfl_max", "0.5")
-    _replace_data_value(work / "amr.data", "flag2refine", "F")
+    _replace_data_value(work / "amr.data", "flag2refine", "T" if refinement > 1 else "F")
     # AVAC's standard setup starts at 0.01 s, which is appropriate for the
     # plugin's metre-scale grids but violates CFL on the tutorial's 0.005 m
     # grid before adaptive stepping can react.  Start below CFL 0.2; the
@@ -861,6 +1030,8 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
     solver_error = (
         "SOLUTION ERROR" in combined_output
         or "Error ***" in combined_output
+        or "Too many dt reductions" in combined_output
+        or "Stopping calculation" in combined_output
         or "set_fgout: ERROR" in combined_output
         or "ERROR reading hydraulic" in combined_output
         or "ERROR: hydraulic boundary" in combined_output
@@ -892,6 +1063,88 @@ def fgout_times(kind: str, work: Path) -> list[float]:
     """Return fgout frame times without assuming the requested output cadence."""
     frames = sorted(work.glob("fgout0001.t*"))
     return [float(path.read_text().splitlines()[0].split()[0]) for path in frames]
+
+
+def fgout_centerline(
+    kind: str, work: Path, frame: int
+) -> tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``t, x, h, hu, hv, B`` for one fixed-grid centreline frame.
+
+    Clawpack's general two-dimensional reader rejects a one-row fixed grid
+    because its legacy header stores a zero transverse increment.  The binary
+    payload is nevertheless well defined, so that special case is read
+    directly.  Multi-row outputs continue through the packaged reader.
+    """
+    frame = int(frame)
+    source_root = CLAWPACK_SOURCE
+    with working_directory(work):
+        _activate_packaged_clawpack(source_root)
+        from clawpack.geoclaw import fgout_tools
+
+        grid = fgout_tools.FGoutGrid(1, outdir=str(work), output_format="binary32")
+        grid.read_fgout_grids_data()
+        if grid.ny != 1:
+            fg = grid.read_frame(frame)
+            middle = fg.h.shape[1] // 2
+            return (
+                float(fg.t),
+                np.asarray(fg.X[:, middle], dtype=float),
+                np.asarray(fg.h[:, middle], dtype=float),
+                np.asarray(fg.hu[:, middle], dtype=float),
+                np.asarray(fg.hv[:, middle], dtype=float),
+                np.asarray(fg.B[:, middle], dtype=float),
+            )
+
+        suffix = str(frame).zfill(4)
+        header_values = [
+            line.split()[0]
+            for line in (work / f"fgout0001.q{suffix}").read_text().splitlines()
+            if line.strip()
+        ]
+        if len(header_values) < 8:
+            raise RuntimeError(f"Incomplete fgout header for frame {frame}")
+        mx, my = int(header_values[2]), int(header_values[3])
+        xlow, dx = float(header_values[4]), float(header_values[6])
+        if my != 1 or mx != grid.nx:
+            raise RuntimeError(f"Unexpected one-row fgout shape ({mx}, {my}) in frame {frame}")
+        time_tokens = (work / f"fgout0001.t{suffix}").read_text().split()
+        time_s = float(time_tokens[0])
+        meqn = int(time_tokens[2])
+        file_format = time_tokens[-2].lower()
+        dtype = np.float32 if file_format == "binary32" else np.float64
+        values = np.fromfile(work / f"fgout0001.b{suffix}", dtype=dtype)
+        expected = meqn * mx * my
+        if values.size != expected:
+            raise RuntimeError(
+                f"Frame {frame} has {values.size} values; expected {expected}"
+            )
+        q = values.reshape((meqn, mx, my), order="F")[:, :, 0]
+        if meqn < 4:
+            raise RuntimeError("The validation fgout must contain h, hu, hv, and bed")
+        x = xlow + (np.arange(mx, dtype=float) + 0.5) * dx
+        return time_s, x, q[0].astype(float), q[1].astype(float), q[2].astype(float), q[3].astype(float)
+
+
+def maximum_written_amr_level(work: Path, *, final_only: bool = False) -> int:
+    """Return the maximum AMR level recorded in native frame headers."""
+    frames = sorted(
+        path for path in work.glob("fort.q*")
+        if path.name.replace("fort.q", "").isdigit()
+    )
+    if not frames:
+        raise RuntimeError(f"No native solver frames in {work}")
+    if final_only:
+        frames = frames[-1:]
+    levels = [
+        int(match.group(1))
+        for path in frames
+        for match in re.finditer(
+            r"^\s*(\d+)\s+AMR_level\s*$", path.read_text(), flags=re.MULTILINE
+        )
+    ]
+    if not levels:
+        raise RuntimeError(f"No AMR patch levels recorded in {work}")
+    return max(levels)
 
 
 def centerline(frame, field: str = "h") -> tuple[np.ndarray, np.ndarray]:

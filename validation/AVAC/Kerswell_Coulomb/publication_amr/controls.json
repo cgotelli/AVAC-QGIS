@@ -1,0 +1,22 @@
+{
+  "amr_levels": 3,
+  "refinement_ratios": [
+    4,
+    4
+  ],
+  "transverse_refinement_ratios": [
+    1,
+    1
+  ],
+  "base_dx_m": 0.04,
+  "finest_dx_m": 0.0025,
+  "speed_tolerance_m_s": 0.02,
+  "amr_flagging": "prescribed moving front corridors",
+  "forced_region_count": 400,
+  "fgout_nx": 16000,
+  "fgout_ny": 1,
+  "fgmax_enabled": false,
+  "max1d": 1000,
+  "corridor_interval_s": 0.05,
+  "corridor_margin_m": 0.15
+}

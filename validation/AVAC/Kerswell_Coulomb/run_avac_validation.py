@@ -8,12 +8,9 @@ boundaries across the strip.  The centerline is evaluated from the AVAC field.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
-import io
 import json
 from pathlib import Path
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,13 +22,13 @@ HERE = Path(__file__).resolve().parent
 
 from avac4qgis_validation.runtime import (
     GRAVITY,
-    _replace_data_value,
-    clean_case,
-    fgout_frame,
+    configure_front_amr,
+    fgout_centerline,
     fgout_times,
+    maximum_written_amr_level,
+    moving_front_corridors,
     prepare_avac_coulomb_case,
     run_solver,
-    runtime,
     solver_executable,
 )
 from avac4qgis_validation.kerswell import position_riemann, time_riemann
@@ -75,15 +72,11 @@ def read_centerline(work: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
     velocity_rows: list[np.ndarray] = []
     x: np.ndarray | None = None
     for frame_no, _ in enumerate(fgout_times("avac", work), start=1):
-        with contextlib.redirect_stdout(io.StringIO()):
-            frame = fgout_frame("avac", work, frame_no)
-        middle = frame.h.shape[1] // 2
-        h = np.asarray(frame.h[:, middle], dtype=float)
-        hu = np.asarray(frame.hu[:, middle], dtype=float)
+        time_s, frame_x, h, hu, _hv, _bed = fgout_centerline("avac", work, frame_no)
         if x is None:
-            x = np.asarray(frame.X[:, middle], dtype=float)
+            x = frame_x
         u = np.divide(hu, h, out=np.zeros_like(h), where=h > 1.0e-12)
-        times.append(float(frame.t))
+        times.append(time_s)
         depth_rows.append(h)
         velocity_rows.append(u)
     if x is None:
@@ -91,8 +84,9 @@ def read_centerline(work: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
     return np.asarray(times), x, np.asarray(depth_rows), np.asarray(velocity_rows)
 
 
-def extract(work: Path, dx: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
     times, x, depth, velocity = read_centerline(work)
+    dx = float(np.median(np.diff(x)))
     front = np.full(times.shape, np.nan)
     rear = np.full(times.shape, np.nan)
     max_speed = np.max(np.abs(velocity), axis=1)
@@ -109,9 +103,11 @@ def extract(work: Path, dx: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, 
     summary = {
         "solver": str(solver_executable("avac")),
         "solver_sha256": sha256(solver_executable("avac")),
-        "dx_m": dx,
-        "dy_m": dx,
-        "width_cells": 5,
+        "diagnostic_dx_m": dx,
+        "width_base_cells": 5,
+        **controls,
+        "maximum_amr_level_seen": maximum_written_amr_level(work),
+        "final_amr_level": maximum_written_amr_level(work, final_only=True),
         "t_final_s": float(times[-1]),
         "front_rmse_moving_m": float(np.sqrt(np.nanmean(
             (front[moving_front] - theory_front(times[moving_front])) ** 2
@@ -268,33 +264,52 @@ def plot(times: np.ndarray, x: np.ndarray, depth: np.ndarray, velocity: np.ndarr
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dx", type=float, default=0.01)
+    parser.add_argument("--dx", type=float, default=0.01, help="base-grid spacing in m")
     parser.add_argument("--t-final", type=float, default=10.0)
     parser.add_argument("--nout", type=int, default=200)
     parser.add_argument("--cores", type=int, default=8)
+    parser.add_argument("--case-name", default="publication_amr")
+    parser.add_argument("--amr-levels", type=int, default=3)
+    parser.add_argument("--amr-ratio", type=int, default=2)
+    parser.add_argument("--speed-tolerance", type=float, default=0.02)
+    parser.add_argument("--max1d", type=int, default=1000)
     args = parser.parse_args()
-    if args.dx <= 0 or args.t_final <= 0 or args.nout < 1 or args.cores < 1:
-        raise ValueError("dx, t-final, nout, and cores must be positive")
+    if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
+            or args.amr_levels < 2 or args.amr_ratio < 2 or args.speed_tolerance <= 0):
+        raise ValueError("dx, t-final, cores, speed-tolerance, and nout>=3 must be positive; AMR needs levels>=2 and ratio>=2")
     if not np.isclose((XUPPER - XLOWER) / args.dx, round((XUPPER - XLOWER) / args.dx)):
         raise ValueError("dx must divide the 40 m domain exactly")
 
-    clean_case(HERE)
-    figures = HERE / "figures"
-    figures.mkdir(exist_ok=True)
+    case_root = HERE / args.case_name
+    figures = case_root / "figures"
     work = prepare_avac_coulomb_case(
-        HERE, xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
+        case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
         dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
         depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
+        refinement=args.amr_levels,
     )
-    _replace_data_value(work / "amr.data", "flag2refine", "F")
-    _replace_data_value(work / "amr.data", "max1d", str(round((XUPPER - XLOWER) / args.dx)))
+    corridor_interval = 0.05
+    corridor_margin = 0.15
+    corridors = moving_front_corridors(
+        theory_front, theory_rear, t_final=args.t_final,
+        interval=corridor_interval, margin=corridor_margin,
+        xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
+        level=args.amr_levels,
+    )
+    controls = configure_front_amr(
+        work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+        levels=args.amr_levels, ratio=args.amr_ratio,
+        speed_tolerance=args.speed_tolerance, output_ny=1, max1d=args.max1d,
+        forced_regions=corridors,
+    ) | {"corridor_interval_s": corridor_interval, "corridor_margin_m": corridor_margin}
+    (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
     run_solver("avac", work, cores=args.cores)
 
-    times, x, depth, velocity, summary = extract(work, args.dx)
+    times, x, depth, velocity, summary = extract(work, controls)
     front = np.asarray(summary.pop("_front"))
     rear = np.asarray(summary.pop("_rear"))
     mass = np.asarray(summary.pop("_mass"))
-    results = HERE / "results"
+    results = case_root / "results"
     results.mkdir(exist_ok=True)
     np.savez_compressed(results / "centerline_fields.npz", time_s=times, x_m=x, depth_m=depth, velocity_m_s=velocity)
     np.savetxt(results / "boundary_metrics.csv", np.column_stack((times, front, rear, np.max(np.abs(velocity), axis=1), mass)),

@@ -5,7 +5,8 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current release is **0.5.12** and targets **QGIS 3.44 LTS**.
+The latest published release is **0.5.12** and targets **QGIS 3.44 LTS**.
+This checkout contains the unpushed **0.5.14** release candidate.
 
 ## Interface overview
 

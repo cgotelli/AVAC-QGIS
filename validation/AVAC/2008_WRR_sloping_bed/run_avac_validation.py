@@ -10,10 +10,8 @@ generated figures contain AVAC output and the analytical solution.
 from __future__ import annotations
 
 import argparse
-import contextlib
 from functools import lru_cache
 import hashlib
-import io
 import json
 from pathlib import Path
 import sys
@@ -31,8 +29,11 @@ HERE = Path(__file__).resolve().parent
 from avac4qgis_validation.runtime import (
     GRAVITY,
     clean_case,
-    fgout_frame,
+    configure_front_amr,
+    fgout_centerline,
     fgout_times,
+    maximum_written_amr_level,
+    moving_front_corridors,
     prepare_avac_water_case,
     prepare_wave_hydraulic_case,
     run_solver,
@@ -43,15 +44,17 @@ from avac4qgis_validation.runtime import (
 
 H0 = 1.0
 THETA = np.deg2rad(10.0)
-# These are the original Chapter 8 limits.  This validation intentionally
-# follows its initial/boundary-value problem exactly; it is not a new,
-# enlarged-domain variant of it.
-XLOWER, XUPPER = -10.0, 40.0
+BED_DATUM = 10.0
+REAR_SPEED_TOLERANCE = 1.0e-2
+# The original tutorial stopped at x=40 m, which the analytical front reaches
+# before the final output.  The publication domain is extended downstream so
+# both fronts remain interior for the complete comparison; the initial state,
+# bed gradient, and boundary types are otherwise unchanged.
+XLOWER, XUPPER = -10.0, 60.0
 T_FINAL, NOUT = 5.0, 100
 # The reference tutorial resolves the 50 m domain with 10,000 cells.  Keep
 # the two-dimensional strip at that same 5 mm longitudinal resolution.
 REFERENCE_DX = 0.005
-STRIP_CELLS = 5
 T0 = np.sqrt(H0 / (np.cos(THETA) * GRAVITY))
 U0 = np.sqrt(GRAVITY * H0 * np.cos(THETA))
 # qinit.f90 from the supplied tutorial archive defines the initial dam-break
@@ -104,25 +107,28 @@ def track_boundaries(x: np.ndarray, depth: np.ndarray,
     In ``dry-bottom_Sloping-bed.ipynb``, ``x_b`` is the first upstream cell
     with resolvable motion, not the last cell that still matches the initial
     hydrostatic wedge.  The latter definition is particularly wrong after the
-    analytical rear boundary turns downslope: the original shallow edge may
-    remain wet while the moving boundary has already passed it.  Keeping the
-    tutorial's two safeguards also avoids reporting a nearly dry numerical
-    cell as the rear boundary.
+    analytical rear boundary turns downslope.  A 0.01 m/s resolution threshold
+    is small relative to the O(1 m/s) benchmark flow but rejects sub-centimetre
+    per second imbalance on the deliberately coarse hydrostatic far field.
     """
     rear = np.full(depth.shape[0], np.nan)
     front = np.full(depth.shape[0], np.nan)
 
     for index, (h, u) in enumerate(zip(depth, velocity)):
-        upstream_moving = x[(u > 1.0e-5) & (x < 0.0)]
-        wet_moving = x[(u > 1.0e-4) & (h > 1.0e-4)]
-        rear_candidates = [
-            value for value in (
-                upstream_moving[0] if upstream_moving.size else np.nan,
-                wet_moving[0] if wet_moving.size else np.nan,
-            ) if np.isfinite(value)
-        ]
-        if rear_candidates:
-            rear[index] = max(rear_candidates)
+        rear_indices = np.flatnonzero(
+            (u > REAR_SPEED_TOLERANCE) & (x < 0.0) & (h > 1.0e-4)
+        )
+        if rear_indices.size:
+            # Coarse hydrostatic cells can occasionally exceed the velocity
+            # tolerance in isolation.  The physical moving volume is the
+            # downstream-most contiguous component, connected to the main
+            # dam-break flow rather than to an isolated upstream cell.
+            component_breaks = np.flatnonzero(np.diff(rear_indices) > 1)
+            component_start = (
+                rear_indices[component_breaks[-1] + 1]
+                if component_breaks.size else rear_indices[0]
+            )
+            rear[index] = float(x[component_start])
 
         moving = x[u > 1.0e-4]
         if moving.size:
@@ -137,15 +143,13 @@ def read_centerline(work: Path, solver_kind: str) -> tuple[np.ndarray, np.ndarra
     x: np.ndarray | None = None
     bed: np.ndarray | None = None
     for frame_no, _ in enumerate(fgout_times(solver_kind, work), start=1):
-        with contextlib.redirect_stdout(io.StringIO()):
-            frame = fgout_frame(solver_kind, work, frame_no)
-        mid = frame.h.shape[1] // 2
-        h = np.asarray(frame.h[:, mid], dtype=float)
-        hu = np.asarray(frame.hu[:, mid], dtype=float)
+        time_s, frame_x, h, hu, _hv, frame_bed = fgout_centerline(
+            solver_kind, work, frame_no
+        )
         if x is None:
-            x = np.asarray(frame.X[:, mid], dtype=float)
-            bed = np.asarray(frame.B[:, mid], dtype=float)
-        times.append(float(frame.t))
+            x = frame_x
+            bed = frame_bed
+        times.append(time_s)
         depth_rows.append(h)
         # Exact velocity diagnostic used in the supplied notebook:
         #     u = q[1] / (q[0] + 1e-10)  where q[0] > 0.
@@ -303,7 +307,7 @@ def make_figures(times: np.ndarray, x: np.ndarray, bed: np.ndarray, depth: np.nd
         axis.axvline(theory_front(np.asarray([tau_value]))[0] / H0, color="#d62728", ls="--", lw=0.85)
     axis.plot([], [], "--", color="#e69500", lw=0.9, label=r"theory $x_b$")
     axis.plot([], [], "--", color="#d62728", lw=0.9, label=r"theory $x_f$")
-    axis.set(xlabel=r"$x/H_0$", ylabel=r"$h/H_0$", xlim=(-10.0, 40.0), ylim=(-0.03, 1.08))
+    axis.set(xlabel=r"$x/H_0$", ylabel=r"$h/H_0$", xlim=(-10.0, 60.0), ylim=(-0.03, 1.08))
     axis.grid(alpha=0.35)
     axis.legend(ncol=2, frameon=False)
     fig.tight_layout()
@@ -332,6 +336,10 @@ def main() -> None:
     parser.add_argument("--t-final", type=float, default=T_FINAL)
     parser.add_argument("--nout", type=int, default=NOUT)
     parser.add_argument("--cores", type=int, default=8)
+    parser.add_argument("--amr-levels", type=int, default=1)
+    parser.add_argument("--amr-ratio", type=int, default=2)
+    parser.add_argument("--speed-tolerance", type=float, default=0.02)
+    parser.add_argument("--ny", type=int, default=5)
     parser.add_argument(
         "--max1d", type=int, default=1254,
         help=(
@@ -346,10 +354,12 @@ def main() -> None:
     parser.add_argument("--solver", choices=("avac", "wave"), default="avac")
     parser.add_argument("--output-root", type=Path, default=HERE)
     args = parser.parse_args()
-    if args.dx <= 0 or args.t_final <= 0 or args.nout < 1 or args.cores < 1 or args.max1d < 1:
-        raise ValueError("dx, t-final, nout, cores, and max1d must be positive")
+    if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
+            or args.max1d < 6 or args.amr_levels < 1 or args.amr_ratio < 2
+            or args.speed_tolerance <= 0 or args.ny < 1):
+        raise ValueError("Invalid positive grid/run controls; nout must be >=3 and AMR ratio >=2")
     if not np.isclose((XUPPER - XLOWER) / args.dx, round((XUPPER - XLOWER) / args.dx)):
-        raise ValueError("dx must divide the original 50 m domain exactly")
+        raise ValueError("dx must divide the 70 m publication domain exactly")
 
     case_root = args.output_root.resolve()
     case_root.mkdir(parents=True, exist_ok=True)
@@ -358,28 +368,72 @@ def main() -> None:
         clean_case(case_root)
         prepare = (prepare_avac_water_case if args.solver == "avac"
                    else prepare_wave_hydraulic_case)
-        work = prepare(
-            case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0,
-            yupper=STRIP_CELLS * args.dx,
-            dx=args.dx, t_final=args.t_final, nout=args.nout,
-            bed=lambda X, Y: np.tan(-THETA) * X,
+        prepare_kwargs = {
+            "case": case_root, "xlower": XLOWER, "xupper": XUPPER,
+            "ylower": 0.0, "yupper": args.ny * args.dx,
+            "dx": args.dx, "t_final": args.t_final, "nout": args.nout,
+            # A constant datum leaves the equations and exact solution
+            # unchanged, while keeping dry downstream cells above GeoClaw's
+            # default sea level during AMR interpolation.
+            "bed": lambda X, Y: BED_DATUM + np.tan(-THETA) * X,
             # Exact transcription of qinit.f90 in
             # Chapter_8/1_Sloping-bed/dry-bottom_Sloping-bed.tar.gz:
             # q(1,i) = H0 * (1 - x / xb), xb = -H0 / tan(theta).
-            depth=lambda X, Y: np.where(
+            "depth": lambda X, Y: np.where(
                 (X >= XB) & (X <= 0.0), H0 * (1.0 - X / XB), 0.0
             ),
             # Periodic transverse boundaries are the faithful two-dimensional
             # extrusion of the tutorial's one-dimensional problem.  Reflective
             # side walls can seed small transverse modes in a narrow strip.
-            boundary_west="wall", boundary_east="extrap",
-            boundary_south="periodic", boundary_north="periodic",
-            limiter="superbee", max1d=args.max1d,
-        )
+            "boundary_west": "wall", "boundary_east": "extrap",
+            "boundary_south": "periodic", "boundary_north": "periodic",
+            "limiter": "superbee", "max1d": args.max1d,
+        }
+        if args.solver == "avac":
+            prepare_kwargs["refinement"] = args.amr_levels
+            prepare_kwargs["qinit_dx"] = (
+                args.dx / args.amr_ratio ** (args.amr_levels - 1)
+            )
+        work = prepare(**prepare_kwargs)
+        controls: dict[str, object] = {
+            "base_dx_m": float(args.dx), "finest_dx_m": float(args.dx),
+            "amr_levels": 1, "refinement_ratios": [],
+            "speed_tolerance_m_s": None, "fgout_ny": args.ny,
+            "max1d": args.max1d,
+        }
+        if args.solver == "avac" and args.amr_levels > 1:
+            corridor_interval = 0.05
+            corridor_margin = 0.15
+            corridors = moving_front_corridors(
+                lambda values: theory_front(np.asarray(values) / T0),
+                lambda values: theory_rear(np.asarray(values) / T0),
+                t_final=args.t_final, interval=corridor_interval,
+                margin=corridor_margin, xlower=XLOWER, xupper=XUPPER,
+                ylower=0.0, yupper=args.ny * args.dx,
+                level=args.amr_levels,
+            )
+            controls = configure_front_amr(
+                work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+                levels=args.amr_levels, ratio=args.amr_ratio,
+                speed_tolerance=args.speed_tolerance, output_ny=1,
+                max1d=args.max1d,
+                forced_regions=corridors,
+            ) | {
+                "corridor_interval_s": corridor_interval,
+                "corridor_margin_m": corridor_margin,
+                "qinit_dx_m": prepare_kwargs["qinit_dx"],
+                "rear_speed_tolerance_m_s": REAR_SPEED_TOLERANCE,
+            }
+        controls |= {
+            "domain_xlower_m": XLOWER,
+            "domain_xupper_m": XUPPER,
+        }
+        (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
         run_solver(args.solver, work, cores=args.cores)
     elif not work.is_dir():
         raise FileNotFoundError("No completed solver directory is available for post-processing")
     times, x, bed, depth, velocity = read_centerline(work, args.solver)
+    controls = json.loads((case_root / "controls.json").read_text())
     rear, front = track_boundaries(x, depth, velocity)
     dx_actual = float(np.median(np.diff(x)))
     max1d_actual = labelled_integer(work / "amr.data", "max1d")
@@ -399,9 +453,12 @@ def main() -> None:
         "solver": str(solver_executable(args.solver)),
         "solver_sha256": sha256(solver_executable(args.solver)),
         "water_model": f"{args.solver.upper()} Water",
-        "dx_m": dx_actual,
-        "dy_m": args.dx,
-        "width_cells": STRIP_CELLS,
+        "bed_datum_m": BED_DATUM,
+        "diagnostic_dx_m": dx_actual,
+        "width_base_cells": args.ny,
+        **controls,
+        "maximum_amr_level_seen": maximum_written_amr_level(work),
+        "final_amr_level": maximum_written_amr_level(work, final_only=True),
         "max1d": max1d_actual,
         "cores": args.cores,
         "t_final_s": float(times[-1]),
@@ -409,6 +466,12 @@ def main() -> None:
             (front[interior_front] - theory_front(tau[interior_front])) ** 2
         ))),
         "rear_rmse_m_before_open_boundary_m": float(np.sqrt(np.nanmean(
+            (rear[interior_front] - theory_rear(tau[interior_front])) ** 2
+        ))),
+        "front_rmse_m_full_domain": float(np.sqrt(np.nanmean(
+            (front[interior_front] - theory_front(tau[interior_front])) ** 2
+        ))),
+        "rear_rmse_m_full_domain": float(np.sqrt(np.nanmean(
             (rear[interior_front] - theory_rear(tau[interior_front])) ** 2
         ))),
         "rear_rmse_m_full_run": float(np.sqrt(np.nanmean(
@@ -419,6 +482,7 @@ def main() -> None:
         "mass_initial_m2_per_m": float(mass[0]),
         "mass_initial_theory_m2_per_m": float(expected_initial_mass),
         "mass_range_before_open_boundary_m2_per_m": float(np.ptp(closed_mass)),
+        "mass_range_full_domain_m2_per_m": float(np.ptp(closed_mass)),
         "open_boundary_reached_s": float(times[outflow_start[0]]) if outflow_start.size else None,
         "mass_final_m2_per_m": float(mass[-1]),
     }
