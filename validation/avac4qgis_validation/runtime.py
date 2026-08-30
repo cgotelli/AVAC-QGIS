@@ -27,6 +27,7 @@ import numpy as np
 
 
 GRAVITY = 9.81
+AVAC_GHOST_CELLS = 2
 VALIDATION_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = VALIDATION_ROOT.parent
 CLAWPACK_SOURCE = WORKSPACE / "avac-main" / "clawpack-v5.14.0"
@@ -165,20 +166,30 @@ def _arc_ascii(path: Path, xmin: float, ymin: float, dx: float, values: np.ndarr
     path.write_text("\n".join(lines) + "\n")
 
 
-def write_topography(case: Path, xlower: float, xupper: float, ylower: float, yupper: float,
-                     dx: float, bed) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def write_topography(
+    case: Path,
+    xlower: float,
+    xupper: float,
+    ylower: float,
+    yupper: float,
+    dx: float,
+    bed,
+    *,
+    ghost_cells: int = 2,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Write the WAVE/GeoClaw topography and dry-mask grids.
 
-    ``bed`` is evaluated at grid-cell centers.  Two halo cells are added on
-    every side to cover GeoClaw's two ghost-cell layers.  A one-cell halo is
-    insufficient for periodic boundaries and can leave boundary auxiliary
-    cells outside every registered topography grid.
+    ``bed`` is evaluated at grid-cell centers.  ``ghost_cells`` halo cells
+    are added on every side so boundary auxiliary cells remain inside a
+    registered topography grid.  Both AVAC and WAVE use GeoClaw's standard
+    two-cell halo.
     """
     nx = round((xupper - xlower) / dx)
     ny = round((yupper - ylower) / dx)
     if not (nx >= 2 and ny >= 2):
         raise ValueError("A quasi-1D validation needs at least two cells in each direction.")
-    ghost_cells = 2
+    if ghost_cells < 1:
+        raise ValueError("ghost_cells must be positive")
     x = xlower + (np.arange(nx + 2 * ghost_cells) - ghost_cells + 0.5) * dx
     y = ylower + (np.arange(ny + 2 * ghost_cells) - ghost_cells + 0.5) * dx
     X, Y = np.meshgrid(x, y)
@@ -266,6 +277,8 @@ def configure_front_amr(
     base_dx: float,
     xlower: float,
     xupper: float,
+    ylower: float,
+    yupper: float,
     levels: int,
     ratio: int = 2,
     transverse_ratio: int = 1,
@@ -285,9 +298,12 @@ def configure_front_amr(
     are exactly uniform in that direction; :func:`fgout_centerline` handles
     that valid GeoClaw form.
     """
-    if (base_dx <= 0.0 or levels < 2 or ratio < 2
+    if (base_dx <= 0.0 or yupper <= ylower or levels < 2 or ratio < 2
             or transverse_ratio < 1 or speed_tolerance <= 0.0):
-        raise ValueError("Front AMR requires base_dx>0, levels>=2, ratio>=2, transverse_ratio>=1, and speed_tolerance>0")
+        raise ValueError(
+            "Front AMR requires base_dx>0, yupper>ylower, levels>=2, "
+            "ratio>=2, transverse_ratio>=1, and speed_tolerance>0"
+        )
     ratios = [int(ratio)] * (int(levels) - 1)
     ratio_text = " ".join(str(value) for value in ratios)
     transverse_ratio_text = " ".join(str(int(transverse_ratio)) for _ in ratios)
@@ -333,6 +349,18 @@ def configure_front_amr(
     _replace_commented_value(
         work / "fgout_grids.data", "nx,ny", f"{round(nx_float)}  {int(output_ny)}"
     )
+    if output_ny == 1:
+        # A one-row fixed grid must have a single transverse coordinate.
+        # Retaining distinct lower/upper y endpoints makes GeoClaw's binary
+        # interpolation grid degenerate and fills the verification output
+        # with NaNs.  Sample the physical strip centreline instead.
+        ymid = 0.5 * (float(ylower) + float(yupper))
+        _replace_commented_value(
+            work / "fgout_grids.data", "x1, y1", f"{float(xlower):.16g}  {ymid:.16g}"
+        )
+        _replace_commented_value(
+            work / "fgout_grids.data", "x2, y2", f"{float(xupper):.16g}  {ymid:.16g}"
+        )
     # These verification drivers never consume fgmax.  Leaving the generated
     # full-domain grid enabled would update peak fields at every fine time
     # step and dominate the cost of a front-local AMR calculation.
@@ -651,7 +679,10 @@ def prepare_avac_coulomb_case(case: Path, *, xlower: float, xupper: float, ylowe
         raise ValueError("refinement must be at least 1")
     case = case.resolve()
     clean_case(case)
-    x, y, _ = write_topography(case, xlower, xupper, ylower, yupper, dx, lambda X, Y: np.zeros_like(X))
+    x, y, _ = write_topography(
+        case, xlower, xupper, ylower, yupper, dx,
+        lambda X, Y: np.zeros_like(X), ghost_cells=AVAC_GHOST_CELLS,
+    )
     write_depth_xyz(case / "AVAC" / "init.xyz", x, y, depth)
     config = {
         "animation": {"animation_directory": "validation", "label_step": 1, "making_html": False, "n_out": nout, "variable": "depth"},
@@ -721,12 +752,15 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
         raise ValueError("qinit_dx must divide the longitudinal domain exactly")
     case = case.resolve()
     clean_case(case)
-    x, y, _ = write_topography(case, xlower, xupper, ylower, yupper, dx, bed)
+    x, y, _ = write_topography(
+        case, xlower, xupper, ylower, yupper, dx, bed,
+        ghost_cells=AVAC_GHOST_CELLS,
+    )
     # Sample qinit independently at the finest longitudinal AMR spacing.  A
     # deliberately coarse far field must not degrade an analytical initial
     # profile before refinement is created.  The quasi-1D state is uniform in
     # y, so retaining the base-grid transverse sampling avoids a large file.
-    qinit_ghost_cells = 2
+    qinit_ghost_cells = AVAC_GHOST_CELLS
     qinit_x = xlower + (
         np.arange(round(qinit_cells) + 2 * qinit_ghost_cells)
         - qinit_ghost_cells + 0.5
@@ -798,7 +832,7 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
     # AMRClaw tests ``interior_cells + 2 * nghost > max1d`` when constructing
     # base patches.  ``None`` requests one long patch; an explicit value may
     # be used to create several same-level patches for OpenMP execution.
-    nghost = 2
+    nghost = AVAC_GHOST_CELLS
     minimum_max1d = round((yupper - ylower) / dx) + 2 * nghost
     if max1d is None:
         patch_limit = round((xupper - xlower) / dx) + 2 * nghost
@@ -855,7 +889,8 @@ def prepare_avac_hydraulic_case(
     case = case.resolve()
     clean_case(case)
     x, y, _bed_values = write_topography(
-        case, xlower, xupper, ylower, yupper, dx, bed
+        case, xlower, xupper, ylower, yupper, dx, bed,
+        ghost_cells=AVAC_GHOST_CELLS,
     )
     init_path = case / "AVAC" / "init.xyz"
     qinit_type = 1
@@ -930,7 +965,7 @@ def prepare_avac_hydraulic_case(
     _replace_data_value(work/"claw.data", "cfl_max", "0.5")
     _replace_data_value(work/"amr.data", "flag2refine", "F")
     _replace_data_value(work/"claw.data", "dt_initial", f"{min(0.01,0.05*dx):.12g}")
-    nghost = 2
+    nghost = AVAC_GHOST_CELLS
     minimum_max1d = round((yupper-ylower)/dx)+2*nghost
     if max1d is None:
         patch_limit = round((xupper-xlower)/dx)+2*nghost

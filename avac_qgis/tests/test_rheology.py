@@ -105,13 +105,20 @@ def test_avac_wet_dry_velocity_regularization_is_exact_then_damps():
     ).read_text(encoding="utf-8")
 
     assert "subroutine regularized_velocity" in rheology
-    assert "0.02d0 * min(dx, dy)" in src2
+    # The same resolution-scaled fringe treatment is used by verification
+    # and operational runs; no rheology- or run-specific branch is allowed.
     assert "call regularized_velocity" in src2
+    assert "0.02d0 * min(dx, dy)" in b4step2
     assert "call regularized_velocity" in b4step2
     assert "call regularized_velocity" in rpn2
+    assert "dry_tolerance >= 1.d-8" not in b4step2
+    assert "hu = h * u" in src2
+    assert "hv = h * v" in src2
     assert "FFLAGS += -DAVAC_POSITIVITY_RELIMITER" in makefile
+    assert "FFLAGS += -DAVAC_PATCH_EDGE_LIMITER" in makefile
     assert "FFLAGS += -cpp" in wave_makefile
     assert "AVAC_POSITIVITY_RELIMITER" not in wave_makefile
+    assert "AVAC_PATCH_EDGE_LIMITER" not in wave_makefile
     assert "#ifdef AVAC_POSITIVITY_RELIMITER" in step2
     assert "logical, parameter :: relimit = .true." in step2
     assert (source_dir / "fgmax_values.f90").is_file()

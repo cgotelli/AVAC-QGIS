@@ -40,6 +40,7 @@ XLOWER, XUPPER = -10.0, 30.0
 X0 = H0 / MU
 T0 = np.sqrt(H0 / GRAVITY) / MU
 U0 = np.sqrt(GRAVITY * H0)
+TRANSVERSE_CELLS = 5
 
 
 def sha256(path: Path) -> str:
@@ -104,7 +105,7 @@ def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.nda
         "solver": str(solver_executable("avac")),
         "solver_sha256": sha256(solver_executable("avac")),
         "diagnostic_dx_m": dx,
-        "width_base_cells": 5,
+        "width_base_cells": TRANSVERSE_CELLS,
         **controls,
         "maximum_amr_level_seen": maximum_written_amr_level(work),
         "final_amr_level": maximum_written_amr_level(work, final_only=True),
@@ -283,7 +284,8 @@ def main() -> None:
     case_root = HERE / args.case_name
     figures = case_root / "figures"
     work = prepare_avac_coulomb_case(
-        case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
+        case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0,
+        yupper=TRANSVERSE_CELLS * args.dx,
         dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
         depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
         refinement=args.amr_levels,
@@ -293,11 +295,13 @@ def main() -> None:
     corridors = moving_front_corridors(
         theory_front, theory_rear, t_final=args.t_final,
         interval=corridor_interval, margin=corridor_margin,
-        xlower=XLOWER, xupper=XUPPER, ylower=0.0, yupper=5.0 * args.dx,
+        xlower=XLOWER, xupper=XUPPER, ylower=0.0,
+        yupper=TRANSVERSE_CELLS * args.dx,
         level=args.amr_levels,
     )
     controls = configure_front_amr(
         work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+        ylower=0.0, yupper=TRANSVERSE_CELLS * args.dx,
         levels=args.amr_levels, ratio=args.amr_ratio,
         speed_tolerance=args.speed_tolerance, output_ny=1, max1d=args.max1d,
         forced_regions=corridors,

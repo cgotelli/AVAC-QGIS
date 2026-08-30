@@ -414,6 +414,7 @@ def main() -> None:
             )
             controls = configure_front_amr(
                 work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+                ylower=0.0, yupper=args.ny * args.dx,
                 levels=args.amr_levels, ratio=args.amr_ratio,
                 speed_tolerance=args.speed_tolerance, output_ny=1,
                 max1d=args.max1d,

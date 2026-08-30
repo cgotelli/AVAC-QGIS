@@ -25,6 +25,8 @@ PLOTDIR = _plots               # Directory for plots
 # Compiler flags can be specified here or set as an environment variable
 FFLAGS ?= -O2 -fopenmp
 FFLAGS += -DAVAC_POSITIVITY_RELIMITER
+FFLAGS += -DAVAC_PATCH_EDGE_LIMITER
+FFLAGS += -DAVAC_REGULARIZED_TRANSVERSE_VELOCITY
 OMP_NUM_THREADS = 8
 
 

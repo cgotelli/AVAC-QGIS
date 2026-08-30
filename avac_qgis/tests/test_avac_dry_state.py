@@ -16,8 +16,12 @@ def test_pdf_baseline_clears_momentum_at_geoclaw_dry_tolerance():
     b4step = (AVAC / "b4step2.f90").read_text(encoding="utf-8")
     source = (AVAC / "src2.f90").read_text(encoding="utf-8")
     riemann = (AVAC / "rpn2_geoclaw.f").read_text(encoding="utf-8")
+    step2 = (GEOCLAW / "step2.f90").read_text(encoding="utf-8")
 
     assert "q(1,i,j) <= dry_tolerance" in b4step
+    assert "dry_tolerance >= 1.d-8" not in b4step
+    assert "0.02d0 * min(dx, dy)" in b4step
+    assert "call regularized_velocity" in b4step
     assert "if (h <= dry_tolerance) then" in source
     assert "velocity_tolerance = 10.d0 * dry_tolerance" not in source
     assert "if (qr(1,i-1) <= drytol .and. ql(1,i) <= drytol)" in riemann

@@ -225,6 +225,7 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
     )
     controls = configure_front_amr(
         work, base_dx=dx, xlower=XLOWER, xupper=XUPPER,
+        ylower=0.0, yupper=NY * dx,
         levels=amr_levels, ratio=amr_ratio,
         speed_tolerance=speed_tolerance, output_ny=1,
         max1d=patch_maximum, forced_regions=corridors,

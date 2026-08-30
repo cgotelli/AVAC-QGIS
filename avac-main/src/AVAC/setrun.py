@@ -234,7 +234,9 @@ def setrun(claw_pkg='geoclaw'):
     # --------------------
     # Boundary conditions:
     # --------------------
-    # Number of ghost cells (usually 2)
+    # Two ghost cells cover AVAC's second-order normal and transverse
+    # stencils.  Keep this numerical method identical for every rheology and
+    # for both verification and operational runs.
     clawdata.num_ghost = 2
 
     # Choice of BCs at xlower and xupper:

@@ -12,6 +12,9 @@ from avac_qgis.core.results import _avac_frame_fields
 
 ROOT = Path(__file__).resolve().parents[2]
 AVAC = ROOT / "avac-main" / "src" / "AVAC"
+GEOCLAW = (
+    ROOT / "avac-main" / "clawpack-v5.14.0" / "geoclaw" / "src" / "2d" / "shallow"
+)
 
 
 class _Frame:
@@ -50,10 +53,19 @@ def test_verified_avac_source_hashes_are_stable():
         "rpn2_geoclaw.f": "2f403b9f81b22d963906cbd509fe9594dd3334ad2f37d9cc7691570a4028d1e1",
         "b4step2.f90": "97d8607958b89511eca4a7e63904ad3636a2545d975b109b2829bb48d062d225",
         "fgmax_values.f90": "bc613f38f72d342dacae6a6188b178c43e6309c5c7b3325c3d8631588a8ae346",
-        "Makefile": "9d41195d8733cde7f13871e84a1d9a529d40e78c2a940382a5f87e4d127ac31b",
+        "Makefile": "41f821e156597e3db5270238bb7f4787fa185c7a59abdf1d0c938dae0a1e43f2",
     }
     for name, digest in expected.items():
         # Git may materialize CRLF working-tree files on Windows. The source
         # contract concerns the repository text, not platform line endings.
         normalized = (AVAC / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+        assert hashlib.sha256(normalized).hexdigest() == digest
+
+    shared_expected = {
+        GEOCLAW / "flux2fw.f": "b4b6098d74347977dd86000906d2b5ab21ddb9bc7604075f48f7f8d3d12e6784",
+        ROOT / "avac-main" / "clawpack-v5.14.0" / "riemann" / "src"
+        / "rpt2_geoclaw.f": "45db3a1a6663a74b98ebeada8cc29a5946169d1340ca0778d27c36914af474d6",
+    }
+    for path, digest in shared_expected.items():
+        normalized = path.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == digest

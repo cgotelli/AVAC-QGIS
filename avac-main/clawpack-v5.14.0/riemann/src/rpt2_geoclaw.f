@@ -37,6 +37,9 @@
       ! local:
       real(kind=8) ::  s(mwaves), r(meqn,mwaves), beta(mwaves)
       real(kind=8) ::  h,u,v
+#ifdef AVAC_REGULARIZED_TRANSVERSE_VELOCITY
+      real(kind=8) ::  h_eps,h4,eps4,denominator
+#endif
       real(kind=8) ::  delf1,delf2,delf3
       real(kind=8) ::  dxdcm,dxdcp,topo1,topo3,eta
 
@@ -78,6 +81,17 @@
               ! fluctuation being split is left-going
               u = qr(mu,i-1)/h
               v = qr(mv,i-1)/h
+#ifdef AVAC_REGULARIZED_TRANSVERSE_VELOCITY
+              ! AVAC-only local flux safeguard.  The fixed 10-nm floor
+              ! covers the observed roundoff-depth singularity without
+              ! importing thread-local AVAC state or changing q.
+              h_eps = max(tol,1.d-8)
+              h4 = h**4
+              eps4 = h_eps**4
+              denominator = dsqrt(h4+dmax1(h4,eps4))
+              u = dsqrt(2.d0)*h*qr(mu,i-1)/denominator
+              v = dsqrt(2.d0)*h*qr(mv,i-1)/denominator
+#endif
               eta = h + aux2(1,i-1)
               topo1 = aux1(1,i-1)
               topo3 = aux3(1,i-1)
@@ -85,6 +99,15 @@
               ! fluctuation being split is right-going
               u = ql(mu,i)/h
               v = ql(mv,i)/h
+#ifdef AVAC_REGULARIZED_TRANSVERSE_VELOCITY
+              ! Same thread-safe local safeguard for the right state.
+              h_eps = max(tol,1.d-8)
+              h4 = h**4
+              eps4 = h_eps**4
+              denominator = dsqrt(h4+dmax1(h4,eps4))
+              u = dsqrt(2.d0)*h*ql(mu,i)/denominator
+              v = dsqrt(2.d0)*h*ql(mv,i)/denominator
+#endif
               eta = h + aux2(1,i)
               topo1 = aux1(1,i)
               topo3 = aux3(1,i)
