@@ -101,7 +101,8 @@ def initial_depth(x: np.ndarray) -> np.ndarray:
 
 
 def track_boundaries(x: np.ndarray, depth: np.ndarray,
-                     velocity: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+                     velocity: np.ndarray, *,
+                     tutorial_safeguards: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Measure the fronts with the supplied tutorial's definitions.
 
     In ``dry-bottom_Sloping-bed.ipynb``, ``x_b`` is the first upstream cell
@@ -115,20 +116,37 @@ def track_boundaries(x: np.ndarray, depth: np.ndarray,
     front = np.full(depth.shape[0], np.nan)
 
     for index, (h, u) in enumerate(zip(depth, velocity)):
-        rear_indices = np.flatnonzero(
-            (u > REAR_SPEED_TOLERANCE) & (x < 0.0) & (h > 1.0e-4)
-        )
-        if rear_indices.size:
-            # Coarse hydrostatic cells can occasionally exceed the velocity
-            # tolerance in isolation.  The physical moving volume is the
-            # downstream-most contiguous component, connected to the main
-            # dam-break flow rather than to an isolated upstream cell.
-            component_breaks = np.flatnonzero(np.diff(rear_indices) > 1)
-            component_start = (
-                rear_indices[component_breaks[-1] + 1]
-                if component_breaks.size else rear_indices[0]
+        if tutorial_safeguards:
+            # Original dry-bottom tutorial definition used by the WAVE
+            # appendix figure: take the downstream-most of its two upstream
+            # motion safeguards.  Keeping this explicit prevents later AVAC
+            # detector changes from silently redefining the published WAVE
+            # error norm.
+            upstream_moving = x[(u > 1.0e-5) & (x < 0.0)]
+            wet_moving = x[(u > 1.0e-4) & (h > 1.0e-4)]
+            rear_candidates = [
+                value for value in (
+                    upstream_moving[0] if upstream_moving.size else np.nan,
+                    wet_moving[0] if wet_moving.size else np.nan,
+                ) if np.isfinite(value)
+            ]
+            if rear_candidates:
+                rear[index] = max(rear_candidates)
+        else:
+            rear_indices = np.flatnonzero(
+                (u > REAR_SPEED_TOLERANCE) & (x < 0.0) & (h > 1.0e-4)
             )
-            rear[index] = float(x[component_start])
+            if rear_indices.size:
+                # Coarse hydrostatic cells can occasionally exceed the velocity
+                # tolerance in isolation.  The physical moving volume is the
+                # downstream-most contiguous component, connected to the main
+                # dam-break flow rather than to an isolated upstream cell.
+                component_breaks = np.flatnonzero(np.diff(rear_indices) > 1)
+                component_start = (
+                    rear_indices[component_breaks[-1] + 1]
+                    if component_breaks.size else rear_indices[0]
+                )
+                rear[index] = float(x[component_start])
 
         moving = x[u > 1.0e-4]
         if moving.size:
@@ -336,6 +354,12 @@ def main() -> None:
     parser.add_argument("--t-final", type=float, default=T_FINAL)
     parser.add_argument("--nout", type=int, default=NOUT)
     parser.add_argument("--cores", type=int, default=8)
+    parser.add_argument("--xlower", type=float, default=XLOWER)
+    parser.add_argument("--xupper", type=float, default=XUPPER)
+    parser.add_argument(
+        "--rear-tracker", choices=("robust", "tutorial"), default="robust",
+        help="rear-boundary detector; tutorial reproduces the published WAVE appendix metric",
+    )
     parser.add_argument("--amr-levels", type=int, default=1)
     parser.add_argument("--amr-ratio", type=int, default=2)
     parser.add_argument("--speed-tolerance", type=float, default=0.02)
@@ -356,10 +380,14 @@ def main() -> None:
     args = parser.parse_args()
     if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
             or args.max1d < 6 or args.amr_levels < 1 or args.amr_ratio < 2
-            or args.speed_tolerance <= 0 or args.ny < 1):
+            or args.speed_tolerance <= 0 or args.ny < 1
+            or args.xupper <= args.xlower):
         raise ValueError("Invalid positive grid/run controls; nout must be >=3 and AMR ratio >=2")
-    if not np.isclose((XUPPER - XLOWER) / args.dx, round((XUPPER - XLOWER) / args.dx)):
-        raise ValueError("dx must divide the 70 m publication domain exactly")
+    if not np.isclose(
+        (args.xupper - args.xlower) / args.dx,
+        round((args.xupper - args.xlower) / args.dx),
+    ):
+        raise ValueError("dx must divide the selected longitudinal domain exactly")
 
     case_root = args.output_root.resolve()
     case_root.mkdir(parents=True, exist_ok=True)
@@ -369,7 +397,7 @@ def main() -> None:
         prepare = (prepare_avac_water_case if args.solver == "avac"
                    else prepare_wave_hydraulic_case)
         prepare_kwargs = {
-            "case": case_root, "xlower": XLOWER, "xupper": XUPPER,
+            "case": case_root, "xlower": args.xlower, "xupper": args.xupper,
             "ylower": 0.0, "yupper": args.ny * args.dx,
             "dx": args.dx, "t_final": args.t_final, "nout": args.nout,
             # A constant datum leaves the equations and exact solution
@@ -408,12 +436,12 @@ def main() -> None:
                 lambda values: theory_front(np.asarray(values) / T0),
                 lambda values: theory_rear(np.asarray(values) / T0),
                 t_final=args.t_final, interval=corridor_interval,
-                margin=corridor_margin, xlower=XLOWER, xupper=XUPPER,
+                margin=corridor_margin, xlower=args.xlower, xupper=args.xupper,
                 ylower=0.0, yupper=args.ny * args.dx,
                 level=args.amr_levels,
             )
             controls = configure_front_amr(
-                work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+                work, base_dx=args.dx, xlower=args.xlower, xupper=args.xupper,
                 ylower=0.0, yupper=args.ny * args.dx,
                 levels=args.amr_levels, ratio=args.amr_ratio,
                 speed_tolerance=args.speed_tolerance, output_ny=1,
@@ -426,8 +454,8 @@ def main() -> None:
                 "rear_speed_tolerance_m_s": REAR_SPEED_TOLERANCE,
             }
         controls |= {
-            "domain_xlower_m": XLOWER,
-            "domain_xupper_m": XUPPER,
+            "domain_xlower_m": args.xlower,
+            "domain_xupper_m": args.xupper,
         }
         (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
         run_solver(args.solver, work, cores=args.cores)
@@ -435,7 +463,10 @@ def main() -> None:
         raise FileNotFoundError("No completed solver directory is available for post-processing")
     times, x, bed, depth, velocity = read_centerline(work, args.solver)
     controls = json.loads((case_root / "controls.json").read_text())
-    rear, front = track_boundaries(x, depth, velocity)
+    rear, front = track_boundaries(
+        x, depth, velocity,
+        tutorial_safeguards=args.rear_tracker == "tutorial",
+    )
     dx_actual = float(np.median(np.diff(x)))
     max1d_actual = labelled_integer(work / "amr.data", "max1d")
     mass = np.sum(depth, axis=1) * dx_actual
@@ -454,6 +485,7 @@ def main() -> None:
         "solver": str(solver_executable(args.solver)),
         "solver_sha256": sha256(solver_executable(args.solver)),
         "water_model": f"{args.solver.upper()} Water",
+        "rear_tracker": args.rear_tracker,
         "bed_datum_m": BED_DATUM,
         "diagnostic_dx_m": dx_actual,
         "width_base_cells": args.ny,

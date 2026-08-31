@@ -219,28 +219,36 @@ def avac_notebooks() -> None:
 
 def wave_notebooks() -> None:
     cases = [
-        ("01_transcritical_shock", "transcritical_shock", "Transcritical flow with shock",
+        ("01_transcritical_shock", "transcritical_shock", "Transcritical flow with shock", None,
          "A frictionless steady flow crosses a smooth bump and a hydraulic shock. The discharge is 0.18 m²/s; stage/discharge boundary data reproduce the SWASHES case."),
-        ("02_macdonald_smooth_shock", "macdonald_smooth_shock", "MacDonald smooth transition and shock",
+        ("02_macdonald_smooth_shock", "macdonald_smooth_shock", "MacDonald smooth transition and shock", None,
          "A 100 m steady profile uses discharge 2 m²/s and Manning $n=0.0328$ s/m$^{1/3}$. It explicitly validates bed slope, Manning friction, and the downstream stage condition."),
-        ("03_ritter_dry_dam_break", "ritter_dry_dam_break", "Dry-domain dam break without friction",
+        ("03_ritter_dry_dam_break", "ritter_dry_dam_break", "Dry-domain dam break without friction", None,
          "A 5 mm water column occupies the left half of a flat 10 m domain and collapses into a dry bed. The comparison is made at 6 s with no basal friction."),
-        ("04_thacker_planar_paraboloid", "thacker_planar_paraboloid", "Thacker planar surface in a paraboloid",
+        ("04_thacker_planar_paraboloid", "thacker_planar_paraboloid", "Thacker planar surface in a paraboloid", None,
          "A genuinely two-dimensional planar free surface oscillates in a parabolic bowl for three periods. This tests wetting/drying and preservation of the moving analytical surface."),
-        ("05_macdonald_pseudo2d_supercritical", "pseudo2d_supercritical", "MacDonald pseudo-2D supercritical flow",
+        ("05_macdonald_pseudo2d_supercritical", "pseudo2d_supercritical", "MacDonald pseudo-2D supercritical flow", 0.10,
          "A contracting 200 m channel carries a 20 m³/s supercritical flow with Manning $n=0.03$ s/m$^{1/3}$. The section-mean numerical surface is compared with SWASHES."),
-        ("06_macdonald_pseudo2d_subcritical", "pseudo2d_subcritical", "MacDonald pseudo-2D subcritical flow",
+        ("06_macdonald_pseudo2d_subcritical", "pseudo2d_subcritical", "MacDonald pseudo-2D subcritical flow", 0.20,
          "A 400 m variable-width channel carries a 20 m³/s subcritical flow with Manning $n=0.03$ s/m$^{1/3}$ and prescribed upstream discharge/downstream stage."),
     ]
-    for folder, key, title, description in cases:
+    for folder, key, title, pseudo_dx, description in cases:
+        pseudo_dx_control = (
+            f"PSEUDO_DX_M = {pseudo_dx:.2f}\n" if pseudo_dx is not None else ""
+        )
+        pseudo_dx_argument = (
+            ", '--pseudo-dx', PSEUDO_DX_M" if pseudo_dx is not None else ""
+        )
         cells = [
             markdown(f"# {title} — WAVE\n\nThis notebook runs WAVE and compares it with the SWASHES analytical reference.\n"),
             *environment("WAVE", folder, extra="A C++ compiler is also required to build the pinned SWASHES 1.05.01 analytical generator."),
             markdown("## Physical and numerical definition\n\n" + description + "\n"),
             code(
                 f"CASE_KEY = '{key}'\n"
+                f"{pseudo_dx_control}"
                 "case.run(case.path.parent / 'run_validation.py', CASE_KEY, '--solver', 'wave', "
-                "'--output-root', case.path.parent, '--cores', CORES, cwd=case.path.parent)\n"
+                f"'--output-root', case.path.parent, '--cores', CORES{pseudo_dx_argument}, "
+                "cwd=case.path.parent)\n"
             ),
             markdown("## Error metrics and solver provenance\n\nThe run records the grid, final time, analytical error norms, and SHA-256 of the WAVE executable.\n"),
             code("summary = case.json('results/summary.json')\nsummary\n"),
@@ -288,9 +296,12 @@ def wave_notebooks() -> None:
         markdown("## Physical and boundary conditions\n\nThe bed is a 10° slope; the one-meter triangular water wedge is bounded by a wall upstream and an extrapolating boundary downstream. Transverse boundaries are periodic.\n"),
         code(
             "DX_M = 0.005\nT_FINAL_S = 5.0\nOUTPUT_FRAMES = 100\n"
+            "XLOWER_M = -10.0\nXUPPER_M = 40.0\n"
             "driver = case.path.parents[1] / 'AVAC' / '2008_WRR_sloping_bed' / 'run_avac_validation.py'\n"
             "case.run(driver, '--solver', 'wave', '--output-root', case.path, '--dx', DX_M, "
-            "'--t-final', T_FINAL_S, '--nout', OUTPUT_FRAMES, '--cores', CORES)\n"
+            "'--t-final', T_FINAL_S, '--nout', OUTPUT_FRAMES, '--cores', CORES, "
+            "'--xlower', XLOWER_M, '--xupper', XUPPER_M, "
+            "'--rear-tracker', 'tutorial')\n"
         ),
         code("summary = case.json('results/summary.json')\nsummary\n"),
         code(
@@ -419,7 +430,12 @@ def iseesnow_notebooks() -> None:
             "exact-grid field summaries. It does not rerun AVAC or modify any participating-model field.\n"
         ),
         *environment("ISeeSnow", folder),
-        code("case.run('make_iseesnow_case_figure.py')\ncase.run('make_iseesnow_figures.py')\n"),
+        code(
+            "case.run(case.path.parent / 'compare_iseesnow.py', '--case', 'all', "
+            "cwd=case.path.parent)\n"
+            "case.run('make_iseesnow_case_figure.py')\n"
+            "case.run('make_iseesnow_figures.py')\n"
+        ),
         code(
             "case.show('../../../docs/article/figures/iseesnow_case_setup.png', "
             "'../../../docs/article/figures/iseesnow_intercomparison.png')\n"
