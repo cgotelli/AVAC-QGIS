@@ -35,6 +35,14 @@ the case definition and recreates the quantities it presents.
 - [Curvature contribution to normal stress](AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb)
 - [Section 4 AVAC verification figures](AVAC/Paper_figures/AVAC_verification_figures.ipynb)
 
+## AVAC observational validation
+
+- [Selected Nordkette 2022 field case and validation protocol](AVAC/Observations/Nordkette_2022/README.md)
+
+The observational case is currently a documented implementation plan, not a
+completed validation result, and is therefore not yet part of the notebook run
+order below.
+
 ## WAVE water verification
 
 - [Transcritical flow with shock](WAVE/01_transcritical_shock/transcritical_shock.ipynb)

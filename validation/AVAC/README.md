@@ -20,3 +20,11 @@ launches AVAC; plots can therefore be revised without repeating a simulation.
 
 See the [validation suite index](../README.md) for notebook links and system
 requirements.
+
+## Observational validation
+
+Development of the field-validation workflow is isolated on the
+`avac-validation-observations` branch. The selected first case is the
+[controlled Nordkette avalanche of 22 February 2022](Observations/Nordkette_2022/README.md),
+observed with mobile radar and in-flow GNSS sensors and documented with open
+simulation inputs by Neuhauser et al. (2025).
