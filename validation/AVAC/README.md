@@ -25,6 +25,10 @@ requirements.
 
 Development of the field-validation workflow is isolated on the
 `avac-validation-observations` branch. The selected first case is the
-[controlled Nordkette avalanche of 22 February 2022](Observations/Nordkette_2022/README.md),
-observed with mobile radar and in-flow GNSS sensors and documented with open
-simulation inputs by Neuhauser et al. (2025).
+[Armancette avalanche of 9 April 2023](Observations/Armancette_2023/README.md),
+for which Escobar Rincon et al. (2026) provide the terrain, release mask and
+depth, observed deposit mask, Voellmy parameters and reference result as open
+numerical data. No author contact, figure digitization or inferred release
+geometry is required. The companion full manuscript is not yet linked publicly
+by the data record, so the case currently relies on the citable dataset and EGU
+abstract and must be described that way.

@@ -37,11 +37,13 @@ the case definition and recreates the quantities it presents.
 
 ## AVAC observational validation
 
-- [Selected Nordkette 2022 field case and validation protocol](AVAC/Observations/Nordkette_2022/README.md)
+- [Selected Armancette 2023 field case and validation protocol](AVAC/Observations/Armancette_2023/README.md)
 
 The observational case is currently a documented implementation plan, not a
-completed validation result, and is therefore not yet part of the notebook run
-order below.
+completed validation result. Its terrain, release condition, friction
+parameters and observed deposit are all public numerical data; no author
+contact is needed. It is therefore not yet part of the notebook run order
+below.
 
 ## WAVE water verification
 
