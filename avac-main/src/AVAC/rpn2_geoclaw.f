@@ -196,6 +196,15 @@ c              overestimate the driving force by 1/cos(theta) relative to
 c              the true slope-parallel gravity component g*h*sin(theta);
 c              removing costh_n compensates for this approximation.
                thresh_n = mu_rp * dx_n
+c              Cohesion acts on the terrain-normal layer thickness.  AVAC
+c              stores vertical depth, h_n=h*cos(theta), so the static head
+c              increment is C/(rho*g*h*cos(theta)^2).  Apply the same rule
+c              at either orientation of a wet/dry interface.
+               if (imodel_rh .eq. 3 .and. rho_rh .gt. 0.d0 .and.
+     &             C_rp .gt. 0.d0) then
+                  thresh_n = thresh_n + C_rp/(rho_rh*g)
+     &                       * dx_n/(hL*costh_n**2)
+               endif
                if (dh_n .le. thresh_n) go to 30
             endif
 c           Left cell dry, right cell wet and exactly at rest
@@ -205,6 +214,11 @@ c           Left cell dry, right cell wet and exactly at rest
                db_n     = dabs(bR - bL)
                costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
                thresh_n = mu_rp * dx_n
+               if (imodel_rh .eq. 3 .and. rho_rh .gt. 0.d0 .and.
+     &             C_rp .gt. 0.d0) then
+                  thresh_n = thresh_n + C_rp/(rho_rh*g)
+     &                       * dx_n/(hR*costh_n**2)
+               endif
                if (dh_n .le. thresh_n) go to 30
             endif
             endif
@@ -368,10 +382,13 @@ c           overestimate the driving force by 1/cos(theta) relative to
 c           the true slope-parallel gravity component g*h*sin(theta);
 c           removing costh_n compensates for this approximation.
             thresh_n = mu_rp * dx_n
-c           Cohesive Voellmy: cohesion raises the static threshold
-            if (imodel_rh .eq. 3) then
-               thresh_n = thresh_n
-     &                  + C_rp / (rho_rh * g) * dx_n / h_avg_n
+c           Cohesive Voellmy: use the same terrain-normal static balance as
+c           the cell-centred source.  Since AVAC stores vertical depth, the
+c           cohesive head-gradient contribution contains 1/cos(theta)^2.
+            if (imodel_rh .eq. 3 .and. rho_rh .gt. 0.d0 .and.
+     &          C_rp .gt. 0.d0) then
+               thresh_n = thresh_n + C_rp/(rho_rh*g)
+     &                    * dx_n/(h_avg_n*costh_n**2)
             endif
 c           Below yield, set-valued static friction exactly cancels the
 c           pressure/topography force, but only after the full local stencil

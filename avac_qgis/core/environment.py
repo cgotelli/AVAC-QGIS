@@ -194,7 +194,7 @@ def check_environment(
     if tools["gfortran"]:
         details.append(f"gfortran version: {_version([tools['gfortran'], '--version'], env) or 'unavailable'}")
 
-    required_sources = ("Makefile", "setrun.py", "setprob.f90", "src2.f90", "b4step2.f90", "rheology_module.f90", "qinit_module.f90", "rpn2_geoclaw.f")
+    required_sources = ("Makefile", "setrun.py", "setprob.f90", "src2.f90", "b4step2.f90", "rheology_module.f90", "fgmax_values.f90", "qinit_module.f90", "rpn2_geoclaw.f")
     if not avac_path.is_dir():
         errors.append(f"AVAC working directory does not exist: {avac_path}")
     else:

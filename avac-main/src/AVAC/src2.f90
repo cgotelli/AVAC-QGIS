@@ -4,20 +4,23 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     ! Called to update q by solving source term equation
     ! $q_t = \psi(q)$ over time dt starting at time t.
     !
-    ! Explicit stopping treatment of the basal friction source term.
+    ! Moving-state steep-slope and basal-resistance source term.
     ! Supported constitutive laws (selected via imodel_rh in rheology_module):
     !
-    !   imodel = 1  Coulomb:          tau = mu * rho * g * h * cos(theta)
-    !   imodel = 2  Voellmy:          tau = mu * rho * g * h * cos(theta)
+    !   imodel = 1  Coulomb:          tau = mu * sigma
+    !   imodel = 2  Voellmy:          tau = mu * sigma
     !                                     + rho * g / xi * speed^2
-    !   imodel = 3  Cohesive Voellmy: tau = C + mu * rho * g * h * cos(theta)
+    !   imodel = 3  Cohesive Voellmy: tau = C + mu * sigma
     !                                     + rho * g / xi * speed^2
     !
-    ! where speed = sqrt(u^2 + v^2) and theta is the local bed slope angle
-    ! computed from the topography gradient (aux(1,:,:)).
+    ! AVAC evolves vertical depth and horizontal map velocity.  The source
+    ! applies the flow-parallel Cartesian steep-slope correction of Hergarten
+    ! and Robl (2015), so gravity, normal stress, depth, and velocity are
+    ! transformed consistently.  On a flat bed this is exactly the previous
+    ! AVAC Coulomb/Voellmy source.
     !
     ! Closed-form update of dv/dt = -a - b*v^2, with a floor at zero:
-    !   speed_new = friction_speed_after(...)
+    !   speed_new = cartesian_speed_after(...)
     !   (hu)^{n+1} = (hu / speed) * h * speed_new
     !   (hv)^{n+1} = (hv / speed) * h * speed_new
     !
@@ -40,12 +43,12 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
 
     ! Locals
     integer :: i, j, nman
-    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio
-    real(kind=8) :: dzdx, dzdy, theta_local
+    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio, h_eps
+    real(kind=8) :: dzdx, dzdy, d2zdx2, d2zdxdy, d2zdy2, theta_local
     real(kind=8) :: tau_driving_rho, tau_static_rho
     real(kind=8) :: mu_local, xi_local, C_local   ! altitude-zoned rheology (from get_mu_xi)
     real(kind=8) :: coeff, gamma
-    logical :: at_rest
+    logical :: at_rest, patch_nonplanar
 
     if (friction_forcing) then
         do j = 1, my
@@ -84,6 +87,13 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                     ! Local bed slope angle from centred topography gradient
                     dzdx = (aux(1,i+1,j) - aux(1,i-1,j)) / (2.d0*dx)
                     dzdy = (aux(1,i,j+1) - aux(1,i,j-1)) / (2.d0*dy)
+                    d2zdx2 = (aux(1,i+1,j) - 2.d0*aux(1,i,j) + &
+                              aux(1,i-1,j)) / dx**2
+                    d2zdy2 = (aux(1,i,j+1) - 2.d0*aux(1,i,j) + &
+                              aux(1,i,j-1)) / dy**2
+                    d2zdxdy = (aux(1,i+1,j+1) - aux(1,i+1,j-1) - &
+                               aux(1,i-1,j+1) + aux(1,i-1,j-1)) / &
+                              (4.d0*dx*dy)
                     theta_local = datan(dsqrt(dzdx**2 + dzdy**2))
 
                     ! Current speed
@@ -95,14 +105,17 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                     ! momentum is exactly zero and the driving stress is below yield.
                     ! A cell in motion must NOT be stopped here — it decelerates via
                     ! kinetic friction until speed_new reaches zero (see below).
-                    !   tau_driving / rho = g * h * sin(theta)
-                    !   tau_static  / rho = [C/rho +] mu * g * h * cos(theta)
+                    !   tau_driving / rho = g * h * tan(theta)
+                    !   tau_static  / rho = mu * g * h
+                    !                            [+ C/(rho*cos(theta)^2)]
                     ! (turbulent Voellmy term vanishes at v=0 => same for imodel=2)
-                    tau_driving_rho = g * h * dsin(theta_local)
+                    tau_driving_rho = g * h * dtan(theta_local)
                     if (imodel_rh == 3) then
-                        tau_static_rho = C_local/rho_rh + mu_local * g * h !* dcos(theta_local)
+                        tau_static_rho = C_local / &
+                                         (rho_rh * dcos(theta_local)**2) + &
+                                         mu_local * g * h
                     else
-                        tau_static_rho = mu_local * g * h !* dcos(theta_local)
+                        tau_static_rho = mu_local * g * h
                     end if
                     at_rest = (speed == 0.d0) .and. (tau_driving_rho <= tau_static_rho)
                     if (at_rest) then
@@ -120,7 +133,9 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                         ! (tau_driving > tau_static) must NOT be zeroed, otherwise
                         ! the slope re-accelerates it on the next step, creating a
                         ! freeze/restart oscillation that violates the CFL.
-                        speed_new = friction_speed_after(speed, dt, h, mu_local, &
+                        speed_new = cartesian_speed_after(speed, dt, h, u, v, &
+                                                         dzdx, dzdy, d2zdx2, &
+                                                         d2zdxdy, d2zdy2, mu_local, &
                                                          xi_local, C_local, rho_rh, &
                                                          g, imodel_rh)
                         if (speed_new <= 0.d0 .and. &
@@ -143,6 +158,60 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                 end if
             end do
         end do
+
+        ! A second-order wet/dry update can leave a tiny amount of momentum
+        ! in a very shallow cell.  On non-planar terrain that unresolved seed
+        ! may subsequently be transported into resolved flow and appear as a
+        ! spurious peak velocity.  Apply the standard Kurganov--Petrova
+        ! desingularization only in granular modes, below a mesh-dependent
+        ! shallow-depth scale, and only where the local bed is not affine.
+        ! Depth and momentum direction are preserved.  In particular, flat
+        ! and constant-slope analytical Coulomb cells receive no
+        ! regularization update.
+        if (imodel_rh >= 1) then
+            ! First classify the patch from stencils wholly inside it.  Ghost
+            ! topography at a physical or AMR boundary is a boundary closure,
+            ! not evidence of terrain curvature; using it for this decision
+            ! can spuriously modify an otherwise affine analytical bed.
+            patch_nonplanar = .false.
+            if (mx >= 3 .and. my >= 3) then
+                do j = 2, my-1
+                    do i = 2, mx-1
+                        if (locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
+                                                  aux(1,i+1,j), aux(1,i,j-1), &
+                                                  aux(1,i,j+1), aux(1,i-1,j-1), &
+                                                  aux(1,i+1,j-1), aux(1,i-1,j+1), &
+                                                  aux(1,i+1,j+1))) then
+                            patch_nonplanar = .true.
+                            exit
+                        end if
+                    end do
+                    if (patch_nonplanar) exit
+                end do
+            end if
+
+            if (patch_nonplanar) then
+                h_eps = max(dry_tolerance, &
+                            min(2.d0*velocity_depth_threshold_rh, &
+                                0.02d0*min(dx,dy)))
+                do j = 1, my
+                    do i = 1, mx
+                        h = q(1,i,j)
+                        if (h > dry_tolerance .and. h < h_eps .and. &
+                            locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
+                                                  aux(1,i+1,j), aux(1,i,j-1), &
+                                                  aux(1,i,j+1), aux(1,i-1,j-1), &
+                                                  aux(1,i+1,j-1), aux(1,i-1,j+1), &
+                                                  aux(1,i+1,j+1))) then
+                            call regularized_velocity(h, q(2,i,j), q(3,i,j), &
+                                                      h_eps, u, v)
+                            q(2,i,j) = h*u
+                            q(3,i,j) = h*v
+                        end if
+                    end do
+                end do
+            end if
+        end if
     else
         ! Keep GeoClaw's standard no-friction dry-front protection.  This is
         ! essential for frictionless water benchmarks: a tiny wet cell can

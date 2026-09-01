@@ -16,7 +16,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import brentq
 
-from avac4qgis_validation.kerswell import position_riemann, time_riemann
+from avac4qgis_validation.kerswell import (
+    UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
+    position_riemann,
+    time_riemann,
+    undisturbed_rear_position,
+)
 from avac4qgis_validation.plot_style import (
     MODEL_COLORS,
     PAPER_COLORS,
@@ -32,7 +37,7 @@ REPOSITORY = AVAC_ROOT.parents[1]
 DEFAULT_OUTPUT = REPOSITORY / "docs" / "article" / "figures"
 G = 9.81
 DRY_DEPTH_M = 1.0e-12
-UNDISTURBED_RELATIVE_TOLERANCE = 1.0e-3
+UNDISTURBED_RELATIVE_TOLERANCE = UNDISTURBED_RELATIVE_DEPTH_TOLERANCE
 
 
 def load_case(folder: str) -> tuple[dict[str, object], dict[str, np.ndarray], np.ndarray]:
@@ -127,8 +132,7 @@ def standardized_coulomb_metrics(
             front_values.append(front_envelope)
         else:
             front_values.append(float(metrics[front_name][index]))
-        undisturbed = x[np.abs(row - 1.0) <= UNDISTURBED_RELATIVE_TOLERANCE]
-        rear_values.append(float(np.max(undisturbed)) if undisturbed.size else np.nan)
+        rear_values.append(undisturbed_rear_position(x, row, 1.0))
     front = np.asarray(front_values)
     rear = np.asarray(rear_values)
     output[front_name] = front

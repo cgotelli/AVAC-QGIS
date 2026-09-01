@@ -6,7 +6,7 @@ solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
 The latest published release is **0.5.12** and targets **QGIS 3.44 LTS**.
-This checkout contains the unpushed **0.5.14** release candidate.
+This checkout contains the **6.0.0** source and reproducible validation suite.
 
 ## Interface overview
 

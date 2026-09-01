@@ -63,6 +63,7 @@ avac_qgis/resources/runtime/
 /validation/WAVE/avac_reference/
 /validation/WAVE/comparison_report.md
 /validation/WAVE/comparison_summary.json
+/validation/COUPLING/publication/
 /validation/ISeeSnow/*/Inputs/
 /validation/ISeeSnow/*/Run/
 /validation/ISeeSnow/*/Submission/
@@ -74,7 +75,11 @@ avac_qgis/resources/runtime/
 /validation/ISeeSnow/*.csv
 /validation/ISeeSnow/comparison_report.md
 /validation/ISeeSnow/plots/
-/validation/ISeeSnow/paper_figures/
+/validation/ISeeSnow/paper_figures/*
+!/validation/ISeeSnow/paper_figures/ISeeSnow_intercomparison_figures.ipynb
+!/validation/ISeeSnow/paper_figures/iseesnow_table_c1_core.csv
+!/validation/ISeeSnow/paper_figures/make_iseesnow_case_figure.py
+!/validation/ISeeSnow/paper_figures/make_iseesnow_figures.py
 /validation/vendor/SWASHES-1.05.01/bin/
 /validation/vendor/SWASHES-1.05.01/build/
 /resources/
@@ -88,3 +93,7 @@ avac_qgis/resources/runtime/
 !/tutorial/satellite.pgw
 !/tutorial/topo_cut_dam_1m.tif
 to-do.md
+
+# Local recovery copies of regenerable validation outputs and development
+# experiments are never part of a reproducible source checkout.
+/Archive/

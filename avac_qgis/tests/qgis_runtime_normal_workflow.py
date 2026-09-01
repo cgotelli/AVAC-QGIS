@@ -18,6 +18,7 @@ RESULT = Path(os.environ["AVAC_QGIS_RESULT"]).resolve()
 sys.path.insert(0, str(WORKSPACE))
 
 from avac_qgis.gui.dock import AvacDockWidget  # noqa: E402
+from avac_qgis.core.runtime import platform_key  # noqa: E402
 from avac_qgis.core.runtime_assets import RUNTIME_VERSION, runtime_install_root  # noqa: E402
 from avac_qgis.core.run_project import read_run_metadata  # noqa: E402
 
@@ -46,7 +47,7 @@ def after_run(code: int, normal: bool) -> None:
             raise RuntimeError("short runtime solver did not write all fort frames")
         if not (output / "fgmax0001.txt").is_file() or len(list(output.glob("fgout0001.t*"))) != 4:
             raise RuntimeError("short runtime solver result set is incomplete")
-        installed = runtime_install_root() / RUNTIME_VERSION / "arm64"
+        installed = runtime_install_root() / RUNTIME_VERSION / platform_key()
         if not (installed / "runtime-manifest.json").is_file():
             raise RuntimeError(f"runtime was not installed automatically: {installed}")
         print(

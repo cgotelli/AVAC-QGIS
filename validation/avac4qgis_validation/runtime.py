@@ -97,7 +97,12 @@ def build_solver(kind: str, cores: int | None = None) -> Path:
             check=True,
         )
     else:
-        subprocess.run([make, "new"], cwd=source, env=environment, check=True)
+        # Clawpack's ``new`` recipe recursively expands every included
+        # makefile name and is unreliable with some GNU Make versions.  A
+        # forced executable target provides the intended clean-checkout
+        # behavior while also rebuilding shared GeoClaw objects when AVAC and
+        # WAVE are compiled successively with different preprocessor flags.
+        subprocess.run([make, "-B", ".exe"], cwd=source, env=environment, check=True)
     executable = _solver_executable(source)
     if not executable.is_file():
         raise RuntimeError(f"The {kind.upper()} build completed without creating {executable}")
@@ -128,6 +133,65 @@ def solver_executable(kind: str) -> Path:
     Linux.
     """
     return _solver_executable(runtime(kind))
+
+
+def prepare_source_execution(
+    kind: str,
+    work_directory: str | Path,
+    *,
+    setrun_override: str | Path | None = None,
+) -> Path:
+    """Generate Clawpack data files from the current repository sources.
+
+    Validation notebooks exercise the solver being developed in this checkout,
+    so they must not depend on an optional, previously packaged plugin runtime.
+    This is the source-tree counterpart of the plugin's bundled-runtime setup:
+    it activates the repository's vendored Clawpack, runs the current ``setrun``
+    backend, and stages the generated ``*.data`` files in ``_output``.
+    """
+    if kind not in SOURCE_ROOTS:
+        raise ValueError(f"Unknown runtime kind: {kind}")
+    source = runtime(kind)
+    work = Path(work_directory).expanduser().resolve()
+    backend = (
+        Path(setrun_override).expanduser().resolve()
+        if setrun_override is not None
+        else source / "setrun.py"
+    )
+    if not backend.is_file():
+        raise RuntimeError(f"{kind.upper()} setrun backend is missing: {backend}")
+    has_qinit = any((work / name).is_file() for name in ("init.avacbin", "init.xyz"))
+    if kind == "avac" and (
+        not (work / "AVAC_configuration.yaml").is_file()
+        or not (work.parent / "Topo" / "topography.asc").is_file()
+        or not has_qinit
+    ):
+        raise RuntimeError("Prepared AVAC inputs are incomplete; prepare the run again before execution.")
+
+    output = work / "_output"
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir()
+    _activate_packaged_clawpack(CLAWPACK_SOURCE)
+    previous = Path.cwd()
+    previous_argv = sys.argv
+    try:
+        os.chdir(work)
+        namespace = {"__name__": "__main__", "__file__": str(work / "setrun.py")}
+        sys.argv = [str(work / "setrun.py")]
+        from avac_qgis.core.clawpack_logging import suppress_pyclaw_file_logging
+
+        with suppress_pyclaw_file_logging():
+            exec(compile(backend.read_bytes(), str(work / "setrun.py"), "exec"), namespace)  # noqa: S102
+    finally:
+        sys.argv = previous_argv
+        os.chdir(previous)
+    data_files = sorted(work.glob("*.data"))
+    if not data_files:
+        raise RuntimeError(f"Current {kind.upper()} setrun generated no .data files.")
+    for data_file in data_files:
+        shutil.copy2(data_file, output / data_file.name)
+    return output
 
 
 @contextmanager
@@ -671,23 +735,50 @@ def prepare_wave_hydraulic_case(
     return work
 
 
-def prepare_avac_coulomb_case(case: Path, *, xlower: float, xupper: float, ylower: float, yupper: float,
-                              dx: float, t_final: float, nout: int, mu: float, depth,
-                              refinement: int = 1) -> Path:
-    """Prepare a quasi-1D Coulomb case with the packaged AVAC runtime."""
+def prepare_avac_coulomb_case(
+    case: Path, *, xlower: float, xupper: float, ylower: float, yupper: float,
+    dx: float, t_final: float, nout: int, mu: float, depth,
+    refinement: int = 1, bed=None,
+    boundary_west: str = "wall", boundary_east: str = "extrap",
+    boundary_south: str = "wall", boundary_north: str = "wall",
+    model: str = "Coulomb", cohesion: float = 0.0,
+    rho: float = 1000.0, xi: float = 1.0e12,
+) -> Path:
+    """Prepare a Coulomb-family case with the packaged AVAC runtime.
+
+    The historical analytical cases use the defaults: a flat, quasi-1D strip
+    with a wall upstream and extrapolation downstream.  Supplying ``bed`` and
+    boundary names permits compact two-dimensional property tests without
+    introducing a second solver configuration or a validation-only equation.
+    """
     if refinement < 1:
         raise ValueError("refinement must be at least 1")
+    if model not in {"Coulomb", "Voellmy", "cohesive_Voellmy"}:
+        raise ValueError(f"Unsupported AVAC granular model: {model!r}")
+    if cohesion < 0.0 or rho <= 0.0 or xi <= 0.0:
+        raise ValueError("cohesion must be nonnegative and rho/xi must be positive")
+    boundary_codes = {
+        "user": 0, "extrap": 1, "periodic": 2, "wall": 3,
+    }
+    boundaries = (
+        boundary_west, boundary_east, boundary_south, boundary_north,
+    )
+    if any(name not in boundary_codes for name in boundaries):
+        raise ValueError(f"Unsupported AVAC boundary in {boundaries!r}")
     case = case.resolve()
     clean_case(case)
+    bed = (lambda X, Y: np.zeros_like(X)) if bed is None else bed
     x, y, _ = write_topography(
-        case, xlower, xupper, ylower, yupper, dx,
-        lambda X, Y: np.zeros_like(X), ghost_cells=AVAC_GHOST_CELLS,
+        case, xlower, xupper, ylower, yupper, dx, bed,
+        ghost_cells=AVAC_GHOST_CELLS,
     )
     write_depth_xyz(case / "AVAC" / "init.xyz", x, y, depth)
     config = {
         "animation": {"animation_directory": "validation", "label_step": 1, "making_html": False, "n_out": nout, "variable": "depth"},
-        "computation": {"boundary": "extrap", "boundary_west": "wall", "boundary_east": "extrap",
-                        "boundary_south": "wall", "boundary_north": "wall", "cell_size": dx,
+        "computation": {"boundary": "extrap", "boundary_west": boundary_west,
+                        "boundary_east": boundary_east,
+                        "boundary_south": boundary_south,
+                        "boundary_north": boundary_north, "cell_size": dx,
                         "cfl_max": 1.0, "cfl_target": 0.8, "dry_limit": 1.0e-8, "force_stop": False,
                         "initial_mass": False, "limiter": "mc", "mass_frac_stop": 0.0,
                         "mass_threshold_velocity": 0.0, "max_iter": 2000000, "nb_simul": nout,
@@ -705,8 +796,8 @@ def prepare_avac_coulomb_case(case: Path, *, xlower: float, xupper: float, ylowe
         "release": {"correction_elevation": False, "correction_slope": False, "d0": 1.0,
                     "gradient_hypso": 0.0, "nu": 0.0, "period_return": 0, "theta_cr": 0,
                     "z_ref": 0, "theta": 0.0, "free_surface": 0.0, "xb": 0.0},
-        "rheology": {"C": 0.0, "beta": 0.0, "model": "Coulomb", "mu": mu, "rho": 1000.0,
-                     "u_cr": 0.0, "xi": 1.0e12, "z_breaks": []},
+        "rheology": {"C": cohesion, "beta": 0.0, "model": model, "mu": mu, "rho": rho,
+                     "u_cr": 0.0, "xi": xi, "z_breaks": []},
     }
     (case / "AVAC" / "AVAC_configuration.yaml").write_text(json.dumps(config, indent=2) + "\n")
     _run_setrun("avac", case, qinit=False)

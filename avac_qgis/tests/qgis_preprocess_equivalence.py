@@ -1,4 +1,4 @@
-"""QGIS-runtime equivalence test for the canonical Lac Clusaz GUI case.
+"""QGIS-runtime preprocessing test for the canonical Lac Clusaz case.
 
 Requires AVAC_QGIS_PREPROCESS_ROOT to name an empty writable directory.
 """
@@ -16,7 +16,8 @@ from qgis.PyQt.QtCore import QCoreApplication, QTimer
 from qgis.core import QgsCoordinateReferenceSystem, QgsRasterLayer, QgsVectorLayer
 
 from avac_qgis.core.preprocessing import (
-    QINIT_BINARY_HEADER, QINIT_BINARY_MAGIC, prepare_inputs, raster_from_qgis_layer,
+    QINIT_BINARY_HEADER, QINIT_BINARY_MAGIC, initial_depth_from_release,
+    prepare_inputs, raster_from_qgis_layer, release_coverage_from_rings,
     release_mask_from_rings, rings_from_qgis_layer,
 )
 
@@ -27,7 +28,6 @@ RELEASE_PATH = CASE / "Topo" / "ZA.shp"
 TEMPLATE = Path(os.environ.get("AVAC_QGIS_CANONICAL_CONFIGURATION", CASE / "AVAC" / "AVAC_configuration300.yaml"))
 REFERENCE_ROOT = Path(os.environ["AVAC_GUI_REFERENCE_ROOT"])
 REFERENCE_TOPO = REFERENCE_ROOT / "topography.asc"
-REFERENCE_INIT = REFERENCE_ROOT / "init.xyz"
 RUN_ROOT = Path(os.environ["AVAC_QGIS_PREPROCESS_ROOT"])
 
 
@@ -116,13 +116,17 @@ def _check() -> None:
     prepared = prepare_inputs(RUN_ROOT, raster, rings, TEMPLATE, release_parameters)
     assert filecmp.cmp(prepared.topo_path, REFERENCE_TOPO, shallow=False), "topography.asc differs from GUI reference"
     prepared_metrics = init_metrics(prepared.init_path)
-    reference_metrics = init_metrics(REFERENCE_INIT)
-    assert prepared_metrics[:4] == reference_metrics[:4], "binary qinit values differ from GUI reference"
-    assert np.isclose(prepared_metrics[4], reference_metrics[4], rtol=0.0, atol=1e-9)
     reference_mask = np.load(REFERENCE_ROOT / "mask.npy")
-    reference_depth = np.load(REFERENCE_ROOT / "depth.npy")
     assert np.array_equal(qgis_mask, reference_mask), "release mask differs from reference cell-by-cell"
-    assert np.array_equal(prepared.depth, reference_depth), "initial depth differs from reference cell-by-cell"
+    expected_coverage = release_coverage_from_rings(
+        rings, raster.x, raster.y, float(raster.metadata["cellsize"]),
+    )
+    assert np.array_equal(prepared.coverage, expected_coverage)
+    assert np.array_equal(prepared.mask, expected_coverage > 0.0)
+    assert np.array_equal(
+        prepared.depth,
+        initial_depth_from_release(raster, expected_coverage, release_parameters),
+    )
     generated = yaml.safe_load(prepared.configuration_path.read_text())
     template = yaml.safe_load(TEMPLATE.read_text())
     for key in ("rheology", "output", "animation", "refinement", "gauges"):
@@ -135,10 +139,14 @@ def _check() -> None:
     rows, nonzero, minimum, maximum, total = prepared_metrics
     assert rows == raster.z.size == 5_995_001, (rows, raster.z.shape)
     print(f"DEM shape={raster.z.shape} extent={raster.metadata['xmin']},{raster.metadata['xmax']},{raster.metadata['ymin']},{raster.metadata['ymax']} cellsize={raster.metadata['cellsize']} CRS={raster.crs_authid}", flush=True)
-    print(f"RELEASE_MASK reference_equal=True cells={int(qgis_mask.sum())}", flush=True)
-    print(f"INITIAL_DEPTH reference_equal=True rows={rows} nonzero={nonzero} min={minimum:.12g} max={maximum:.12g} sum={total:.12g}", flush=True)
+    print(
+        f"RELEASE_MASK legacy_reference_equal=True cells={int(qgis_mask.sum())}; "
+        f"fractional_equivalent_cells={prepared.coverage.sum():.12g}",
+        flush=True,
+    )
+    print(f"INITIAL_DEPTH fractional_volume=True rows={rows} nonzero={nonzero} min={minimum:.12g} max={maximum:.12g} sum={total:.12g}", flush=True)
     print("TOPOGRAPHY byte_identical=True", flush=True)
-    print("INIT_BINARY legacy_value_equivalent=True", flush=True)
+    print("INIT_BINARY fractional_release_coverage=True", flush=True)
     print("YAML template_preservation=True", flush=True)
     QCoreApplication.quit()
 

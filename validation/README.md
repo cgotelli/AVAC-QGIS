@@ -30,6 +30,9 @@ the case definition and recreates the quantities it presents.
 - [2008 WRR dry-bottom sloping bed](AVAC/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb)
 - [Kerswell horizontal Coulomb dam break](AVAC/Kerswell_Coulomb/Kerswell_Coulomb.ipynb)
 - [Coulomb dam break on a sloping bed](AVAC/Coulomb_sloping_bed/Coulomb_sloping_bed.ipynb)
+- [Real-terrain volume conservation and positivity](AVAC/Real_terrain_conservation/Real_terrain_conservation.ipynb)
+- [Static Coulomb and cohesive arrest](AVAC/Static_cohesive_arrest/Static_cohesive_arrest.ipynb)
+- [Curvature contribution to normal stress](AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb)
 - [Section 4 AVAC verification figures](AVAC/Paper_figures/AVAC_verification_figures.ipynb)
 
 ## WAVE water verification
@@ -57,7 +60,9 @@ source.
 The source notebook writes prescribed native AVAC frames, calls the same
 shoreline converter used by the plugin, runs the WAVE Fortran source update,
 and checks volume and both horizontal momentum components on uniform and AMR
-grids. The separate figure notebook reads only the archived ledgers.
+grids. The separate figure notebook reads only the generated ledgers, so
+figures can be restyled without rerunning either solver after the source
+notebook has run.
 
 ## ISeeSnow intercomparison
 
@@ -70,6 +75,39 @@ These notebooks download the official ISeeSnow 1.0 repository, use its
 prescribed inputs without calibration, create standard-format AVAC submissions,
 and compare only peer rasters whose grids match exactly. No peer output is used
 to tune the AVAC run.
+
+## Complete notebook run order
+
+For a clean checkout, run the following notebooks in order. Each simulation
+notebook creates the products consumed by the corresponding figure notebook.
+
+1. `AVAC/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb`
+2. `AVAC/Kerswell_Coulomb/Kerswell_Coulomb.ipynb`
+3. `AVAC/Coulomb_sloping_bed/Coulomb_sloping_bed.ipynb`
+4. `AVAC/Real_terrain_conservation/Real_terrain_conservation.ipynb`
+5. `AVAC/Static_cohesive_arrest/Static_cohesive_arrest.ipynb`
+6. `AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb`
+7. `AVAC/Paper_figures/AVAC_verification_figures.ipynb`
+8. `WAVE/01_transcritical_shock/transcritical_shock.ipynb`
+9. `WAVE/02_macdonald_smooth_shock/macdonald_smooth_shock.ipynb`
+10. `WAVE/03_ritter_dry_dam_break/ritter_dry_dam_break.ipynb`
+11. `WAVE/04_thacker_planar_paraboloid/thacker_planar_paraboloid.ipynb`
+12. `WAVE/05_macdonald_pseudo2d_supercritical/pseudo2d_supercritical.ipynb`
+13. `WAVE/06_macdonald_pseudo2d_subcritical/pseudo2d_subcritical.ipynb`
+14. `WAVE/07_baines_flow_over_bump/Baines_flow_over_bump.ipynb`
+15. `WAVE/08_amr_parallel/AMR_OpenMP.ipynb`
+16. `WAVE/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb`
+17. `WAVE/Paper_figures/WAVE_verification_figures.ipynb`
+18. `COUPLING/Paper_figures/Coupling_verification.ipynb`
+19. `COUPLING/Paper_figures/Coupling_verification_figures.ipynb`
+20. `ISeeSnow/IdealizedTopo/IdealizedTopo.ipynb`
+21. `ISeeSnow/RealTopo/RealTopo.ipynb`
+22. `ISeeSnow/CoulombOnly/CoulombOnly.ipynb`
+23. `ISeeSnow/paper_figures/ISeeSnow_intercomparison_figures.ipynb`
+
+The ISeeSnow real-topography comparison contains ten peer models because the
+official Table C1 does not report a real-topography TITAN2D result; the two
+idealized comparisons contain eleven peers.
 
 ## Reference material
 

@@ -1,8 +1,9 @@
-"""Scientific-input preparation that preserves the standalone AVAC GUI semantics.
+"""Scientific-input preparation for the AVAC4QGIS workflow.
 
-The routines intentionally retain the GUI's coordinate arrays, north/south
-handling, Matplotlib point-in-polygon convention, and qinit traversal.  QGIS
-only supplies raster values and polygon geometries; it does not rasterize them.
+The routines retain AVAC's coordinate arrays, north/south handling, and qinit
+traversal. QGIS supplies raster values and polygon geometries; release depth is
+initialized as a cell average using fractional polygon coverage so boundaries
+that do not follow the DEM grid do not create a resolution-dependent volume.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ class PreparedInputs:
     init_path: Path
     configuration_path: Path
     mask: np.ndarray
+    coverage: np.ndarray
     depth: np.ndarray
 
 
@@ -302,11 +304,118 @@ def release_mask_from_rings(
     return inside_any.reshape((y.size, x.size))
 
 
+def release_coverage_from_rings(
+    rings: Iterable[tuple[np.ndarray, Sequence[np.ndarray]]],
+    x: np.ndarray,
+    y: np.ndarray,
+    cell_size: float,
+    *,
+    subsamples: int = 64,
+) -> np.ndarray:
+    """Return the area fraction of each DEM cell covered by release polygons.
+
+    A centre-point mask changes the initialized volume whenever a polygon
+    boundary is not aligned with the DEM.  This routine instead integrates
+    polygon occupancy on a regular subcell grid.  Exterior rings, holes,
+    multipart features, and overlaps are combined as a geometric union at
+    the sampling points, so the result is bounded by zero and one.
+
+    The calculation is restricted to polygon bounding boxes and processed in
+    bounded chunks.  Sixty-four samples per direction make the boundary-area
+    error negligible relative to the DEM resolution while keeping input
+    preparation independent of optional geometry libraries.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    cell = float(cell_size)
+    samples = int(subsamples)
+    if x.ndim != 1 or y.ndim != 1 or x.size == 0 or y.size == 0:
+        raise ValueError("Release coverage requires non-empty one-dimensional grid axes.")
+    if not np.isfinite(cell) or cell <= 0.0:
+        raise ValueError("Release coverage requires a positive finite cell size.")
+    if samples < 2:
+        raise ValueError("Release coverage requires at least two subcell samples per direction.")
+
+    normalized: list[tuple[np.ndarray, list[np.ndarray]]] = []
+    candidate = np.zeros((y.size, x.size), dtype=bool)
+    half = 0.5 * cell
+    for exterior, holes in rings:
+        exterior = np.asarray(exterior, dtype=float)
+        if exterior.ndim != 2 or exterior.shape[0] < 3 or exterior.shape[1] < 2:
+            continue
+        hole_arrays = [
+            np.asarray(hole, dtype=float)
+            for hole in holes
+            if np.asarray(hole).ndim == 2 and np.asarray(hole).shape[0] >= 3
+        ]
+        normalized.append((exterior[:, :2], [hole[:, :2] for hole in hole_arrays]))
+        columns = np.flatnonzero(
+            (x >= float(np.min(exterior[:, 0])) - half)
+            & (x <= float(np.max(exterior[:, 0])) + half)
+        )
+        rows = np.flatnonzero(
+            (y >= float(np.min(exterior[:, 1])) - half)
+            & (y <= float(np.max(exterior[:, 1])) + half)
+        )
+        if columns.size and rows.size:
+            candidate[np.ix_(rows, columns)] = True
+    if not normalized:
+        return np.zeros((y.size, x.size), dtype=float)
+
+    row_indices, column_indices = np.nonzero(candidate)
+    coverage = np.zeros((y.size, x.size), dtype=float)
+    offsets = ((np.arange(samples, dtype=float) + 0.5) / samples - 0.5) * cell
+    offset_x, offset_y = np.meshgrid(offsets, offsets)
+    offsets_xy = np.column_stack((offset_x.ravel(), offset_y.ravel()))
+    # Keep each point array below roughly one million rows (about 16 MB).
+    chunk_cells = max(1, 1_000_000 // offsets_xy.shape[0])
+
+    for start in range(0, row_indices.size, chunk_cells):
+        stop = min(start + chunk_cells, row_indices.size)
+        rows = row_indices[start:stop]
+        columns = column_indices[start:stop]
+        centres = np.column_stack((x[columns], y[rows]))
+        points = (centres[:, None, :] + offsets_xy[None, :, :]).reshape((-1, 2))
+        inside_any = np.zeros(points.shape[0], dtype=bool)
+        for exterior, holes in normalized:
+            bbox = (
+                (points[:, 0] >= float(np.min(exterior[:, 0])))
+                & (points[:, 0] <= float(np.max(exterior[:, 0])))
+                & (points[:, 1] >= float(np.min(exterior[:, 1])))
+                & (points[:, 1] <= float(np.max(exterior[:, 1])))
+            )
+            if not np.any(bbox):
+                continue
+            inside = np.zeros(points.shape[0], dtype=bool)
+            inside[bbox] = MplPath(exterior).contains_points(points[bbox])
+            for hole in holes:
+                hole_bbox = (
+                    inside
+                    & (points[:, 0] >= float(np.min(hole[:, 0])))
+                    & (points[:, 0] <= float(np.max(hole[:, 0])))
+                    & (points[:, 1] >= float(np.min(hole[:, 1])))
+                    & (points[:, 1] <= float(np.max(hole[:, 1])))
+                )
+                if np.any(hole_bbox):
+                    inside[hole_bbox] &= ~MplPath(hole).contains_points(points[hole_bbox])
+            inside_any |= inside
+        fractions = inside_any.reshape((stop - start, -1)).mean(axis=1)
+        coverage[rows, columns] = fractions
+
+    return coverage
+
+
 def initial_depth_from_release(raster: AvacRaster, zone_mask: np.ndarray, release: dict[str, Any]) -> np.ndarray:
-    """Standalone GUI's `_initial_depth_from_release`, extracted unchanged in meaning."""
+    """Return cell-average release depth from a mask or fractional coverage."""
     altitude = np.array(raster.z, dtype=float)
     depth = np.zeros_like(altitude, dtype=float)
-    if not np.any(zone_mask):
+    coverage = np.asarray(zone_mask, dtype=float)
+    if coverage.shape != altitude.shape:
+        raise ValueError("Release coverage shape does not match DEM.")
+    if np.any(~np.isfinite(coverage)) or np.any(coverage < 0.0) or np.any(coverage > 1.0):
+        raise ValueError("Release coverage values must be finite fractions between zero and one.")
+    selected = coverage > 0.0
+    if not np.any(selected):
         return depth
     d0 = float(release.get("d0", 0.0))
     z_ref = float(release.get("z_ref", 0.0))
@@ -340,7 +449,7 @@ def initial_depth_from_release(raster: AvacRaster, zone_mask: np.ndarray, releas
         candidate = d0 * factor1
     else:
         candidate = np.full_like(altitude, d0, dtype=float)
-    depth[zone_mask] = candidate[zone_mask]
+    depth[selected] = candidate[selected] * coverage[selected]
     depth[~np.isfinite(depth)] = 0.0
     return depth
 
@@ -551,12 +660,15 @@ def prepare_inputs(
         progress(25)
     if cancelled and cancelled():
         raise PreparationCancelled("AVAC input preparation cancelled.")
-    mask = release_mask_from_rings(rings, raster.x, raster.y)
+    coverage = release_coverage_from_rings(
+        rings, raster.x, raster.y, float(raster.metadata["cellsize"]),
+    )
+    mask = coverage > 0.0
     if not np.any(mask):
-        raise ValueError("Release polygons contain no DEM grid points using AVAC's inclusion convention.")
+        raise ValueError("Release polygons do not cover any part of the selected DEM grid.")
     if progress:
         progress(40)
-    depth = initial_depth_from_release(raster, mask, effective_release)
+    depth = initial_depth_from_release(raster, coverage, effective_release)
     topo_path, init_path, configuration_path = topo_dir / "topography.asc", avac_dir / QINIT_BINARY_NAME, avac_dir / "AVAC_configuration.yaml"
     if progress:
         progress(50)
@@ -573,4 +685,4 @@ def prepare_inputs(
     materialize_configuration(template, configuration_path, raster, effective_release, topo_dir, controlled_values, fine_raster)
     if progress:
         progress(98)
-    return PreparedInputs(run_root, avac_dir, topo_path, init_path, configuration_path, mask, depth)
+    return PreparedInputs(run_root, avac_dir, topo_path, init_path, configuration_path, mask, coverage, depth)

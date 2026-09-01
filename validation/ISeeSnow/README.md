@@ -16,8 +16,7 @@ Each notebook:
    clipping, padding, or resampling them.
 
 Generated submissions, copied inputs, reports, plots, and raw solver results
-are intentionally not committed. The development-only
-[Idealized Coulomb velocity audit](IDEALIZED_COULOMB_VELOCITY_AUDIT.md)
-records the wet--dry numerical issue found during the manuscript reruns and
-the corrected full-run diagnostics; it is not manuscript text. See the
-[validation suite index](../README.md) for links and requirements.
+are intentionally not committed. Historical formulation and wet--dry audits
+are retained under the repository's `Archive/validation-development` folder
+and are not required by the public notebooks. See the
+[validation suite index](../README.md) for links, run order, and requirements.

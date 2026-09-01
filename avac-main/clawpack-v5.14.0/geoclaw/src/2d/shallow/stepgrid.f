@@ -231,6 +231,17 @@ c            # with capa array.
 
 c 50      continue
 c
+c     # AVAC depth is a conserved cell average.  The high-order update can
+c     # produce a small negative undershoot at a wet/dry front; simply clipping
+c     # it to zero creates mass.  Recover the deficit only from face-sharing
+c     # material whose momentum carries it into the undershot cell.  Momentum
+c     # in donor cells is scaled with depth, preserving donor velocity.  This
+c     # is a general AVAC correction and is not selected by validation case.
+      if (conserve_depth_amr) then
+         call redistribute_negative_depth(q,mitot,mjtot,mbc,nvar,
+     &                                    dry_tolerance)
+      endif
+c
 c     # Copied here from b4step2 since need to do before saving to qc1d:
       forall(i=1:mitot, j=1:mjtot, q(1,i,j) < dry_tolerance)
         q(1,i,j) = max(q(1,i,j),0.d0)
@@ -317,5 +328,101 @@ c            write(*,545) i,j,(q(i,j,ivar),ivar=1,nvar)
 #ifdef WHERE_AM_I
       write(*,*) "     ending   stepgrid grid ",mptr
 #endif
+      return
+      end
+
+
+c     ================================================================
+      subroutine redistribute_negative_depth(q,mitot,mjtot,mbc,nvar,
+     &                                       dry_tolerance)
+c     ================================================================
+c
+c     Positivity repair for AVAC wet/dry fronts with directional local
+c     conservation.  Each negative depth is set to zero.  Its deficit is
+c     recovered only from face-sharing positive donor states that carry mass
+c     into the undershot cell.  Thus a repair cannot draw material from a
+c     static reservoir, a deposit, or a distant part of the AMR patch.
+c     All components of a donor state are scaled together, preserving its
+c     velocity.  Any residual with no physical incoming donor remains a
+c     bounded dry-state clipping error rather than changing a remote state.
+c
+      implicit none
+
+      integer mitot,mjtot,mbc,nvar
+      integer i,j,m,ilo,ihi,jlo,jhi
+      integer ni(4),nj(4),n
+      double precision q(nvar,mitot,mjtot),dry_tolerance
+      double precision available,take,factor,remaining,inflow_tolerance
+      double precision inflow
+      logical carries_inflow
+
+      ilo = mbc + 1
+      ihi = mitot - mbc
+      jlo = mbc + 1
+      jhi = mjtot - mbc
+      inflow_tolerance = 1.d-14
+
+      do j=jlo,jhi
+         do i=ilo,ihi
+            if (q(1,i,j) .ge. 0.d0) cycle
+
+            remaining = -q(1,i,j)
+            do m=1,nvar
+               q(m,i,j) = 0.d0
+            enddo
+
+c           # Face-sharing donors must carry momentum into this cell.  This
+c           # identifies material that received excess outgoing transport from
+c           # the undershot cell and keeps the correction local to the flow.
+            ni(1) = i-1
+            nj(1) = j
+            ni(2) = i+1
+            nj(2) = j
+            ni(3) = i
+            nj(3) = j-1
+            ni(4) = i
+            nj(4) = j+1
+            available = 0.d0
+            do n=1,4
+               if (ni(n).ge.ilo .and. ni(n).le.ihi .and.
+     &             nj(n).ge.jlo .and. nj(n).le.jhi .and.
+     &             q(1,ni(n),nj(n)).gt.0.d0) then
+                  carries_inflow = .false.
+                  if (nvar.ge.3) then
+                     inflow = q(2,ni(n),nj(n))*dble(i-ni(n))
+     &                        + q(3,ni(n),nj(n))*dble(j-nj(n))
+                     carries_inflow = inflow .gt. inflow_tolerance
+     &                               * q(1,ni(n),nj(n))
+                  endif
+                  if (carries_inflow) then
+                     available = available + q(1,ni(n),nj(n))
+                  endif
+               endif
+            enddo
+            if (available .gt. 0.d0) then
+               take = min(remaining,available)
+               factor = max(0.d0,1.d0-take/available)
+               do n=1,4
+                  if (ni(n).ge.ilo .and. ni(n).le.ihi .and.
+     &                nj(n).ge.jlo .and. nj(n).le.jhi .and.
+     &                q(1,ni(n),nj(n)).gt.0.d0) then
+                     carries_inflow = .false.
+                     if (nvar.ge.3) then
+                        inflow = q(2,ni(n),nj(n))*dble(i-ni(n))
+     &                           + q(3,ni(n),nj(n))*dble(j-nj(n))
+                        carries_inflow = inflow .gt. inflow_tolerance
+     &                                  * q(1,ni(n),nj(n))
+                     endif
+                     if (carries_inflow) then
+                        do m=1,nvar
+                           q(m,ni(n),nj(n)) = factor*q(m,ni(n),nj(n))
+                        enddo
+                     endif
+                  endif
+               enddo
+            endif
+         enddo
+      enddo
+
       return
       end

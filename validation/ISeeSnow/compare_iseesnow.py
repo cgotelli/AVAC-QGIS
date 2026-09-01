@@ -347,7 +347,14 @@ def write_case_pngs(case: str, target: Grid, avac: dict[str, Grid], peers: dict[
     return written
 
 
-def main(cases: tuple[str, ...] = CASES) -> None:
+def main(
+    cases: tuple[str, ...] = CASES,
+    results_root: Path = ROOT,
+    output_root: Path = ROOT,
+) -> None:
+    results_root = results_root.expanduser().resolve()
+    output_root = output_root.expanduser().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
     comparison_rows: list[dict[str, object]] = []
     scalar_rows: list[dict[str, object]] = []
     exclusions: list[dict[str, str]] = []
@@ -361,21 +368,24 @@ def main(cases: tuple[str, ...] = CASES) -> None:
         "## Velocity formulation audited in this rerun", "",
         "AVAC stores vertical depth and horizontal map-grid momentum. The submitted PFV is "
         "the physical terrain-tangent magnitude sqrt(u^2 + v^2 + (u*Bx + v*By)^2), evaluated "
-        "inside the native fgmax routine at every solver step. This is consistent with the "
-        "terrain-tangent speed used by the slope-corrected Voellmy law and avoids reconstructing "
-        "a vector direction from an already maximized scalar field.", "",
-        "The velocity diagnostic requires a local depth above 0.05 m, an explicit "
-        "cell-average velocity threshold of the type documented by the ISeeSnow protocol. "
-        "No physical velocity ceiling or post-processing clipping is used.", "",
+        "inside the native fgmax routine at every solver step. It represents motion along the "
+        "bed surface and avoids reconstructing vector direction from an already maximized "
+        "scalar field.", "",
+        "The velocity diagnostic is zero at and below the explicitly configured 0.05 m "
+        "validation threshold. Between 0.05 and 0.20 m, the momentum/depth ratio is "
+        "smoothly desingularized following Kurganov--Petrova; at and above 0.20 m it is "
+        "exactly the native momentum/depth velocity. This operation is confined to fgmax "
+        "diagnostic output: no conserved state is modified and no physical velocity ceiling "
+        "or field clipping is used.", "",
     ]
     speed_cap_rows: list[dict[str, object]] = []
     run_diagnostic_rows: list[dict[str, object]] = []
     velocity_audit_rows: list[dict[str, object]] = []
     peak_outlier_rows: list[dict[str, object]] = []
     plot_paths: list[Path] = []
-    plot_directory = ROOT / "plots"
+    plot_directory = output_root / "plots"
     for case in cases:
-        case_dir = ROOT / case
+        case_dir = results_root / case
         input_dem = next((case_dir / "Inputs").glob("DEM_*.asc"))
         target = read_grid(input_dem)
         submission = case_dir / "Submission"
@@ -487,7 +497,7 @@ def main(cases: tuple[str, ...] = CASES) -> None:
     report.append("")
     report.extend([
         "## Native peak-velocity audit", "",
-        "The raw fgmax occurrence is reported for every case. `maximum_depth_at_peak_cell_m` "
+        "The native fgmax occurrence is reported for every case. `maximum_depth_at_peak_cell_m` "
         "is the maximum depth attained at the same grid cell over the run, not necessarily the "
         "instantaneous depth at the velocity-peak time. A substantial value rules out a location "
         "that remained only a dry-tolerance film throughout the calculation.", "",
@@ -524,28 +534,30 @@ def main(cases: tuple[str, ...] = CASES) -> None:
     else:
         report.append("None.")
     report.append("")
-    write_csv(ROOT / "peer_field_comparison.csv", comparison_rows)
-    write_csv(ROOT / "field_summary.csv", scalar_rows)
-    write_csv(ROOT / "comparison_exclusions.csv", exclusions)
-    write_csv(ROOT / "avac_runtime_speed_limit.csv", speed_cap_rows)
-    write_csv(ROOT / "avac_run_diagnostics.csv", run_diagnostic_rows)
-    write_csv(ROOT / "peak_velocity_audit.csv", velocity_audit_rows)
+    write_csv(output_root / "peer_field_comparison.csv", comparison_rows)
+    write_csv(output_root / "field_summary.csv", scalar_rows)
+    write_csv(output_root / "comparison_exclusions.csv", exclusions)
+    write_csv(output_root / "avac_runtime_speed_limit.csv", speed_cap_rows)
+    write_csv(output_root / "avac_run_diagnostics.csv", run_diagnostic_rows)
+    write_csv(output_root / "peak_velocity_audit.csv", velocity_audit_rows)
     report.extend(["## PNG comparisons", ""])
     if plot_paths:
-        report.extend([f"- [{path.name}]({path.relative_to(ROOT).as_posix()})" for path in plot_paths])
+        report.extend([f"- [{path.name}]({path.relative_to(output_root).as_posix()})" for path in plot_paths])
     else:
         report.append("No comparable peer grids were available for plotting.")
     report.append("")
     report.extend(["## Excluded supplied outputs", ""])
     report.extend(table(exclusions, ["case", "model", "reason"]) if exclusions else ["None."])
     report.append("")
-    (ROOT / "comparison_report.md").write_text("\n".join(report), encoding="utf-8")
+    (output_root / "comparison_report.md").write_text("\n".join(report), encoding="utf-8")
     print(json.dumps({"comparisons": len(comparison_rows), "exclusions": len(exclusions)}, indent=2))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=("all", *CASES), default="all")
+    parser.add_argument("--results-root", type=Path, default=ROOT)
+    parser.add_argument("--output-root", type=Path, default=ROOT)
     arguments = parser.parse_args()
     selected = CASES if arguments.case == "all" else (arguments.case,)
-    main(selected)
+    main(selected, arguments.results_root, arguments.output_root)

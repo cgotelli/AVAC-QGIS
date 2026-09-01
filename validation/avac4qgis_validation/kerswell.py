@@ -14,6 +14,41 @@ from scipy.integrate import quad
 from scipy.special import hyp2f1
 
 
+UNDISTURBED_RELATIVE_DEPTH_TOLERANCE = 1.0e-3
+
+
+def undisturbed_rear_position(
+    x: np.ndarray,
+    depth: np.ndarray,
+    reference_depth: float,
+    *,
+    relative_tolerance: float = UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
+) -> float:
+    """Locate the downstream edge of the undisturbed reservoir.
+
+    The Kerswell rear boundary separates the initial constant-depth reservoir
+    from the rarefaction fan.  Requiring bitwise or near-bitwise equality with
+    that initial depth is not an AMR-invariant diagnostic: conservative
+    interpolation can perturb otherwise stationary cells by small amounts.
+    A 0.1 % relative-depth level set is well below the resolved rarefaction
+    signal while remaining insensitive to those interpolation perturbations.
+
+    This function is used only for validation post-processing.  It does not
+    alter the AVAC state, source terms, or either numerical front.
+    """
+    x = np.asarray(x, dtype=float)
+    depth = np.asarray(depth, dtype=float)
+    if x.ndim != 1 or depth.ndim != 1 or x.shape != depth.shape:
+        raise ValueError("x and depth must be same-length one-dimensional arrays")
+    if not np.isfinite(reference_depth) or reference_depth <= 0.0:
+        raise ValueError("reference_depth must be positive and finite")
+    if not np.isfinite(relative_tolerance) or relative_tolerance <= 0.0:
+        raise ValueError("relative_tolerance must be positive and finite")
+    tolerance = relative_tolerance * reference_depth
+    undisturbed = x[np.abs(depth - reference_depth) <= tolerance]
+    return float(np.max(undisturbed)) if undisturbed.size else float("nan")
+
+
 @lru_cache(maxsize=None)
 def riemann(s: float, r: float, a: float, b: float) -> float:
     """Riemann function in the Kerswell construction."""

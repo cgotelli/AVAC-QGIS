@@ -94,7 +94,7 @@ def avac_notebooks() -> None:
         code(
             "BASE_DX_M = 0.04\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
             "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 5.0\nOUTPUT_FRAMES = 20\n"
-            "RUN_NAME = 'publication_amr'\n"
+            "RUN_NAME = os.environ.get('AVAC_VALIDATION_RUN_NAME', 'publication_amr')\n"
             "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--t-final', T_FINAL_S, "
             "'--nout', OUTPUT_FRAMES, '--cores', CORES, '--amr-levels', AMR_LEVELS, "
             "'--amr-ratio', AMR_RATIO, '--speed-tolerance', SPEED_TOLERANCE_M_S, "
@@ -131,7 +131,7 @@ def avac_notebooks() -> None:
         code(
             "BASE_DX_M = 0.04\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
             "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 10.0\nOUTPUT_FRAMES = 40\n"
-            "RUN_NAME = 'publication_amr'\n"
+            "RUN_NAME = os.environ.get('AVAC_VALIDATION_RUN_NAME', 'publication_amr')\n"
             "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--t-final', T_FINAL_S, "
             "'--nout', OUTPUT_FRAMES, '--cores', CORES, '--case-name', RUN_NAME, "
             "'--amr-levels', AMR_LEVELS, '--amr-ratio', AMR_RATIO, "
@@ -169,7 +169,7 @@ def avac_notebooks() -> None:
         code(
             "BASE_DX_M = 0.03\nAMR_LEVELS = 3\nAMR_RATIO = 4\n"
             "SPEED_TOLERANCE_M_S = 0.02\nT_FINAL_S = 6.0\nOUTPUT_FRAMES = 30\n"
-            "RUN_NAME = 'publication_amr'\n"
+            "RUN_NAME = os.environ.get('AVAC_VALIDATION_RUN_NAME', 'publication_amr')\n"
             "case.run('run_avac_validation.py', '--dx', BASE_DX_M, '--ny', 5, '--t-final', "
             "T_FINAL_S, '--nout', OUTPUT_FRAMES, '--case-name', RUN_NAME, '--cores', CORES, "
             "'--amr-levels', AMR_LEVELS, '--amr-ratio', AMR_RATIO, "
@@ -185,6 +185,76 @@ def avac_notebooks() -> None:
         ),
     ]
     write(f"AVAC/{name}/Coulomb_sloping_bed.ipynb", cells)
+
+    name = "Real_terrain_conservation"
+    cells = [
+        markdown(
+            "# Real-terrain volume conservation and positivity — AVAC\n\n"
+            "This focused property test checks the numerical invariants needed before the "
+            "full Coulomb verification is repeated. It uses the normal AVAC executable and "
+            "the same solver path as every operational case.\n"
+        ),
+        *environment("AVAC", name),
+        markdown(
+            "## Physical and numerical definition\n\n"
+            "A compact two-dimensional release moves over a smooth inclined surface with a "
+            "ridge and transverse undulations. All four boundaries are closed, and there is "
+            "no mass source, so the discrete material volume must remain constant. The same "
+            "initial state is run on a uniform 0.20 m mesh and with two dynamically regridded "
+            "AMR levels. The AMR run deliberately creates and removes fine patches as the "
+            "wet--dry front moves. The case is not calibrated to a site or analytical profile; "
+            "it tests nonnegative depth and conservation properties that must hold for every "
+            "AVAC simulation.\n"
+        ),
+        code(
+            "VARIANT = 'current'\n"
+            "case.run('run_conservation_validation.py', '--variant', VARIANT, "
+            "'--mode', 'both', '--cores', CORES)\n"
+        ),
+        markdown(
+            "## Acceptance diagnostics\n\n"
+            "Native AMR output is integrated as a non-overlapping hierarchy: coarse cells "
+            "covered by finer patches are excluded. The summary reports volume variation, "
+            "minimum active depth, boundary clearance, achieved AMR level, patch-layout "
+            "changes, and the exact solver hash.\n"
+        ),
+        code("summary = case.json(f'results/{VARIANT}_summary.json')\nsummary\n"),
+        code("case.show(f'figures/{VARIANT}_real_terrain_conservation.png')\n"),
+    ]
+    write(f"AVAC/{name}/Real_terrain_conservation.ipynb", cells)
+
+    name = "Static_cohesive_arrest"
+    cells = [
+        markdown(
+            "# Static Coulomb and cohesive arrest — AVAC\n\n"
+            "This focused verification exercises the production AVAC executable immediately "
+            "below and above the static-yield boundary. Each physical state is mirrored to "
+            "separate the constitutive transition from a left/right numerical bias.\n"
+        ),
+        *environment("AVAC", name),
+        markdown(
+            "## Physical and numerical definition\n\n"
+            "A one-meter vertical-depth layer initially rests on a planar bed. Two Coulomb "
+            "cases place the bed slope below and above $\\mu=0.2$. Two cohesive-Voellmy "
+            "cases use a 0.30 bed slope and cohesion 2% below or above the analytical critical "
+            "value $C_{cr}=\\rho g h\\cos^2(\\phi)[\\tan(\\phi)-\\mu]$. Turbulent resistance "
+            "is negligible at onset and is assigned $\\xi=10^{12}$ m s$^{-2}$. Every case is "
+            "run with both signs of the bed slope. Two additional symmetric triangular "
+            "Coulomb deposits exercise the wet/dry interface below and above yield.\n"
+        ),
+        code(
+            "case.run('run_static_cohesive_validation.py', '--cores', CORES)\n"
+        ),
+        markdown(
+            "## Acceptance diagnostics\n\n"
+            "Sub-yield states must remain at machine rest; super-yield states must accelerate "
+            "downslope. Mirrored inclined layers and the two sides of each compact deposit "
+            "must agree, with no material transverse velocity.\n"
+        ),
+        code("summary = case.json('results/summary.json')\nsummary\n"),
+        code("case.show('figures/static_cohesive_arrest.png')\n"),
+    ]
+    write(f"AVAC/{name}/Static_cohesive_arrest.ipynb", cells)
 
     name = "Paper_figures"
     cells = [
@@ -397,27 +467,33 @@ def iseesnow_notebooks() -> None:
             markdown("## Prescribed benchmark configuration\n\n" + description + " No peer-model result is used to select an AVAC parameter. The simulation ceiling is 1200 s and the native state is checked for practical arrest.\n"),
             code(
                 f"CASE_NAME = '{folder}'\n"
+                "RESULTS_ROOT = Path(os.environ.get('AVAC_ISEESNOW_RESULTS_ROOT', case.path.parent)).expanduser().resolve()\n"
                 "case.run(case.path.parent / 'run_iseesnow_avac.py', '--case', CASE_NAME, "
-                "'--workers', CORES, '--spatial-order', 2, '--overwrite', cwd=case.path.parent)\n"
+                "'--workers', CORES, '--spatial-order', 2, '--results-root', RESULTS_ROOT, "
+                "'--overwrite', cwd=case.path.parent)\n"
             ),
             markdown("## Run diagnostics and ISeeSnow submission\n\nThe summary records volume, duration, practical stop time, numerical controls, solver hash, and generated standard-format files.\n"),
-            code("summary = case.json('run_summary.json')\nsummary\n"),
+            code("import json\nsummary = json.loads((RESULTS_ROOT / CASE_NAME / 'run_summary.json').read_text(encoding='utf-8'))\nsummary\n"),
             markdown("## Direct peer comparison\n\nOnly peer fields with exactly matching dimensions, cell size, and cell-center coordinates are included; no shifting, clipping, padding, or resampling is performed.\n"),
             code(
-                "case.run(case.path.parent / 'compare_iseesnow.py', '--case', CASE_NAME, cwd=case.path.parent)\n"
-                "case.show(f'../plots/{CASE_NAME}_pft_peer_comparison.png', "
-                "f'../plots/{CASE_NAME}_pfv_peer_comparison.png', "
-                "f'../plots/{CASE_NAME}_scalar_peer_comparison.png')\n"
+                "case.run(case.path.parent / 'compare_iseesnow.py', '--case', CASE_NAME, "
+                "'--results-root', RESULTS_ROOT, '--output-root', RESULTS_ROOT, cwd=case.path.parent)\n"
+                "case.show(RESULTS_ROOT / 'plots' / f'{CASE_NAME}_pft_peer_comparison.png', "
+                "RESULTS_ROOT / 'plots' / f'{CASE_NAME}_pfv_peer_comparison.png', "
+                "RESULTS_ROOT / 'plots' / f'{CASE_NAME}_scalar_peer_comparison.png')\n"
             ),
         ]
         if folder == "IdealizedTopo":
             cells.extend([
                 markdown("## Paper-style idealized-case figures\n\nThese panels follow the ISeeSnow paper display conventions while retaining every model's native submitted grid and values.\n"),
                 code(
-                    "case.run(case.path.parent / 'reproduce_paper_idealized_voellmy.py', cwd=case.path.parent)\n"
-                    "case.show('../paper_figures/VoellmyIdealized/Figure_2_style_VoellmyIdealized_PFT_with_AVAC4QGIS.png', "
+                    "if RESULTS_ROOT == case.path.parent.resolve():\n"
+                    "    case.run(case.path.parent / 'reproduce_paper_idealized_voellmy.py', cwd=case.path.parent)\n"
+                    "    case.show('../paper_figures/VoellmyIdealized/Figure_2_style_VoellmyIdealized_PFT_with_AVAC4QGIS.png', "
                     "'../paper_figures/VoellmyIdealized/Figure_3_style_VoellmyIdealized_PFT_0p5m_contours_with_AVAC4QGIS.png', "
                     "'../paper_figures/VoellmyIdealized/Figure_C2_style_VoellmyIdealized_PFV_with_AVAC4QGIS.png')\n"
+                    "else:\n"
+                    "    print('Candidate results preserved; publication figures intentionally not replaced.')\n"
                 ),
             ])
         write(f"ISeeSnow/{folder}/{folder}.ipynb", cells)

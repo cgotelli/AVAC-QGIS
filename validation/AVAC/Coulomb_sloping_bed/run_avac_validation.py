@@ -25,7 +25,12 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq
 
-from avac4qgis_validation.kerswell import position_riemann, time_riemann
+from avac4qgis_validation.kerswell import (
+    UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
+    position_riemann,
+    time_riemann,
+    undisturbed_rear_position,
+)
 from avac4qgis_validation.runtime import (
     configure_front_amr,
     maximum_written_amr_level,
@@ -50,6 +55,11 @@ XLOWER, XUPPER = -10.0, 20.0
 # uniform strip supplies the centerline benchmark.
 T_FINAL, NOUT = 6.0, 60
 NY = 5
+# Energy-resolved front threshold used by the archived Figure 3 analysis.
+# This is a post-processing criterion, not a solver velocity cap.  Its value
+# preserves the established sqrt(h)*|u| threshold after the obsolete
+# 50 m/s AVAC runtime ceiling was removed.
+FRONT_ENERGY_SPEED_THRESHOLD_M32_S = 5.0e-5
 
 
 def sha256(path: Path) -> str:
@@ -385,11 +395,11 @@ def extract(case: Path) -> tuple[dict[str, object], Path]:
     times, x, bed, depth, velocity = read_frames(work)
     dx = float(np.median(np.diff(x)))
     dry_tolerance = read_data_value(work / "geoclaw.data", "dry_tolerance")
-    speed_limit = read_data_value(work / "geoclaw.data", "speed_limit")
-    numerical_energy_speed = np.sqrt(dry_tolerance) * speed_limit
+    numerical_energy_speed = FRONT_ENERGY_SPEED_THRESHOLD_M32_S
     front = np.full(times.shape, np.nan)
     front_raw = np.full(times.shape, np.nan)
     rear = np.full(times.shape, np.nan)
+    rear_exact = np.full(times.shape, np.nan)
     envelope = -np.inf
     raw_envelope = -np.inf
     resolved_speed = np.zeros(times.shape)
@@ -406,8 +416,11 @@ def extract(case: Path) -> tuple[dict[str, object], Path]:
         front_raw[index] = raw_envelope if np.isfinite(raw_envelope) else np.nan
         if np.any(resolved):
             resolved_speed[index] = float(np.max(np.abs(u[resolved])))
-        undisturbed = x[np.abs(h - H0) <= 1.0e-8]
-        rear[index] = float(np.max(undisturbed)) if undisturbed.size else np.nan
+        rear[index] = undisturbed_rear_position(x, h, H0)
+        undisturbed_exact = x[np.abs(h - H0) <= 1.0e-8]
+        rear_exact[index] = (
+            float(np.max(undisturbed_exact)) if undisturbed_exact.size else np.nan
+        )
     mu_effective, x0, t0 = scales()
     tau = times / t0
     mass = np.sum(depth, axis=1) * dx
@@ -423,15 +436,26 @@ def extract(case: Path) -> tuple[dict[str, object], Path]:
         "time_scale_s": t0,
         "front_rmse_m": float(np.sqrt(np.nanmean((front - x0 * theory_front(tau))**2))),
         "rear_rmse_m": float(np.sqrt(np.nanmean((rear - x0 * theory_rear(tau))**2))),
+        "rear_rmse_moving_m": float(np.sqrt(np.nanmean(
+            (rear[tau <= 1.529654] - x0 * theory_rear(tau[tau <= 1.529654]))**2
+        ))),
+        "rear_exact_state_rmse_m": float(np.sqrt(np.nanmean(
+            (rear_exact - x0 * theory_rear(tau))**2
+        ))),
+        "rear_exact_state_rmse_moving_m": float(np.sqrt(np.nanmean(
+            (rear_exact[tau <= 1.529654]
+             - x0 * theory_rear(tau[tau <= 1.529654]))**2
+        ))),
+        "rear_relative_depth_tolerance": UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
         "front_final_m": float(front[-1]), "front_theory_final_m": float(2.0 * x0),
         "front_raw_final_m": float(front_raw[-1]),
         "rear_final_m": float(rear[-1]), "rear_theory_final_m": float(-0.721 * x0),
         "maximum_speed_final_m_s": float(resolved_speed[-1]),
         "maximum_speed_final_raw_m_s": final_speed_raw,
         "front_resolution_dry_tolerance_m": dry_tolerance,
-        "front_resolution_speed_limit_m_s": speed_limit,
+        "front_resolution_energy_speed_threshold_m1p5_s": numerical_energy_speed,
         "front_resolution_energy_density_proxy_m3_s2": (
-            0.5 * dry_tolerance * speed_limit**2
+            0.5 * numerical_energy_speed**2
         ),
         "mass_initial_m2_per_m": float(mass[0]), "mass_range_m2_per_m": float(np.ptp(mass)),
     }
@@ -440,11 +464,11 @@ def extract(case: Path) -> tuple[dict[str, object], Path]:
     np.savez_compressed(results / "centerline_fields.npz", time_s=times, x_m=x, bed_m=bed,
                         depth_m=depth, velocity_m_s=velocity)
     np.savetxt(results / "front_back_metrics.csv",
-               np.column_stack((times, front, front_raw, rear,
+               np.column_stack((times, front, front_raw, rear, rear_exact,
                                 resolved_speed, np.max(np.abs(velocity), axis=1), mass)),
                delimiter=",",
                header=("time_s,front_envelope_x_m,front_raw_envelope_x_m,"
-                       "rear_h1_x_m,max_resolved_speed_m_s,max_raw_speed_m_s,"
+                       "rear_h1_x_m,rear_exact_state_x_m,max_resolved_speed_m_s,max_raw_speed_m_s,"
                        "mass_m2_per_m"),
                comments="")
     (results / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
@@ -646,6 +670,11 @@ def main() -> None:
         help="maximum base-patch dimension of the established AVAC setup",
     )
     parser.add_argument("--replace", action="store_true", help="replace only the named generated case")
+    parser.add_argument(
+        "--postprocess-only",
+        action="store_true",
+        help="recompute diagnostics and figures from the completed fixed-grid output",
+    )
     args = parser.parse_args()
     if (args.dx <= 0.0 or args.cores < 1 or args.ny < 1
             or args.amr_levels < 2 or args.amr_ratio < 2
@@ -659,11 +688,23 @@ def main() -> None:
         raise ValueError("dx must divide the 30 m longitudinal domain exactly")
     T_FINAL, NOUT, NY = float(args.t_final), int(args.nout), int(args.ny)
     case = HERE / args.case_name
-    work = prepare(
-        case, args.dx, args.replace, args.max1d, args.amr_levels,
-        args.amr_ratio, args.speed_tolerance,
-    )
-    run(work, args.cores)
+    if args.postprocess_only:
+        work = case / "AVAC"
+        controls_path = case / "controls.json"
+        if not work.is_dir() or not controls_path.is_file():
+            raise FileNotFoundError(
+                f"Completed case not found for post-processing: {case}"
+            )
+        controls = json.loads(controls_path.read_text(encoding="utf-8"))
+        T_FINAL = float(controls.get("t_final_s", T_FINAL))
+        NOUT = int(controls.get("outputs", NOUT))
+        NY = int(controls.get("ny", NY))
+    else:
+        work = prepare(
+            case, args.dx, args.replace, args.max1d, args.amr_levels,
+            args.amr_ratio, args.speed_tolerance,
+        )
+        run(work, args.cores)
     summary, _results = extract(case)
     plot(case)
     print(json.dumps(summary, indent=2))

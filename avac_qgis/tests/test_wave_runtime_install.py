@@ -9,7 +9,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from avac_qgis.core.runtime import install_runtime_archive, installed_runtime, validate_runtime
+from avac_qgis.core.runtime import (
+    install_runtime_archive,
+    installed_runtime,
+    platform_key,
+    validate_runtime,
+)
 
 
 def main() -> None:
@@ -21,7 +26,7 @@ def main() -> None:
         # product directory must nevertheless receive its own backend.
         wave_root = root / "wave"
         installed = install_runtime_archive(archive, version, destination_root=wave_root)
-        assert installed == (wave_root / version / "arm64").resolve()
+        assert installed == (wave_root / version / platform_key()).resolve()
         backend = installed / "backend" / "Wave" / "setrun.py"
         assert backend.is_file()
         backend_text = backend.read_text(encoding="utf-8")

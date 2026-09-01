@@ -54,16 +54,31 @@ def test_fine_to_coarse_avac_restriction_uses_all_children():
 
 def test_avac_speed_refinement_rejects_numerically_dry_kinetic_films():
     flagging = _source(GEOCLAW / "flag2refine2.f90")
+    setprob = _source(AVAC / "setprob.f90")
 
     assert "sqrt(q(1,i,j)) * speed" in flagging
-    assert "sqrt(dry_tolerance) * speed_limit" in flagging
+    assert "sqrt(refinement_energy_depth)" in flagging
+    assert "speed_tolerance(m)" in flagging
+    assert "sqrt(dry_tolerance) * speed_limit" not in flagging
+    assert "refinement_energy_depth = velocity_depth_threshold_rh" in setprob
     assert ".not. conserve_depth_amr" in flagging
     assert "energy_speed > numerical_energy_speed" in flagging
 
 
-def test_pdf_baseline_keeps_geoclaw_legacy_second_order_relimiting_mode():
-    step2 = _source(GEOCLAW / "step2.f90")
+def test_avac_positivity_repair_uses_local_inflow_only():
+    stepgrid = _source(GEOCLAW / "stepgrid.f")
 
-    assert "use geoclaw_module, only: dry_tolerance" in step2
-    assert "logical, parameter :: relimit = .false." in step2
-    assert "relimit = conserve_depth_amr" not in step2
+    assert "if (conserve_depth_amr) then" in stepgrid
+    assert "call redistribute_negative_depth" in stepgrid
+    assert "remaining = -q(1,i,j)" in stepgrid
+    assert "carries_inflow" in stepgrid
+    assert "q(2,ni(n),nj(n))*dble(i-ni(n))" in stepgrid
+    assert "factor = max(0.d0,1.d0-take/available)" in stepgrid
+    assert "q(m,ni(n),nj(n)) = factor*q(m,ni(n),nj(n))" in stepgrid
+    assert "static reservoir" in stepgrid
+
+
+def test_wave_does_not_enable_avac_conservative_depth_mode():
+    wave = _source(ROOT / "avac-main" / "src" / "WAVE" / "setprob.f90")
+
+    assert "conserve_depth_amr = .true." not in wave

@@ -23,8 +23,8 @@ subroutine flag2refine2(mx,my,mbc,mbuff,meqn,maux,xlower,ylower,dx,dy,t,level, &
                        tolsp,q,aux,amrflags)
 
     use amr_module, only: mxnest, t0, DOFLAG, UNSET
-    use geoclaw_module, only:dry_tolerance, sea_level, speed_limit
-    use geoclaw_module, only:conserve_depth_amr
+    use geoclaw_module, only:dry_tolerance, sea_level
+    use geoclaw_module, only:conserve_depth_amr, refinement_energy_depth
     use geoclaw_module, only: spherical_distance, coordinate_system
 
 
@@ -157,14 +157,21 @@ subroutine flag2refine2(mx,my,mbc,mbuff,meqn,maux,xlower,ylower,dx,dy,t,level, &
                     ! require a resolvable kinetic-energy density.  Comparing
                     ! sqrt(h)*speed avoids overflow and is equivalent to
                     !
-                    !   1/2*h*speed**2 > 1/2*dry_tolerance*speed_limit**2.
+                    !   1/2*h*speed**2
+                    !       > 1/2*h_ref*speed_tolerance(level)**2.
                     !
-                    ! Hence the numerical floor is determined entirely by
-                    ! the existing dry-state and admissible-speed controls;
-                    ! it is not a case-specific depth or velocity threshold.
+                    ! AVAC sets h_ref to its resolved-velocity depth.  The
+                    ! comparison is made separately for each requested AMR
+                    ! speed tolerance.  In particular, it is independent of
+                    ! speed_limit: disabling a physical velocity cap must not
+                    ! silently disable refinement.
                     energy_speed = sqrt(q(1,i,j)) * speed
-                    numerical_energy_speed = sqrt(dry_tolerance) * speed_limit
                     do m=1,min(size(speed_tolerance), mxnest)
+                        numerical_energy_speed = 0.d0
+                        if (conserve_depth_amr .and. refinement_energy_depth > 0.d0) then
+                            numerical_energy_speed = sqrt(refinement_energy_depth) * &
+                                                     speed_tolerance(m)
+                        endif
                         if (speed > speed_tolerance(m) .and. level <= m .and. &
                             (.not. conserve_depth_amr .or. &
                              energy_speed > numerical_energy_speed)) then

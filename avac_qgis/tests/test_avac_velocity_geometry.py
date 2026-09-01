@@ -32,15 +32,25 @@ def test_temporal_speed_is_the_terrain_tangent_magnitude():
     assert np.allclose(fields["velocity"], 2.0 * np.sqrt(2.0))
 
 
-def test_recovered_pdf_baseline_source_hashes_are_stable():
+def test_accepted_physics_sources_are_stable():
+    """Diagnostic-output changes must not silently alter accepted physics."""
     expected = {
-        "src2.f90": "249fe780c2329490ccf9ade4c6554695602bfc680c77770627a66e9a1c1d27ed",
-        "rheology_module.f90": "1c913b4a0b8f8b86c529eed927d37bb40ef58bc46048fc912de69039a271d1c0",
         "b4step2.f90": "ac2829b0ea8b2c4b6e44e0acc32a61c2ba7256767b85cbdf8e7961d5c0aad2e8",
-        "Makefile": "ea519f819761ae7b6690e1a31016ab08a05961ff4f3af90ff68bac84f7b14714",
+        "rpn2_geoclaw.f": "fc2c151a131d64b1a85a71a18d437f8064ff4898fbe59665fd251100acc7bcb7",
     }
     for name, digest in expected.items():
         # Git may materialize CRLF working-tree files on Windows. The source
         # contract concerns the repository text, not platform line endings.
         normalized = (AVAC / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == digest
+
+
+def test_cohesive_interface_arrest_uses_terrain_normal_depth():
+    source = (AVAC / "rpn2_geoclaw.f").read_text(encoding="utf-8")
+
+    # Wet-left/dry-right, dry-left/wet-right, and wet/wet transitions all use
+    # h_normal*cos(phi) = h_vertical*cos(phi)^2 in the cohesive yield balance.
+    assert "dx_n/(hL*costh_n**2)" in source
+    assert "dx_n/(hR*costh_n**2)" in source
+    assert "dx_n/(h_avg_n*costh_n**2)" in source
+    assert source.count("imodel_rh .eq. 3 .and. rho_rh .gt. 0.d0") == 3

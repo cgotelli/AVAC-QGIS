@@ -2951,7 +2951,8 @@ class AvacDockWidget(QDockWidget):
         )
         self.log.setPlainText(
             f"Prepared run: {prepared.run_root}\n{prepared.topo_path}\n{prepared.init_path}\n{prepared.configuration_path}\n"
-            f"Release cells: {int(prepared.mask.sum())}; depth min/max/sum: "
+            f"Release cells touched: {int(prepared.mask.sum())}; equivalent full cells: "
+            f"{prepared.coverage.sum():.6f}; depth min/max/sum: "
             f"{prepared.depth.min():.12g} / {prepared.depth.max():.12g} / {prepared.depth.sum():.12g}\n"
             f"Runtime staged: {self.runtime_root}\nOutput working directory: {output}"
         )

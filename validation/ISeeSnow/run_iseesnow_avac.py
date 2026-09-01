@@ -42,9 +42,15 @@ except ImportError:  # Windows does not provide the POSIX resource module.
 
 
 VALIDATION_ROOT = Path(__file__).resolve().parent
+RESULTS_ROOT = VALIDATION_ROOT
 PROJECT_ROOT = VALIDATION_ROOT.parents[1]
 from avac4qgis_validation.datasets import ensure_iseesnow  # noqa: E402
-from avac4qgis_validation.runtime import solver_executable  # noqa: E402
+from avac4qgis_validation.runtime import (  # noqa: E402
+    CLAWPACK_SOURCE,
+    prepare_source_execution,
+    runtime as source_runtime,
+    solver_executable,
+)
 
 BENCHMARK_ROOT = ensure_iseesnow()
 PLUGIN_ROOT = PROJECT_ROOT / "avac_qgis"
@@ -57,8 +63,6 @@ from avac_qgis.core.run_project import (  # noqa: E402
     read_run_metadata,
     update_run_status,
 )
-from avac_qgis.core.runtime_assets import ensure_bundled_runtime  # noqa: E402
-from avac_qgis.core.runtime_execution import prepare_runtime_execution  # noqa: E402
 
 
 CASE_SPECIFICATIONS: dict[str, dict[str, Any]] = {
@@ -237,28 +241,59 @@ def benchmark_raster(dem: EsriGrid, *, crs_authid: str) -> AvacRaster:
 
 
 def set_benchmark_computational_extent(configuration_path: Path, dem: EsriGrid) -> None:
-    """Set the solver/fixed grid to the supplied benchmark centres exactly.
+    """Align GeoClaw control volumes and result points to the benchmark grid.
 
-    The normal plugin path derives a solver rectangle one cell smaller than
-    the terrain-node raster because its ordinary QGIS input is a terrain
-    coverage grid. ISeeSnow instead requires result cells at every supplied
-    ASCII-grid centre. This validation-only, documented override selects
-    those centres as the GeoClaw fixed-grid endpoints. It neither resamples
-    terrain nor changes a prescribed benchmark model parameter.
+    ISeeSnow supplies cell centres.  GeoClaw instead describes its
+    computational rectangle by cell edges.  The validation domain therefore
+    extends half a benchmark cell beyond the first and last centres, while
+    the optional ``result_grid`` keeps fgmax points exactly on those centres.
+    This changes neither the 5 m benchmark resolution nor the terrain values.
     """
     configuration = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
     if not isinstance(configuration, dict) or not isinstance(configuration.get("dem_extent"), dict):
         raise ValueError("Prepared AVAC configuration has no dem_extent mapping.")
     extent = configuration["dem_extent"]
+    half_cell = dem.cellsize / 2.0
     extent.update({
-        "xmin": float(dem.x_centres[0]), "xmax": float(dem.x_centres[-1]),
-        "ymin": float(dem.y_centres[0]), "ymax": float(dem.y_centres[-1]),
+        "xmin": float(dem.x_centres[0] - half_cell),
+        "xmax": float(dem.x_centres[-1] + half_cell),
+        "ymin": float(dem.y_centres[0] - half_cell),
+        "ymax": float(dem.y_centres[-1] + half_cell),
         "nbx": int(dem.ncols), "nby": int(dem.nrows), "cell_size": float(dem.cellsize),
     })
+    configuration["result_grid"] = {
+        "xllcenter": float(dem.x_centres[0]),
+        "yllcenter": float(dem.y_centres[0]),
+        "ncols": int(dem.ncols),
+        "nrows": int(dem.nrows),
+        "cell_size": float(dem.cellsize),
+    }
     configuration_path.write_text(yaml.safe_dump(configuration, sort_keys=False), encoding="utf-8")
 
 
-def normal_depth_to_vertical(dem: EsriGrid, mask_south_to_north: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def enable_validation_gauge(
+    configuration_path: Path,
+    diagnostic_gauge: tuple[float, float] | None,
+) -> None:
+    """Restore an explicitly requested validation-only solver-step gauge.
+
+    Normal AVAC preparation disables gauges because the plugin has no AVAC
+    gauge editor.  An isolated validation run may nevertheless need a point
+    history to diagnose a transient without changing output cadence.
+    """
+    if diagnostic_gauge is None:
+        return
+    configuration = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
+    configuration["gauges"] = {
+        "gauge_recording": True,
+        "gauges": [[1, *diagnostic_gauge]],
+    }
+    configuration_path.write_text(
+        yaml.safe_dump(configuration, sort_keys=False), encoding="utf-8",
+    )
+
+
+def normal_depth_to_vertical(dem: EsriGrid, coverage_south_to_north: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Translate ISeeSnow's normal release thickness to AVAC/GeoClaw h."""
     terrain = np.flipud(np.asarray(dem.values_north, dtype=float))
     if np.isfinite(dem.nodata):
@@ -266,9 +301,24 @@ def normal_depth_to_vertical(dem: EsriGrid, mask_south_to_north: np.ndarray) -> 
     filled = np.nan_to_num(terrain, nan=float(np.nanmean(terrain)))
     dz_dy, dz_dx = np.gradient(filled, dem.cellsize)
     cos_slope = 1.0 / np.sqrt(1.0 + dz_dx**2 + dz_dy**2)
-    normal_depth = np.where(mask_south_to_north, NORMAL_RELEASE_THICKNESS_M, 0.0)
-    vertical_depth = np.where(mask_south_to_north, normal_depth / cos_slope, 0.0)
+    coverage = np.clip(np.asarray(coverage_south_to_north, dtype=float), 0.0, 1.0)
+    normal_depth = NORMAL_RELEASE_THICKNESS_M * coverage
+    vertical_depth = np.where(coverage > 0.0, normal_depth / cos_slope, 0.0)
     return vertical_depth, cos_slope
+
+
+def normal_peak_thickness(
+    peak_depth_south_to_north: np.ndarray,
+    initial_vertical_depth_south_to_north: np.ndarray,
+    cosine_slope_south_to_north: np.ndarray,
+) -> np.ndarray:
+    """Return ISeeSnow normal PFT without changing internal row orientation."""
+    peak_depth = np.asarray(peak_depth_south_to_north, dtype=float)
+    initial_depth = np.asarray(initial_vertical_depth_south_to_north, dtype=float)
+    cosine_slope = np.asarray(cosine_slope_south_to_north, dtype=float)
+    if not (peak_depth.shape == initial_depth.shape == cosine_slope.shape):
+        raise ValueError("PFT fields must share one south-to-north benchmark grid.")
+    return np.maximum(peak_depth, initial_depth) * cosine_slope
 
 
 def write_esri_ascii(path: Path, grid: EsriGrid, values_north: np.ndarray) -> None:
@@ -294,11 +344,13 @@ def configure_template(
     output_interval_s: float = OUTPUT_INTERVAL_S,
     limiter: str = "vanleer",
     cfl_target: float = 0.5,
+    diagnostic_gauge: tuple[float, float] | None = None,
+    refinement_levels: int = 1,
 ) -> Path:
     specification = CASE_SPECIFICATIONS[case_name]
     template = yaml.safe_load((PLUGIN_ROOT / "resources" / "AVAC_configuration100.yaml").read_text(encoding="utf-8"))
     template["computation"].update({
-        "cell_size": CELL_SIZE_M, "refinement": 1, "t_max": simulation_end_s,
+        "cell_size": CELL_SIZE_M, "refinement": int(refinement_levels), "t_max": simulation_end_s,
         "nb_simul": int(round(simulation_end_s / output_interval_s)), "boundary": "extrap",
         "limiter": limiter, "cfl_target": cfl_target,
     })
@@ -312,7 +364,10 @@ def configure_template(
         "model": specification["model"], "mu": specification["mu"], "xi": specification["xi"],
         "C": 0.0, "rho": 300.0, "u_cr": 0.0, "beta": 0.0,
     })
-    template["gauges"] = {"gauge_recording": False, "gauges": []}
+    template["gauges"] = {
+        "gauge_recording": diagnostic_gauge is not None,
+        "gauges": ([] if diagnostic_gauge is None else [[1, *diagnostic_gauge]]),
+    }
     destination = case_root / "avac_iseesnow_template.yaml"
     destination.write_text(yaml.safe_dump(template, sort_keys=False), encoding="utf-8")
     return destination
@@ -360,7 +415,7 @@ def ensure_plugin_case_configurations(case_names) -> list[Path]:
     """Create/update Case files without running or modifying a solver result."""
     destinations: list[Path] = []
     for case_name in case_names:
-        case_root = VALIDATION_ROOT / case_name
+        case_root = RESULTS_ROOT / case_name
         inputs = copy_inputs(case_name, case_root)
         template = case_root / "avac_iseesnow_template.yaml"
         if not template.is_file():
@@ -453,6 +508,39 @@ def set_spatial_order(claw_data: Path, spatial_order: int) -> int:
     return spatial_order
 
 
+def _replace_generated_value(path: Path, label: str, value: str) -> None:
+    """Replace one ``=: label`` value in a generated Clawpack data file."""
+    marker = f"=: {label}"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if marker in line:
+            lines[index] = f"{value:<20} {line[line.index('=:') :]}"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return
+    raise KeyError(f"Could not find {label!r} in {path}")
+
+
+def set_amr_resolution(output_dir: Path, levels: int, ratio: int) -> float:
+    """Configure square dynamic AMR for an isolated resolution diagnostic."""
+    levels, ratio = int(levels), int(ratio)
+    if levels < 1 or levels > 3:
+        raise ValueError("ISeeSnow diagnostics support one to three AMR levels.")
+    if ratio < 2:
+        raise ValueError("AMR refinement ratios must be at least two.")
+    amr_data = output_dir / "amr.data"
+    _replace_generated_value(amr_data, "amr_levels_max", str(levels))
+    ratios = " ".join([str(ratio)] * max(1, levels - 1))
+    for label in ("refinement_ratios_x", "refinement_ratios_y", "refinement_ratios_t"):
+        _replace_generated_value(amr_data, label, ratios)
+    _replace_generated_value(amr_data, "flag2refine", "T" if levels > 1 else "F")
+    _replace_generated_value(
+        output_dir / "refinement.data",
+        "speed_tolerance",
+        " ".join(["0.05"] * max(1, levels - 1)),
+    )
+    return CELL_SIZE_M / ratio ** (levels - 1)
+
+
 def fgmax_fields(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     raw = np.atleast_2d(np.loadtxt(path, dtype=float))
     if raw.shape[1] < 6:
@@ -481,15 +569,39 @@ def require_benchmark_alignment(x: np.ndarray, y: np.ndarray, grid: EsriGrid) ->
         )
 
 
-def native_state_statistics(runtime: Path, output_dir: Path) -> list[dict[str, float]]:
+def _active_amr_mask(state, states) -> np.ndarray:
+    """Return native cells not covered by any finer AMR patch."""
+    patch = state.patch
+    nx, ny = state.q.shape[1:3]
+    x = patch.lower_global[0] + (np.arange(nx) + 0.5) * patch.delta[0]
+    y = patch.lower_global[1] + (np.arange(ny) + 0.5) * patch.delta[1]
+    mask = np.ones((nx, ny), dtype=bool)
+    for finer in states:
+        if finer.patch.level <= patch.level:
+            continue
+        covered_x = (
+            (x >= finer.patch.lower_global[0] - 1.0e-12)
+            & (x <= finer.patch.upper_global[0] + 1.0e-12)
+        )
+        covered_y = (
+            (y >= finer.patch.lower_global[1] - 1.0e-12)
+            & (y <= finer.patch.upper_global[1] + 1.0e-12)
+        )
+        if np.any(covered_x) and np.any(covered_y):
+            mask[np.ix_(covered_x, covered_y)] = False
+    return mask
+
+
+def native_state_statistics(clawpack_source: Path, output_dir: Path) -> list[dict[str, float]]:
     """Read mass and motion directly from native GeoClaw state frames.
 
     Fixed-grid (fgout) fields are interpolated visualization products.  They
     are useful for maps but are not a conservation diagnostic.  These values
-    instead sum native, non-overlapping level-one AVAC cells.  The validation
-    cases deliberately use one refinement level, which is asserted here.
+    instead sum a non-overlapping native AMR hierarchy: coarse cells covered
+    by a finer patch are excluded. This is identical to the level-one sum for
+    the publication configuration and also supports isolated resolution tests.
     """
-    claw_root = runtime / "python" / "clawpack-src"
+    claw_root = Path(clawpack_source).expanduser().resolve()
     if str(claw_root) not in sys.path:
         sys.path.insert(0, str(claw_root))
     from clawpack import pyclaw
@@ -505,8 +617,6 @@ def native_state_statistics(runtime: Path, output_dir: Path) -> list[dict[str, f
     for frame_id in frame_ids:
         solution = pyclaw.Solution()
         solution.read(frame_id, path=str(output_dir), file_format="binary", read_aux=False)
-        if any(state.patch.level != 1 for state in solution.states):
-            raise RuntimeError("ISeeSnow mass diagnostic requires one AVAC refinement level.")
         signed_volume = positive_volume = moving_volume = 0.0
         max_speed = 0.0
         for state in solution.states:
@@ -515,17 +625,19 @@ def native_state_statistics(runtime: Path, output_dir: Path) -> list[dict[str, f
             h = np.asarray(state.q[0], dtype=float)
             hu = np.asarray(state.q[1], dtype=float)
             hv = np.asarray(state.q[2], dtype=float)
+            active = _active_amr_mask(state, solution.states)
             finite_h = np.where(np.isfinite(h), h, 0.0)
-            signed_volume += float(np.sum(finite_h) * area)
+            signed_volume += float(np.sum(finite_h[active]) * area)
             positive = np.maximum(finite_h, 0.0)
-            positive_volume += float(np.sum(positive) * area)
-            wet = positive >= VELOCITY_DEPTH_THRESHOLD_M
+            positive_volume += float(np.sum(positive[active]) * area)
+            wet = active & (positive >= VELOCITY_DEPTH_THRESHOLD_M)
             speed = np.zeros_like(positive)
             speed[wet] = np.hypot(hu[wet], hv[wet]) / positive[wet]
             speed = np.where(np.isfinite(speed), speed, 0.0)
-            moving_volume += float(np.sum(positive[speed > VELOCITY_FLOW_THRESHOLD_MPS]) * area)
-            if speed.size:
-                max_speed = max(max_speed, float(np.max(speed)))
+            moving = active & (speed > VELOCITY_FLOW_THRESHOLD_MPS)
+            moving_volume += float(np.sum(positive[moving]) * area)
+            if np.any(active):
+                max_speed = max(max_speed, float(np.max(speed[active])))
         rows.append({
             "frame": float(frame_id), "time_seconds": float(solution.t),
             "signed_volume_m3": signed_volume,
@@ -534,6 +646,7 @@ def native_state_statistics(runtime: Path, output_dir: Path) -> list[dict[str, f
             "moving_volume_m3": moving_volume,
             "moving_volume_fraction": 0.0,  # completed relative to t=0 below
             "max_speed_mps": max_speed,
+            "maximum_level": float(max(state.patch.level for state in solution.states)),
         })
     initial = rows[0]["positive_volume_m3"]
     if initial <= 0.0:
@@ -560,7 +673,7 @@ def write_mass_history(path: Path, rows: list[dict[str, float]]) -> None:
     fields = [
         "frame", "time_seconds", "signed_volume_m3", "positive_volume_m3",
         "negative_volume_m3", "moving_volume_m3", "moving_volume_fraction",
-        "max_speed_mps",
+        "max_speed_mps", "maximum_level",
     ]
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -591,15 +704,19 @@ def write_configuration_record(
     output_interval_s: float,
     limiter: str,
     cfl_target: float,
+    refinement_levels: int,
+    refinement_ratio: int,
 ) -> None:
     specification = CASE_SPECIFICATIONS[case_name]
     lines = [
         "AVAC4QGIS ISeeSnow benchmark configuration",
         f"case = {case_name}",
         f"plugin_version = {plugin_version()}",
-        f"runtime = {runtime}",
-        f"runtime_manifest_sha256 = {sha256(runtime / 'runtime-manifest.json')}",
-        "solver_origin = current locally compiled AVAC source tree",
+        f"solver_source = {runtime}",
+        "runtime_manifest_sha256 = not applicable (validation uses the current source tree)",
+        f"clawpack_source = {CLAWPACK_SOURCE}",
+        f"clawpack_source_init_sha256 = {sha256(CLAWPACK_SOURCE / 'clawpack' / '__init__.py')}",
+        "solver_origin = current repository source, compiled locally and explicitly recorded",
         f"solver = {solver}",
         f"solver_sha256 = {sha256(solver)}",
         "numerical_model = depth-integrated GeoClaw/AVAC with AVAC source terms",
@@ -607,7 +724,9 @@ def write_configuration_record(
         f"mu = {specification['mu']}",
         f"xi = {specification['xi']}",
         f"cell_size_m = {CELL_SIZE_M}",
-        "refinement_levels = 1",
+        f"refinement_levels = {refinement_levels}",
+        f"refinement_ratio = {refinement_ratio}",
+        f"finest_effective_cell_size_m = {CELL_SIZE_M / refinement_ratio**(refinement_levels - 1):.12g}",
         f"simulation_end_ceiling_s = {simulation_end_s}",
         f"fixed_grid_output_interval_s = {output_interval_s}",
         f"limiter = {limiter}",
@@ -633,10 +752,10 @@ def write_configuration_record(
         "initialization = h_vertical = h_normal / cos(local DEM slope) inside supplied release polygon",
         "submitted_pft = maximum AVAC vertical h multiplied by cos(local DEM slope)",
         "submitted_pfv = AVAC native peak terrain-tangent speed sqrt(u^2 + v^2 + (u*Bx + v*By)^2) where h > 0.05 m",
-        "granular_wet_dry_velocity = Kurganov-Petrova velocity desingularization; reported velocity requires h > 0.05 m; no velocity cap or clipping",
+        "velocity_diagnostic = zero for h <= 0.05 m; Kurganov-Petrova momentum/depth desingularization for 0.05 m < h < 0.20 m; exact momentum/depth for h >= 0.20 m; fgmax output only, with no state modification, velocity cap, or field clipping",
         "release_elevation_correction = false",
         "release_slope_correction = false",
-        "benchmark_grid_contract = GeoClaw fixed-grid endpoints equal supplied ISeeSnow cell centres",
+        "benchmark_grid_contract = GeoClaw cell centres and fixed-grid points equal supplied ISeeSnow cell centres",
         f"solver_wall_seconds = {wall_s:.6f}",
         f"solver_cpu_seconds = {cpu_s:.6f}",
         f"run_root = {run_root}",
@@ -676,8 +795,12 @@ def run_case(
     output_interval_s: float = OUTPUT_INTERVAL_S,
     limiter: str = "vanleer",
     cfl_target: float = 0.5,
+    diagnostic_gauge: tuple[float, float] | None = None,
+    refinement_levels: int = 1,
+    refinement_ratio: int = 2,
+    solver_override: Path | None = None,
 ) -> dict[str, Any]:
-    case_root = VALIDATION_ROOT / case_name
+    case_root = RESULTS_ROOT / case_name
     inputs = copy_inputs(case_name, case_root)
     dem = parse_esri_ascii(inputs["dem"])
     crs = "EPSG:31287" if case_name == "RealTopo" else ""
@@ -685,7 +808,7 @@ def run_case(
     rings = read_polygon_rings(inputs["release"])
     template = configure_template(
         case_name, case_root, simulation_end_s, output_interval_s, limiter,
-        cfl_target,
+        cfl_target, diagnostic_gauge, refinement_levels,
     )
     plugin_case = write_plugin_case_configuration(case_name, case_root, inputs, template)
     run_root = case_root / "Run"
@@ -693,37 +816,50 @@ def run_case(
         if not overwrite:
             raise FileExistsError(f"{run_root} already exists; use --overwrite only to discard this case run.")
         shutil.rmtree(run_root)
-    runtime = ensure_bundled_runtime()
-    solver = current_source_solver()
+    runtime = source_runtime("avac").resolve()
+    solver = (
+        Path(solver_override).expanduser().resolve()
+        if solver_override is not None else current_source_solver()
+    )
+    if not solver.is_file():
+        raise FileNotFoundError(f"AVAC solver executable is unavailable: {solver}")
     prepared = prepare_isolated_runtime_run(
-        run_root, runtime / "backend" / "AVAC", raster, rings, template, {},
-        {"benchmark": "ISeeSnow", "case": case_name, "dem_crs": crs, "runtime": str(runtime)},
+        run_root, runtime, raster, rings, template, {},
+        {"benchmark": "ISeeSnow", "case": case_name, "dem_crs": crs,
+         "solver_source": str(runtime), "execution_mode": "current_source"},
     )
     set_benchmark_computational_extent(prepared.configuration_path, dem)
-    vertical_depth, cosine_slope = normal_depth_to_vertical(dem, prepared.mask)
+    enable_validation_gauge(prepared.configuration_path, diagnostic_gauge)
+    vertical_depth, cosine_slope = normal_depth_to_vertical(dem, prepared.coverage)
     write_init_xyz(prepared.init_path, raster, vertical_depth)
-    write_esri_ascii(case_root / "initial_depth_normal.asc", dem, np.flipud(np.where(prepared.mask, NORMAL_RELEASE_THICKNESS_M, 0.0)))
+    write_esri_ascii(
+        case_root / "initial_depth_normal.asc",
+        dem,
+        np.flipud(NORMAL_RELEASE_THICKNESS_M * prepared.coverage),
+    )
     write_esri_ascii(case_root / "initial_depth_vertical.asc", dem, np.flipud(vertical_depth))
-    output_dir = prepare_runtime_execution(
-        runtime,
+    output_dir = prepare_source_execution(
+        "avac",
         prepared.avac_dir,
         setrun_override=PROJECT_ROOT / "avac-main" / "src" / "AVAC" / "setrun.py",
     )
     configured_speed_limit = disable_speed_limit(output_dir / "geoclaw.data")
     spatial_order = set_spatial_order(output_dir / "claw.data", spatial_order)
+    finest_cell_size = set_amr_resolution(
+        output_dir, refinement_levels, refinement_ratio,
+    )
     wall_s, cpu_s = launch_solver(solver, output_dir, case_root / "solver.log", workers)
     update_run_status(prepared.avac_dir, "completed", solver_wall_seconds=wall_s, solver_cpu_seconds=cpu_s)
 
     x, y, peak_depth, peak_velocity = fgmax_fields(output_dir / "fgmax0001.txt")
     require_benchmark_alignment(x, y, dem)
-    # fgmax starts at t=1 s in the backend. Include the specified release state
-    # at t=0 explicitly so submitted peak thickness is truly a full-duration maximum.
-    peak_depth = np.maximum(peak_depth, np.flipud(vertical_depth))
-    normal_peak_depth = peak_depth * np.flipud(cosine_slope)
+    # Include the specified release at t=0 explicitly.  All three arrays are
+    # south-to-north here; only the ESRI writer conversion below flips rows.
+    normal_peak_depth = normal_peak_thickness(peak_depth, vertical_depth, cosine_slope)
     pft_path, pfv_path, configuration_path = submission_paths(case_name, case_root)
     write_esri_ascii(pft_path, dem, np.flipud(normal_peak_depth))
     write_esri_ascii(pfv_path, dem, np.flipud(peak_velocity))
-    state_rows = native_state_statistics(runtime, output_dir)
+    state_rows = native_state_statistics(CLAWPACK_SOURCE, output_dir)
     write_mass_history(case_root / "native_mass_history.csv", state_rows)
     stopped_time = rest_time(state_rows)
     # Use mass from native state arrays, not interpolated fixed-grid results.
@@ -733,7 +869,8 @@ def run_case(
     write_configuration_record(
         case_name, configuration_path, runtime, run_root, inputs, cpu_s, wall_s,
         state_rows, stopped_time, spatial_order, solver, simulation_end_s,
-        output_interval_s, limiter, cfl_target,
+        output_interval_s, limiter, cfl_target, refinement_levels,
+        refinement_ratio,
     )
     record = {
         "case": case_name, "cpu_seconds": cpu_s, "wall_seconds": wall_s,
@@ -745,6 +882,11 @@ def run_case(
         "spatial_order": spatial_order,
         "limiter": limiter,
         "cfl_target": cfl_target,
+        "diagnostic_gauge": diagnostic_gauge,
+        "refinement_levels": refinement_levels,
+        "refinement_ratio": refinement_ratio,
+        "finest_effective_cell_size_m": finest_cell_size,
+        "maximum_amr_level": int(max(row["maximum_level"] for row in state_rows)),
         "plugin_version": plugin_version(),
         "solver": str(solver),
         "solver_sha256": sha256(solver),
@@ -762,7 +904,7 @@ def run_case(
 
 
 def write_result_table(records: list[dict[str, Any]]) -> None:
-    destination = VALIDATION_ROOT / "simulationResultTable.csv"
+    destination = RESULTS_ROOT / "simulationResultTable.csv"
     with destination.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
         writer.writerow(["", "testCase", "computation duration (CPU) [s]", "avalanche flow time [s]", "volume at t0 [m3]", "volume at tFinal [m3]", "spatial resolution x [m]", "spatial resolution y [m]"])
@@ -780,7 +922,7 @@ def completed_case_records() -> list[dict[str, Any]]:
     """Read completed individual-case summaries without re-running a solver."""
     records = []
     for case_name in CASE_SPECIFICATIONS:
-        path = VALIDATION_ROOT / case_name / "run_summary.json"
+        path = RESULTS_ROOT / case_name / "run_summary.json"
         if not path.is_file():
             raise FileNotFoundError(f"No completed validation summary for {case_name}: {path}")
         records.append(json.loads(path.read_text(encoding="utf-8")))
@@ -788,6 +930,7 @@ def completed_case_records() -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    global RESULTS_ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=("all", *CASE_SPECIFICATIONS), default="all")
     parser.add_argument("--workers", type=int, default=1, help="OpenMP worker count; one is the reproducible default.")
@@ -800,11 +943,33 @@ def main() -> None:
     parser.add_argument("--output-interval", type=float, default=OUTPUT_INTERVAL_S,
                         help="Native/fixed-grid output interval in seconds (default: 10).")
     parser.add_argument("--limiter", choices=("minmod", "superbee", "vanleer", "mc"), default="vanleer",
-                        help="Second-order wave limiter (default: vanleer).")
+                        help="Second-order wave limiter (default: van Leer).")
     parser.add_argument("--cfl-target", type=float, default=0.5,
                         help="Desired variable-step Courant number (default: 0.5).")
     parser.add_argument("--write-table-only", action="store_true", help="Write the three-case ISeeSnow result table from completed summaries without running AVAC.")
+    parser.add_argument(
+        "--results-root", type=Path, default=VALIDATION_ROOT,
+        help="Write complete case products below this directory instead of replacing the publication results.",
+    )
+    parser.add_argument(
+        "--diagnostic-gauge", type=float, nargs=2, metavar=("X", "Y"),
+        help="Record one solver-step point history at X Y; intended for isolated diagnostic results.",
+    )
+    parser.add_argument(
+        "--refinement-levels", type=int, choices=(1, 2, 3), default=1,
+        help="Dynamic AMR levels for an isolated resolution diagnostic (default: 1).",
+    )
+    parser.add_argument(
+        "--refinement-ratio", type=int, default=2,
+        help="Square refinement ratio between diagnostic AMR levels (default: 2).",
+    )
+    parser.add_argument(
+        "--solver", type=Path,
+        help="Explicit AVAC executable for an isolated mechanism diagnostic.",
+    )
     args = parser.parse_args()
+    RESULTS_ROOT = args.results_root.expanduser().resolve()
+    RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
     if args.write_table_only:
         if args.case != "all" or args.overwrite or args.retain_raw_frames:
             raise SystemExit("--write-table-only requires the default --case all and no run flags.")
@@ -819,15 +984,19 @@ def main() -> None:
         raise SystemExit("--simulation-end and --output-interval must be positive")
     if not 0 < args.cfl_target <= 1:
         raise SystemExit("--cfl-target must lie in (0, 1]")
+    if args.refinement_ratio < 2:
+        raise SystemExit("--refinement-ratio must be at least two")
     if args.simulation_end / args.output_interval < 1:
         raise SystemExit("--simulation-end must span at least one output interval")
     cases = list(CASE_SPECIFICATIONS) if args.case == "all" else [args.case]
+    diagnostic_gauge = tuple(args.diagnostic_gauge) if args.diagnostic_gauge else None
     ensure_plugin_case_configurations(cases)
     records = [
         run_case(
             case_name, args.workers, args.overwrite, args.retain_raw_frames,
             args.spatial_order, args.simulation_end, args.output_interval,
-            args.limiter, args.cfl_target,
+            args.limiter, args.cfl_target, diagnostic_gauge,
+            args.refinement_levels, args.refinement_ratio, args.solver,
         )
         for case_name in cases
     ]

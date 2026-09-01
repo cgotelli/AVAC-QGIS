@@ -31,7 +31,12 @@ from avac4qgis_validation.runtime import (
     run_solver,
     solver_executable,
 )
-from avac4qgis_validation.kerswell import position_riemann, time_riemann
+from avac4qgis_validation.kerswell import (
+    UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
+    position_riemann,
+    time_riemann,
+    undisturbed_rear_position,
+)
 
 
 H0 = 1.0
@@ -90,14 +95,16 @@ def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.nda
     dx = float(np.median(np.diff(x)))
     front = np.full(times.shape, np.nan)
     rear = np.full(times.shape, np.nan)
+    rear_exact = np.full(times.shape, np.nan)
     max_speed = np.max(np.abs(velocity), axis=1)
     for index, (h, u) in enumerate(zip(depth, velocity)):
         wet = x[h > 1.0e-12]
         if wet.size:
             front[index] = float(np.max(wet))
-        undisturbed = x[np.abs(h - H0) <= 1.0e-8]
-        if undisturbed.size:
-            rear[index] = float(np.max(undisturbed))
+        rear[index] = undisturbed_rear_position(x, h, H0)
+        undisturbed_exact = x[np.abs(h - H0) <= 1.0e-8]
+        if undisturbed_exact.size:
+            rear_exact[index] = float(np.max(undisturbed_exact))
     mass = np.sum(depth, axis=1) * dx
     moving_front = times <= 2.0 * T0
     moving_rear = times <= 1.529654 * T0
@@ -116,6 +123,10 @@ def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.nda
         "rear_rmse_moving_m": float(np.sqrt(np.nanmean(
             (rear[moving_rear] - theory_rear(times[moving_rear])) ** 2
         ))),
+        "rear_exact_state_rmse_moving_m": float(np.sqrt(np.nanmean(
+            (rear_exact[moving_rear] - theory_rear(times[moving_rear])) ** 2
+        ))),
+        "rear_relative_depth_tolerance": UNDISTURBED_RELATIVE_DEPTH_TOLERANCE,
         "front_final_m": float(front[-1]),
         "front_theory_final_m": float(theory_front(times[-1])),
         "rear_final_m": float(rear[-1]),
@@ -124,7 +135,9 @@ def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.nda
         "mass_initial_m2_per_m": float(mass[0]),
         "mass_range_m2_per_m": float(np.ptp(mass)),
     }
-    return times, x, depth, velocity, summary | {"_front": front, "_rear": rear, "_mass": mass}
+    return times, x, depth, velocity, summary | {
+        "_front": front, "_rear": rear, "_rear_exact": rear_exact, "_mass": mass,
+    }
 
 
 def trace(rhs, start: float, times: np.ndarray) -> np.ndarray:
@@ -274,6 +287,11 @@ def main() -> None:
     parser.add_argument("--amr-ratio", type=int, default=2)
     parser.add_argument("--speed-tolerance", type=float, default=0.02)
     parser.add_argument("--max1d", type=int, default=1000)
+    parser.add_argument(
+        "--postprocess-only",
+        action="store_true",
+        help="recompute diagnostics and figures from the completed fixed-grid output",
+    )
     args = parser.parse_args()
     if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
             or args.amr_levels < 2 or args.amr_ratio < 2 or args.speed_tolerance <= 0):
@@ -283,41 +301,57 @@ def main() -> None:
 
     case_root = HERE / args.case_name
     figures = case_root / "figures"
-    work = prepare_avac_coulomb_case(
-        case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0,
-        yupper=TRANSVERSE_CELLS * args.dx,
-        dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
-        depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
-        refinement=args.amr_levels,
-    )
-    corridor_interval = 0.05
-    corridor_margin = 0.15
-    corridors = moving_front_corridors(
-        theory_front, theory_rear, t_final=args.t_final,
-        interval=corridor_interval, margin=corridor_margin,
-        xlower=XLOWER, xupper=XUPPER, ylower=0.0,
-        yupper=TRANSVERSE_CELLS * args.dx,
-        level=args.amr_levels,
-    )
-    controls = configure_front_amr(
-        work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
-        ylower=0.0, yupper=TRANSVERSE_CELLS * args.dx,
-        levels=args.amr_levels, ratio=args.amr_ratio,
-        speed_tolerance=args.speed_tolerance, output_ny=1, max1d=args.max1d,
-        forced_regions=corridors,
-    ) | {"corridor_interval_s": corridor_interval, "corridor_margin_m": corridor_margin}
-    (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
-    run_solver("avac", work, cores=args.cores)
+    if args.postprocess_only:
+        work = case_root / "AVAC"
+        controls_path = case_root / "controls.json"
+        if not work.is_dir() or not controls_path.is_file():
+            raise FileNotFoundError(
+                f"Completed case not found for post-processing: {case_root}"
+            )
+        controls = json.loads(controls_path.read_text(encoding="utf-8"))
+    else:
+        work = prepare_avac_coulomb_case(
+            case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0,
+            yupper=TRANSVERSE_CELLS * args.dx,
+            dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
+            depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
+            refinement=args.amr_levels,
+        )
+        corridor_interval = 0.05
+        corridor_margin = 0.15
+        corridors = moving_front_corridors(
+            theory_front, theory_rear, t_final=args.t_final,
+            interval=corridor_interval, margin=corridor_margin,
+            xlower=XLOWER, xupper=XUPPER, ylower=0.0,
+            yupper=TRANSVERSE_CELLS * args.dx,
+            level=args.amr_levels,
+        )
+        controls = configure_front_amr(
+            work, base_dx=args.dx, xlower=XLOWER, xupper=XUPPER,
+            ylower=0.0, yupper=TRANSVERSE_CELLS * args.dx,
+            levels=args.amr_levels, ratio=args.amr_ratio,
+            speed_tolerance=args.speed_tolerance, output_ny=1, max1d=args.max1d,
+            forced_regions=corridors,
+        ) | {"corridor_interval_s": corridor_interval, "corridor_margin_m": corridor_margin}
+        (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
+        run_solver("avac", work, cores=args.cores)
 
     times, x, depth, velocity, summary = extract(work, controls)
     front = np.asarray(summary.pop("_front"))
     rear = np.asarray(summary.pop("_rear"))
+    rear_exact = np.asarray(summary.pop("_rear_exact"))
     mass = np.asarray(summary.pop("_mass"))
     results = case_root / "results"
     results.mkdir(exist_ok=True)
     np.savez_compressed(results / "centerline_fields.npz", time_s=times, x_m=x, depth_m=depth, velocity_m_s=velocity)
-    np.savetxt(results / "boundary_metrics.csv", np.column_stack((times, front, rear, np.max(np.abs(velocity), axis=1), mass)),
-               delimiter=",", header="time_s,front_x_m,rear_x_m,max_speed_m_s,mass_m2_per_m", comments="")
+    np.savetxt(
+        results / "boundary_metrics.csv",
+        np.column_stack((times, front, rear, rear_exact, np.max(np.abs(velocity), axis=1), mass)),
+        delimiter=",",
+        header=("time_s,front_x_m,rear_x_m,rear_exact_state_x_m,"
+                "max_speed_m_s,mass_m2_per_m"),
+        comments="",
+    )
     (results / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     plot(times, x, depth, velocity, summary | {"_front": front, "_rear": rear, "_mass": mass}, figures)
     print(json.dumps(summary, indent=2))

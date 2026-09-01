@@ -54,6 +54,12 @@ module geoclaw_module
     ! applications retain the default free-surface treatment.
     logical :: conserve_depth_amr = .false.
 
+    ! Reference depth for the conservative AMR kinetic-energy guard.  AVAC
+    ! sets this to its resolved-velocity depth in setprob; ordinary GeoClaw
+    ! applications leave it disabled.  Keeping this independent of
+    ! speed_limit ensures that disabling a velocity cap cannot disable AMR.
+    real(kind=8) :: refinement_energy_depth = -1.d0
+
 contains
 
     ! ========================================================================

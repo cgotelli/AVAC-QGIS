@@ -1,12 +1,13 @@
 module rheology_module
     !
-    ! Module providing constitutive laws for basal friction.
+    ! Module providing constitutive laws for basal friction and the
+    ! flow-parallel Cartesian steep-slope correction.
     !
     ! Three laws are implemented:
     !
-    !   - Coulomb:          tau = mu * rho * g * h * cos²(theta)
-    !   - Voellmy:          tau = mu * rho * g * h * cos²(theta) + rho * g / xi * speed^2
-    !   - Cohesive Voellmy: tau = C + mu * rho * g * h * cos²(theta) + rho * g / xi * speed^2
+    !   - Coulomb:          tau = mu * sigma
+    !   - Voellmy:          tau = mu * sigma + rho * g / xi * speed^2
+    !   - Cohesive Voellmy: tau = C + mu * sigma + rho * g / xi * speed^2
     !
     ! The functions return the kinematic stress tau/rho [m^2/s^2], which is
     ! the quantity directly needed for the momentum source term.
@@ -16,9 +17,13 @@ module rheology_module
     ! and a forward-Euler Voellmy update otherwise changes the accumulated
     ! drag merely because the AMR level changed.
     !
-    ! In 2D, theta is the local bed slope angle (rad), computed from the
-    ! topography gradient in src2.f90.  The velocity magnitude (speed) is
-    ! sqrt(u^2 + v^2); the direction is preserved by the explicit update.
+    ! AVAC advances vertical depth and horizontal map velocity with Cartesian
+    ! shallow-water equations.  On steep terrain these variables are not the
+    ! normal depth and terrain-tangent speed used by the basal law.  The
+    ! moving-state source therefore applies the flow-parallel Cartesian
+    ! correction of Hergarten and Robl (2015), transforming gravity, normal
+    ! stress, depth, and velocity together.  It reduces exactly to the
+    ! established AVAC source on a flat bed.
     !
     ! Altitude-zoned rheology (set by setprob.f90, used by src2.f90):
     !   n_zones_rh   : number of altitude zones (>= 1)
@@ -46,6 +51,11 @@ module rheology_module
     ! layout-dependent rheology values at run time.
     real(kind=8), save :: rho_rh = 0.d0
     real(kind=8), save :: u_cr_rh = 0.d0
+    ! Minimum depth used when reporting velocity.  The same physical scale
+    ! bounds AVAC's shallow-state velocity regularization on locally
+    ! non-planar terrain; the mesh-dependent bound in src2 makes that update
+    ! vanish under refinement and leaves resolved flow unchanged.
+    real(kind=8), save :: velocity_depth_threshold_rh = 0.05d0
     integer,      save :: imodel_rh = 0
 
     ! Altitude-zoned rheological parameters (populated by setprob.f90)
@@ -56,6 +66,324 @@ module rheology_module
     real(kind=8), save, allocatable :: C_zones_rh(:)   ! (n_zones) cohesion values (Pa)
 
 contains
+
+    ! ------------------------------------------------------------------
+    ! Kurganov--Petrova desingularization of velocity near a wet/dry front.
+    !
+    ! For h >= h_eps this is exactly hu/h and hv/h.  Below h_eps it smoothly
+    ! removes momentum faster than depth tends to zero, preventing a tiny
+    ! shallow-water depth from carrying an unresolved, arbitrarily large
+    ! velocity.  The caller decides where the operation is appropriate and
+    ! reconstructs momentum as h*u and h*v, so depth and flow direction are
+    ! unchanged.
+    ! ------------------------------------------------------------------
+    subroutine regularized_velocity(h, hu, hv, h_eps, u, v)
+        implicit none
+        real(kind=8), intent(in) :: h, hu, hv, h_eps
+        real(kind=8), intent(out) :: u, v
+        real(kind=8) :: h4, eps4, denominator
+
+        if (h <= 0.d0) then
+            u = 0.d0
+            v = 0.d0
+            return
+        end if
+
+        h4 = h**4
+        eps4 = max(0.d0, h_eps)**4
+        denominator = dsqrt(h4 + max(h4, eps4))
+        if (denominator <= 0.d0) then
+            u = 0.d0
+            v = 0.d0
+        else
+            u = dsqrt(2.d0) * h * hu / denominator
+            v = dsqrt(2.d0) * h * hv / denominator
+        end if
+
+    end subroutine regularized_velocity
+
+    ! ------------------------------------------------------------------
+    ! Detect whether the 3x3 bed stencil departs materially from an affine
+    ! plane.  This is a geometry criterion, not a case-specific switch.
+    ! Constant-slope analytical beds return false even when steep, while a
+    ! curved or piecewise-planar terrain returns true around its curvature.
+    ! ------------------------------------------------------------------
+    logical function locally_nonplanar_bed(bc, bw, be, bs, bn, &
+                                           bsw, bse, bnw, bne)
+        implicit none
+        real(kind=8), intent(in) :: bc, bw, be, bs, bn
+        real(kind=8), intent(in) :: bsw, bse, bnw, bne
+        real(kind=8) :: bed_scale, nonplanarity, tolerance
+
+        bed_scale = max(1.d0, dabs(bc), dabs(bw), dabs(be), dabs(bs), &
+                        dabs(bn), dabs(bsw), dabs(bse), dabs(bnw), dabs(bne))
+        nonplanarity = max(dabs(be - 2.d0*bc + bw), &
+                           dabs(bn - 2.d0*bc + bs), &
+                           dabs(bne - bnw - bse + bsw))
+        ! GeoClaw stores cell-average topography, whose quadrature and AMR
+        ! transfer can leave sub-millimetric second differences even for an
+        ! analytical plane.  A one-part-per-million elevation tolerance
+        ! rejects that representation noise while remaining far below the
+        ! resolved curvature of the 5 m ISeeSnow terrain.
+        tolerance = 1.d-6 * bed_scale
+        locally_nonplanar_bed = nonplanarity > tolerance
+
+    end function locally_nonplanar_bed
+
+    ! ------------------------------------------------------------------
+    ! Exact non-negative solution of the frozen-coefficient source
+    !
+    !     d(speed)/dt = -a - b*speed^2.
+    !
+    ! ``a`` may be negative for uphill motion because the geometric term
+    ! returns part of GeoClaw's excessive opposing map-plane gravity.
+    ! ------------------------------------------------------------------
+    function source_speed_after(speed, dt, a, b) result(speed_new)
+        implicit none
+        real(kind=8), intent(in) :: speed, dt, a, b
+        real(kind=8) :: speed_new
+        real(kind=8) :: phase, scale, terminal, decay
+
+        if (speed <= 0.d0 .or. dt <= 0.d0) then
+            speed_new = max(0.d0, speed)
+            return
+        end if
+
+        if (a > 0.d0 .and. b > 0.d0) then
+            scale = dsqrt(b / a)
+            phase = datan(speed * scale) - dsqrt(a * b) * dt
+            if (phase <= 0.d0) then
+                speed_new = 0.d0
+            else
+                speed_new = dtan(phase) / scale
+            end if
+        else if (a < 0.d0 .and. b > 0.d0) then
+            terminal = dsqrt(-a / b)
+            decay = dexp(-2.d0 * dsqrt((-a) * b) * dt)
+            speed_new = terminal * ((speed + terminal) + &
+                        (speed - terminal) * decay) / &
+                        ((speed + terminal) - (speed - terminal) * decay)
+        else if (a > 0.d0 .and. b < 0.d0) then
+            ! Convex curvature can make b negative while basal contact is
+            ! retained.  The equilibrium sqrt(a/|b|) is unstable.
+            terminal = dsqrt(a / (-b))
+            if (dabs(speed-terminal) <= 16.d0*epsilon(terminal)*terminal) then
+                speed_new = terminal
+            else
+                decay = ((speed-terminal)/(speed+terminal)) * &
+                        dexp(2.d0*dsqrt(a*(-b))*dt)
+                if (decay <= -1.d0) then
+                    speed_new = 0.d0
+                else if (decay >= 1.d0) then
+                    speed_new = huge(1.d0)
+                else
+                    speed_new = terminal * (1.d0+decay) / (1.d0-decay)
+                end if
+            end if
+        else if (a > 0.d0) then
+            speed_new = max(0.d0, speed - a * dt)
+        else if (a < 0.d0 .and. b < 0.d0) then
+            scale = dsqrt((-b) / (-a))
+            phase = datan(speed*scale) + dsqrt(a*b)*dt
+            if (phase >= 0.5d0*acos(-1.d0)) then
+                speed_new = huge(1.d0)
+            else
+                speed_new = dtan(phase) / scale
+            end if
+        else if (a < 0.d0) then
+            speed_new = speed - a * dt
+        else if (b > 0.d0) then
+            speed_new = speed / (1.d0 + b * speed * dt)
+        else if (b < 0.d0) then
+            decay = 1.d0 + b*speed*dt
+            if (decay <= 0.d0) then
+                speed_new = huge(1.d0)
+            else
+                speed_new = speed / decay
+            end if
+        else
+            speed_new = speed
+        end if
+
+    end function source_speed_after
+
+    ! ------------------------------------------------------------------
+    ! Flow-parallel Cartesian steep-slope source coefficients.
+    !
+    ! AVAC/GeoClaw evolves vertical depth h and horizontal velocity (u,v).
+    ! With the bed-surface variant of Hergarten and Robl (2015),
+    !
+    !   tan(phi) = |grad B|,
+    !   tan(psi) = -(u B_x + v B_y) / |v_h|,
+    !
+    ! and the geometric correction plus basal resistance reduce to
+    !
+    !   d|v_h|/dt = -a - b|v_h|^2,
+    !
+    !   a = g[sin(phi)^2 tan(psi) + mu cos(phi) cos(psi)]
+    !       + C cos(psi)/(rho h cos(phi)),
+    !   b = g/[xi h cos(phi) cos(psi)]
+    !       + mu k_v cos(phi) cos(psi)
+    !       - k_v tan(psi) cos(psi)^2.
+    !
+    ! k_v is the bed Hessian projected onto the horizontal flow direction.
+    ! The first k_v term is the Fischer et al. (2012) centripetal correction
+    ! to normal load: positive concave curvature increases Coulomb resistance;
+    ! negative convex curvature decreases it.  The second is the coordinate
+    ! transport required because AVAC evolves horizontal map speed rather than
+    ! terrain-tangent speed.  It preserves terrain-tangent speed while the bed
+    ! normal turns, avoiding the additional horizontal-component loss described
+    ! for Cartesian shallow-water implementations by Wirbel et al. (2026).
+    ! The component transverse to the instantaneous flow direction is not
+    ! included.
+    ! ------------------------------------------------------------------
+    subroutine cartesian_source_coefficients(h, u, v, dzdx, dzdy, &
+                                             d2zdx2, d2zdxdy, d2zdy2, &
+                                             mu, xi, C, rho, grav, imodel, &
+                                             a, b, cos_phi, cos_psi, tan_psi, &
+                                             curvature)
+        implicit none
+        real(kind=8), intent(in) :: h, u, v, dzdx, dzdy, mu, xi, C, rho, grav
+        real(kind=8), intent(in) :: d2zdx2, d2zdxdy, d2zdy2
+        integer, intent(in) :: imodel
+        real(kind=8), intent(out) :: a, b, cos_phi, cos_psi, tan_psi, curvature
+        real(kind=8) :: speed, tan2_phi, sin2_phi
+
+        speed = dsqrt(u**2 + v**2)
+        tan2_phi = dzdx**2 + dzdy**2
+        cos_phi = 1.d0 / dsqrt(1.d0 + tan2_phi)
+        sin2_phi = tan2_phi / (1.d0 + tan2_phi)
+
+        if (speed > 0.d0) then
+            tan_psi = -(u * dzdx + v * dzdy) / speed
+        else
+            tan_psi = 0.d0
+        end if
+        cos_psi = 1.d0 / dsqrt(1.d0 + tan_psi**2)
+
+        curvature = 0.d0
+        if (speed > 0.d0) then
+            curvature = (u*u*d2zdx2 + 2.d0*u*v*d2zdxdy + &
+                         v*v*d2zdy2) / speed**2
+        end if
+
+        a = grav * (sin2_phi * tan_psi + mu * cos_phi * cos_psi)
+        if (imodel == 3 .and. rho > 0.d0 .and. h > 0.d0) then
+            a = a + max(0.d0, C) * cos_psi / (rho * h * cos_phi)
+        end if
+
+        b = 0.d0
+        if (imodel >= 2 .and. xi > 0.d0 .and. h > 0.d0) then
+            b = grav / (xi * h * cos_phi * cos_psi)
+        end if
+        ! A terrain-tangent speed U is represented by the horizontal speed
+        ! speed = U*cos(psi).  Along a locally fixed horizontal flow direction,
+        ! d(cos(psi))/dt = k_v*speed*tan(psi)*cos(psi)^3, hence
+        !
+        !   d(speed)/dt = k_v*tan(psi)*cos(psi)^2*speed^2.
+        !
+        ! ``source_speed_after`` uses d(speed)/dt = -a-b*speed^2, so this
+        ! geometric transport enters b with a minus sign.  It is identically
+        ! zero on every planar bed and at a curved-track nadir.
+        b = b + mu * curvature * cos_phi * cos_psi &
+              - curvature * tan_psi * cos_psi**2
+
+    end subroutine cartesian_source_coefficients
+
+    ! ------------------------------------------------------------------
+    ! Apply curvature only while the material retains non-negative contact.
+    ! For convex curvature, g + k_v*speed^2 can cross zero.  Coulomb gravity
+    ! and curvature vanish together beyond that boundary; Voellmy drag and
+    ! cohesion remain unchanged.  Each autonomous branch is integrated
+    ! exactly and a possible crossing is located by bisection.
+    ! ------------------------------------------------------------------
+    function contact_limited_speed_after(speed, dt, a_contact, b_contact, &
+                                         a_free, b_free, curvature, grav) &
+                                         result(speed_new)
+        implicit none
+        real(kind=8), intent(in) :: speed, dt, a_contact, b_contact
+        real(kind=8), intent(in) :: a_free, b_free, curvature, grav
+        real(kind=8) :: speed_new
+        real(kind=8) :: threshold, trial, tlo, thi, tmid, value, tcross
+        integer :: iteration
+
+        if (curvature >= 0.d0 .or. grav <= 0.d0) then
+            speed_new = source_speed_after(speed, dt, a_contact, b_contact)
+            return
+        end if
+
+        threshold = dsqrt(-grav / curvature)
+        if (speed < threshold) then
+            trial = source_speed_after(speed, dt, a_contact, b_contact)
+            if (trial <= threshold) then
+                speed_new = trial
+                return
+            end if
+            tlo = 0.d0
+            thi = dt
+            do iteration = 1, 60
+                tmid = 0.5d0*(tlo+thi)
+                value = source_speed_after(speed, tmid, a_contact, b_contact)
+                if (value < threshold) then
+                    tlo = tmid
+                else
+                    thi = tmid
+                end if
+            end do
+            tcross = 0.5d0*(tlo+thi)
+            speed_new = source_speed_after(threshold, dt-tcross, a_free, b_free)
+        else
+            trial = source_speed_after(speed, dt, a_free, b_free)
+            if (trial >= threshold) then
+                speed_new = trial
+                return
+            end if
+            tlo = 0.d0
+            thi = dt
+            do iteration = 1, 60
+                tmid = 0.5d0*(tlo+thi)
+                value = source_speed_after(speed, tmid, a_free, b_free)
+                if (value > threshold) then
+                    tlo = tmid
+                else
+                    thi = tmid
+                end if
+            end do
+            tcross = 0.5d0*(tlo+thi)
+            speed_new = source_speed_after(threshold, dt-tcross, &
+                                           a_contact, b_contact)
+        end if
+
+    end function contact_limited_speed_after
+
+    function cartesian_speed_after(speed, dt, h, u, v, dzdx, dzdy, &
+                                   d2zdx2, d2zdxdy, d2zdy2, mu, xi, &
+                                   C, rho, grav, imodel) result(speed_new)
+        implicit none
+        real(kind=8), intent(in) :: speed, dt, h, u, v, dzdx, dzdy
+        real(kind=8), intent(in) :: d2zdx2, d2zdxdy, d2zdy2
+        real(kind=8), intent(in) :: mu, xi, C, rho, grav
+        integer, intent(in) :: imodel
+        real(kind=8) :: speed_new
+        real(kind=8) :: a, b, cos_phi, cos_psi, tan_psi, curvature
+        real(kind=8) :: coulomb_projection, a_free, b_free
+
+        if (speed <= 0.d0 .or. dt <= 0.d0 .or. h <= 0.d0) then
+            speed_new = max(0.d0, speed)
+            return
+        end if
+
+        call cartesian_source_coefficients(h, u, v, dzdx, dzdy, &
+                                           d2zdx2, d2zdxdy, d2zdy2, &
+                                           mu, xi, C, rho, grav, imodel, a, b, &
+                                           cos_phi, cos_psi, tan_psi, curvature)
+        coulomb_projection = mu*cos_phi*cos_psi
+        a_free = a - grav*coulomb_projection
+        b_free = b - curvature*coulomb_projection
+        speed_new = contact_limited_speed_after(speed, dt, a, b, &
+                                                a_free, b_free, curvature, grav)
+
+    end function cartesian_speed_after
 
     ! ------------------------------------------------------------------
     ! Exact local speed after one basal-friction source step.
@@ -75,7 +403,7 @@ contains
         real(kind=8), intent(in) :: speed, dt, h, mu, xi, C, rho, grav
         integer, intent(in) :: imodel
         real(kind=8) :: speed_new
-        real(kind=8) :: a, b, phase, scale
+        real(kind=8) :: a, b
 
         if (speed <= 0.d0 .or. dt <= 0.d0 .or. h <= 0.d0) then
             speed_new = max(0.d0, speed)
@@ -92,21 +420,7 @@ contains
             b = grav / (xi * h)
         end if
 
-        if (a > 0.d0 .and. b > 0.d0) then
-            scale = dsqrt(b / a)
-            phase = datan(speed * scale) - dsqrt(a * b) * dt
-            if (phase <= 0.d0) then
-                speed_new = 0.d0
-            else
-                speed_new = dtan(phase) / scale
-            end if
-        else if (a > 0.d0) then
-            speed_new = max(0.d0, speed - a * dt)
-        else if (b > 0.d0) then
-            speed_new = speed / (1.d0 + b * speed * dt)
-        else
-            speed_new = speed
-        end if
+        speed_new = source_speed_after(speed, dt, a, b)
 
     end function friction_speed_after
 
@@ -124,14 +438,14 @@ contains
         real(kind=8), intent(in) :: mu, grav, h, theta
         real(kind=8) :: tau_rho
 
-        !tau_rho = mu * grav * h * dcos(theta)**2
-        tau_rho = mu * grav * h
+        tau_rho = mu * grav * h * dcos(theta)**2
 
     end function coulomb_tau
 
 
     ! ------------------------------------------------------------------
-    ! Voellmy friction: tau/rho = mu * g * h * cos(theta) + g / xi * speed^2
+    ! Voellmy friction for vertical h and horizontal speed:
+    ! tau/rho = mu*g*h*cos(theta)^2 + g/xi*(speed/cos(theta))^2
     !
     ! Arguments:
     !   mu    - Coulomb friction coefficient (dimensionless)
@@ -139,7 +453,7 @@ contains
     !   h     - flow depth (m)
     !   theta - local bed slope angle (rad)
     !   xi    - Voellmy turbulence coefficient (m/s^2)
-    !   speed - depth-averaged speed sqrt(u^2+v^2) (m/s)
+    !   speed - horizontal map speed sqrt(u^2+v^2) (m/s)
     !
     ! Note: Coulomb is recovered in the limit xi -> infinity.
     ! ------------------------------------------------------------------
@@ -148,15 +462,16 @@ contains
         real(kind=8), intent(in) :: mu, grav, h, theta, xi, speed
         real(kind=8) :: tau_rho
 
-        !tau_rho = mu * grav * h * dcos(theta)**2 + grav / xi * speed**2
-        tau_rho = mu * grav * h   + grav / xi * speed**2
+        tau_rho = mu * grav * h * dcos(theta)**2 + &
+                  grav / xi * (speed / dcos(theta))**2
 
     end function voellmy_tau
 
 
     ! ------------------------------------------------------------------
     ! Cohesive Voellmy friction:
-    !   tau/rho = C/rho + mu * g * h * cos²(theta) + g / xi * speed^2
+    !   tau/rho = C/rho + mu*g*h*cos(theta)^2
+    !             + g/xi*(speed/cos(theta))^2
     !
     ! Arguments:
     !   mu    - Coulomb friction coefficient (dimensionless)
@@ -173,8 +488,8 @@ contains
         real(kind=8), intent(in) :: mu, grav, h, theta, xi, speed, C, rho
         real(kind=8) :: tau_rho
 
-        !tau_rho = C / rho + mu * grav * h * dcos(theta)**2 + grav / xi * speed**2
-        tau_rho = C / rho + mu * grav * h   + grav / xi * speed**2
+        tau_rho = C / rho + mu * grav * h * dcos(theta)**2 + &
+                  grav / xi * (speed / dcos(theta))**2
 
     end function cohesive_voellmy_tau
 

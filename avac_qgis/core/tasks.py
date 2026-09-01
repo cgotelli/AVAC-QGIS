@@ -11,7 +11,7 @@ from .run_project import prepare_isolated_run, prepare_isolated_runtime_run
 from .results import discover_results, materialize_results
 from .avac_lake_depth import materialize_avac_lake_depth
 from .wave_results import discover_wave_results, materialize_wave_diagnostics, materialize_wave_results
-from .preprocessing import initial_depth_from_release, release_mask_from_rings
+from .preprocessing import initial_depth_from_release, release_coverage_from_rings
 
 
 class PrepareAvacRunTask(QgsTask):
@@ -138,6 +138,7 @@ class InitialDepthPreviewTask(QgsTask):
         super().__init__("Preview AVAC initial depth", QgsTask.Flag.CanCancel)
         self.raster, self.rings, self.release = raster, rings, release
         self.mask = None
+        self.coverage = None
         self.depth = None
         self.error: Exception | None = None
 
@@ -146,11 +147,17 @@ class InitialDepthPreviewTask(QgsTask):
             if self.isCanceled():
                 return False
             self.setProgress(10)
-            self.mask = release_mask_from_rings(self.rings, self.raster.x, self.raster.y)
+            self.coverage = release_coverage_from_rings(
+                self.rings,
+                self.raster.x,
+                self.raster.y,
+                float(self.raster.metadata["cellsize"]),
+            )
+            self.mask = self.coverage > 0.0
             if self.isCanceled():
                 return False
             self.setProgress(55)
-            self.depth = initial_depth_from_release(self.raster, self.mask, self.release)
+            self.depth = initial_depth_from_release(self.raster, self.coverage, self.release)
             if self.isCanceled():
                 return False
             self.setProgress(100)

@@ -23,6 +23,7 @@ with open(current_dir / "AVAC_configuration.yaml") as file:
     Files   = configuration["file_names"]
     Rheol   = configuration["rheology"]
     DEM     = configuration["dem_extent"]
+    ResultGrid = configuration.get("result_grid")
     Param   = configuration["computation"]
     OUT     = configuration["output"]
     Movie   = configuration["animation"]
@@ -375,7 +376,10 @@ def setrun(claw_pkg='geoclaw'):
     # specifying any fgmax grids.
 
     # Points on a uniform 2d grid:
-    if topo_source == 'real_world':
+    if ResultGrid:
+        dx_fine = float(ResultGrid['cell_size'])
+        dy_fine = dx_fine
+    elif topo_source == 'real_world':
         dx_fine = Param['cell_size']
         dy_fine = dx_fine
     else:
@@ -383,10 +387,16 @@ def setrun(claw_pkg='geoclaw'):
         dy_fine = Param['dy']
     fg = fgmax_tools.FGmaxGrid()
     fg.point_style = 2  # uniform rectangular x-y grid
-    fg.x1 = clawdata.lower[0]
-    fg.x2 = clawdata.upper[0]
-    fg.y1 = clawdata.lower[1]
-    fg.y2 = clawdata.upper[1]
+    if ResultGrid:
+        fg.x1 = float(ResultGrid['xllcenter'])
+        fg.x2 = fg.x1 + (int(ResultGrid['ncols']) - 1) * dx_fine
+        fg.y1 = float(ResultGrid['yllcenter'])
+        fg.y2 = fg.y1 + (int(ResultGrid['nrows']) - 1) * dy_fine
+    else:
+        fg.x1 = clawdata.lower[0]
+        fg.x2 = clawdata.upper[0]
+        fg.y1 = clawdata.lower[1]
+        fg.y2 = clawdata.upper[1]
     fg.dx = dx_fine
     fg.dy = dy_fine
     # A maximum-over-the-run product includes the initial release state.  In
@@ -440,16 +450,27 @@ def setrun(claw_pkg='geoclaw'):
     fgout.fgno          = 1              # for listing the files see doc
     fgout.point_style   = 2       # will specify a 2d grid of points
     fgout.output_format = OUT['output_format']  # 4-byte, float32
-    if topo_source == 'real_world':
+    if ResultGrid:
+        fgout.nx = int(ResultGrid['ncols'])
+        fgout.ny = int(ResultGrid['nrows'])
+        fgout.x1 = float(ResultGrid['xllcenter']) - dx_fine / 2.0
+        fgout.x2 = fgout.x1 + fgout.nx * dx_fine
+        fgout.y1 = float(ResultGrid['yllcenter']) - dy_fine / 2.0
+        fgout.y2 = fgout.y1 + fgout.ny * dy_fine
+    elif topo_source == 'real_world':
         fgout.nx = int((DEM['xmax']-DEM['xmin'])/Param['cell_size'])
         fgout.ny = int((DEM['ymax']-DEM['ymin'])/Param['cell_size'])
+        fgout.x1 = DEM['xmin']
+        fgout.x2 = DEM['xmax']
+        fgout.y1 = DEM['ymin']
+        fgout.y2 = DEM['ymax']
     else:
         fgout.nx = int((DEM['xmax']-DEM['xmin'])/Param['dx'])
         fgout.ny = int((DEM['ymax']-DEM['ymin'])/Param['dy'])
-    fgout.x1 = DEM['xmin'] #+ dx_fine/2.  # specify edges (fgout pts will be cell centers)
-    fgout.x2 = DEM['xmax'] #- dx_fine/2.
-    fgout.y1 = DEM['ymin'] #+ dx_fine/2
-    fgout.y2 = DEM['ymax'] #- dx_fine/2.
+        fgout.x1 = DEM['xmin']
+        fgout.x2 = DEM['xmax']
+        fgout.y1 = DEM['ymin']
+        fgout.y2 = DEM['ymax']
     fgout.tstart = 0.
     fgout.tend   = Param['t_max']
     fgout.nout   = Movie['n_out']
@@ -503,7 +524,10 @@ def setrun(claw_pkg='geoclaw'):
 
     probdata.add_param('rho',    Rheol["rho"],           'snow density (kg/m3)')
     #probdata.add_param('C',      Rheol.get("C", 0.0),   'cohesion (Pa)')
-    probdata.add_param('u_cr',   Rheol.get("u_cr", 0.0),'stopping velocity threshold (m/s)')
+    probdata.add_param('u_cr',   Rheol.get("u_cr", 0.0),'legacy unused compatibility value (m/s)')
+    probdata.add_param('velocity_depth_threshold',
+                       Param.get("velocity_depth_threshold", 0.05),
+                       'minimum depth for a reported velocity (m)')
     probdata.add_param('n_zones', n_zones,               'number of altitude rheology zones')
     for k, z in enumerate(z_breaks):
         probdata.add_param(f'z_break_{k}', float(z),
@@ -574,6 +598,12 @@ def setgeo(rundata):
     # cells in the run-out zone, keeping them correctly dry.
     geo_data.sea_level           = -1.0e4  # must be << min(b) ≈ -30 m
     geo_data.dry_tolerance       = Param['dry_limit']
+    # AVAC does not impose a solver-level velocity ceiling.  GeoClaw retains
+    # ``speed_limit`` for water applications, but a finite default would clip
+    # the conserved avalanche momentum before the rheology and diagnostics
+    # are evaluated.  Use the same effectively infinite value as the ISeeSnow
+    # validation workflow so all AVAC runs are uncapped.
+    geo_data.speed_limit         = 1.0e99
     geo_data.friction_forcing    = True
     geo_data.manning_coefficient = 0.025
     geo_data.friction_depth      = 1.0e6   # apply friction at all depths

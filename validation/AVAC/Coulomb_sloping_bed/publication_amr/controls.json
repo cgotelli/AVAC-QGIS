@@ -18,7 +18,7 @@
   "fgmax_enabled": false,
   "max1d": 1000,
   "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/AVAC/xgeoclaw",
-  "solver_sha256": "6a208dac3259c5cad007e9f544154449de9f1be5ad0a52599741072ac82d1d1d",
+  "solver_sha256": "6e85bee646c3d4730693b70323c7195ca84dc1b6a075d9ea1b803624838310f9",
   "source_setrun": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/AVAC/setrun.py",
   "clawpack_source": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/clawpack-v5.14.0",
   "dx_m": 0.03,
