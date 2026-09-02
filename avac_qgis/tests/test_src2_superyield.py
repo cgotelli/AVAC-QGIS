@@ -45,6 +45,7 @@ program src2_superyield_driver
   implicit none
   real(kind=8) :: super_speed, super_hu, super_hv
   real(kind=8) :: sub_speed, sub_hu, sub_hv
+  real(kind=8) :: curved_hu, curved_hv
 
   friction_forcing = .true.
   friction_depth = 1.d6
@@ -65,8 +66,9 @@ program src2_superyield_driver
   ! second is statically supportable (|grad B|=0.1 < mu).
   call run_plane(-0.8d0, super_speed, super_hu, super_hv)
   call run_plane(-0.1d0, sub_speed, sub_hu, sub_hv)
-  write(*,'(6(es24.16,1x))') super_speed, super_hu, super_hv, &
-                               sub_speed, sub_hu, sub_hv
+  call run_curved_zero_force(curved_hu, curved_hv)
+  write(*,'(8(es24.16,1x))') super_speed, super_hu, super_hv, &
+                               sub_speed, sub_hu, sub_hv, curved_hu, curved_hv
 
 contains
 
@@ -99,6 +101,43 @@ contains
     hv_out = q(3,2,2)
   end subroutine run_plane
 
+  subroutine run_curved_zero_force(hu_out, hv_out)
+    implicit none
+    integer, parameter :: meqn = 3, mbc = 2, mx = 3, my = 3, maux = 1
+    integer :: i, j, step
+    real(kind=8), intent(out) :: hu_out, hv_out
+    real(kind=8) :: q(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
+    real(kind=8) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
+    real(kind=8) :: x, slope, curvature, initial_speed
+
+    ! This is a regression of AVAC's deliberately reduced Cartesian source,
+    ! not a claim about a terrain-following material path.  With gravity and
+    ! resistance disabled, repeated source calls on curved topography must
+    ! leave the stored map-plane momentum unchanged.  A cell-local tangent
+    ! rotation would compound at every split source call and fail this test.
+    grav = 0.d0
+    mu_zones_rh = 0.d0
+    slope = -tan(30.d0*acos(-1.d0)/180.d0)
+    curvature = 1.d0/40.d0
+    initial_speed = 8.d0/sqrt(1.d0+slope**2)
+    q = 0.d0
+    aux = 0.d0
+    do j = 1-mbc, my+mbc
+      do i = 1-mbc, mx+mbc
+        x = 10.d0*dble(i-2)
+        q(1,i,j) = 1.d0
+        q(2,i,j) = initial_speed
+        aux(1,i,j) = slope*x + 0.5d0*curvature*x**2
+      end do
+    end do
+    do step = 1, 100
+      call src2(meqn,mbc,mx,my,0.d0,0.d0,10.d0,10.d0,q,maux,aux, &
+                0.d0,0.01d0)
+    end do
+    hu_out = q(2,2,2)
+    hv_out = q(3,2,2)
+  end subroutine run_curved_zero_force
+
 end program src2_superyield_driver
 """.strip() + "\n", encoding="utf-8")
     subprocess.run(
@@ -117,9 +156,16 @@ end program src2_superyield_driver
 
 
 def test_src2_does_not_zero_a_moving_super_yield_state(tmp_path: Path):
-    super_speed, super_hu, super_hv, sub_speed, sub_hu, sub_hv = (
-        _compile_src2_driver(tmp_path)
-    )
+    (
+        super_speed,
+        super_hu,
+        super_hv,
+        sub_speed,
+        sub_hu,
+        sub_hv,
+        curved_hu,
+        curved_hv,
+    ) = _compile_src2_driver(tmp_path)
 
     # The source-only scalar solve reaches zero in both cases.  It may safely
     # stop only the sub-yield cell.  A super-yield state must retain a nonzero
@@ -130,3 +176,9 @@ def test_src2_does_not_zero_a_moving_super_yield_state(tmp_path: Path):
     assert sub_speed == pytest.approx(0.0, abs=1.0e-14)
     assert sub_hu == pytest.approx(0.0, abs=1.0e-14)
     assert sub_hv == pytest.approx(0.0, abs=1.0e-14)
+    # This locks in the intentionally reduced Cartesian model: no untracked
+    # changing-basis rotation may be applied as a repeated cell-local source.
+    assert curved_hu == pytest.approx(
+        8.0 * np.cos(np.deg2rad(30.0)), abs=1.0e-13
+    )
+    assert curved_hv == pytest.approx(0.0, abs=1.0e-13)

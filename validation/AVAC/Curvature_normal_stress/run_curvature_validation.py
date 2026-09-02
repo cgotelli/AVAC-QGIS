@@ -6,8 +6,9 @@ element at the nadir of a planar, concave-circular, or convex-circular track.
 At that point the bed slope is zero and the directional bed curvature is
 constant, so the local Coulomb source has a closed analytical solution. A
 second controlled suite uses a 30-degree tangent and zero applied force to
-verify that the frozen cell-local source does not convert changing terrain
-orientation into artificial map-plane acceleration.
+verify that the deliberately reduced scalar source does not convert the
+omitted changing terrain basis into artificial map-plane acceleration. It is
+not a test of terrain-following velocity transport.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ def analytical_speed(time_s: np.ndarray, curvature: float) -> np.ndarray:
 
 
 def frozen_cell_map_speed(time_s: np.ndarray) -> np.ndarray:
-    """Zero-force solution of the frozen cell-local source."""
+    """Zero-force solution of AVAC's reduced scalar source."""
     time_s = np.asarray(time_s, dtype=float)
     return np.full_like(time_s, FROZEN_GEOMETRY_INITIAL_MAP_SPEED_M_S)
 
@@ -228,7 +229,7 @@ def main() -> None:
     )
     frozen_geometry_axis.set_ylim(bottom=0.0)
     axis.set_title("(a) Curvature-dependent Coulomb normal stress", loc="left")
-    frozen_geometry_axis.set_title("(b) Frozen-cell geometry safeguard", loc="left")
+    frozen_geometry_axis.set_title("(b) Zero-force reduced-source control", loc="left")
     handles, labels = axis.get_legend_handles_labels()
     figure.legend(handles, labels, loc="outside lower center", ncol=2)
     figure.subplots_adjust(bottom=0.22, hspace=0.34)
@@ -250,7 +251,7 @@ def main() -> None:
         comments="",
     )
     summary = {
-        "method": "compiled AVAC rheology_module compared with closed local Coulomb solutions and a zero-force frozen-cell safeguard",
+        "method": "compiled AVAC rheology_module compared with closed local Coulomb solutions and a zero-force reduced-source control",
         "gravity_m_s2": GRAVITY,
         "coulomb_mu": MU,
         "track_radius_m": RADIUS_M,
@@ -265,7 +266,7 @@ def main() -> None:
     if max(float(row["substep_difference_m_s"]) for row in summary_rows) > 2.0e-12:
         raise RuntimeError("curvature source is not invariant to controlled source substepping")
     if max(float(row["maximum_absolute_speed_error_m_s"]) for row in frozen_geometry_rows) > 2.0e-12:
-        raise RuntimeError("frozen-cell curvature safeguard differs from its zero-force solution")
+        raise RuntimeError("zero-force reduced-source control differs from its analytical solution")
     print(json.dumps(summary, indent=2))
 
 
