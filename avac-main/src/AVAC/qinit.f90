@@ -1,7 +1,7 @@
 ! qinit routine  
 subroutine qinit(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
-    !use geoclaw_module, only: grav
+    use geoclaw_module, only: coordinate_system
 
     implicit none
     character*12 free_surface
@@ -22,6 +22,12 @@ subroutine qinit(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
     integer      :: i,j
     real(kind=8) :: x,y 
     
+
+    ! aux(2) is the dynamic two-dimensional static-yield marker.  b4step2
+    ! calculates its physical value before the first solve; initialise the
+    ! t=0 auxiliary output to the conservative invalid sentinel rather than
+    ! exposing allocator contents.
+    if (maux .ge. 2 .and. coordinate_system .eq. 1) aux(2,:,:) = -1.d0
 
     if (trim(free_surface) == 'horizontal' .and. theta>0.d0) then
     ! free surface is horizontal

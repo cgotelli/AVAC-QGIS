@@ -85,8 +85,13 @@ c         coarsen by 2 in every direction
      1                 valbgc,mi2tot,mj2tot,auxbgc,nvar,naux)
 
 c
-          call b4step2(nghost,nx,ny,nvar,valbgc,
-     1                 xlow,ylow,time,dt,naux,auxbgc,.true.)
+c         The Richardson large-step state is coarsened to nx/2 by ny/2
+c         cells with spacing hx2 by hy2.  Call b4step2 with its full
+c         interface; the previous call omitted dx, dy and shifted every
+c         later argument, including the logical actualstep flag.
+          call b4step2(nghost,nx/2,ny/2,nvar,valbgc,
+     1                 rnode(cornxlo,mptr),rnode(cornylo,mptr),hx2,hy2,
+     2                 tpre,dt2,naux,auxbgc,.false.)
 c
           call stepgrid(valbgc,fm,fp,gm,gp,
      1                mi2tot,mj2tot,nghost,

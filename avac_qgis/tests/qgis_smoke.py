@@ -129,6 +129,13 @@ def verify() -> None:
     if small.isValid():
         clipped = raster_from_qgis_layer(small, extent=QgsRectangle(small.extent().xMinimum(), small.extent().yMinimum(), small.extent().center().x(), small.extent().center().y()))
         assert clipped.z.size < small.width() * small.height()
+        # QGIS extents and topotype headers use outer edges; AVAC's internal
+        # sample axes must be their corresponding cell centres.
+        clipped_cell = float(clipped.metadata["cellsize"])
+        assert np.isclose(clipped.x[0] - .5 * clipped_cell, clipped.metadata["xmin"])
+        assert np.isclose(clipped.x[-1] + .5 * clipped_cell, clipped.metadata["xmax"])
+        assert np.isclose(clipped.y[0] - .5 * clipped_cell, clipped.metadata["ymin"])
+        assert np.isclose(clipped.y[-1] + .5 * clipped_cell, clipped.metadata["ymax"])
         dock.wave_lake_dem.setLayer(small)
     # Local large-case performance and GeoClaw terrain-coverage regression.
     # The source DEM has 288 million cells, while the selected Wave grid plus
@@ -144,6 +151,9 @@ def verify() -> None:
         )
         window = terrain_for_wave_domain(native, domain, 5.5)
         elapsed = time.monotonic() - started
+        native_cell = float(native.metadata["cellsize"])
+        assert np.isclose(native.x[0] - .5 * native_cell, native.metadata["xmin"])
+        assert np.isclose(native.y[0] - .5 * native_cell, native.metadata["ymin"])
         assert window.z.shape == (964, 202)
         assert window.metadata["xmin"] == domain["xmin"] - 5.5
         assert window.metadata["ymin"] == domain["ymin"] - 5.5

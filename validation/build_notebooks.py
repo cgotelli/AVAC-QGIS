@@ -462,7 +462,14 @@ def iseesnow_notebooks() -> None:
                 f"# ISeeSnow: {title} — AVAC\n\n"
                 "This notebook runs one official ISeeSnow case without calibration, writes the required peak-flow-thickness and peak-flow-velocity rasters, and compares them on the supplied grid with participating-model submissions.\n"
             ),
-            *environment("ISeeSnow", folder, extra="The pinned official ISeeSnow 1.0 dataset is downloaded automatically on first use."),
+            *environment(
+                "ISeeSnow", folder,
+                extra=(
+                    "The pinned official ISeeSnow 1.0 dataset is downloaded automatically "
+                    "on first use. Before a case is run, the driver rebuilds AVAC once from "
+                    "this checkout so the recorded solver hash always represents the current source."
+                ),
+            ),
             code("from avac4qgis_validation.datasets import ensure_iseesnow\nbenchmark = ensure_iseesnow()\nbenchmark\n"),
             markdown("## Prescribed benchmark configuration\n\n" + description + " No peer-model result is used to select an AVAC parameter. The simulation ceiling is 1200 s and the native state is checked for practical arrest.\n"),
             code(
@@ -498,7 +505,10 @@ def iseesnow_notebooks() -> None:
             ])
         write(f"ISeeSnow/{folder}/{folder}.ipynb", cells)
 
-    folder = "Paper_figures"
+    # Unlike the other figure folders, the published ISeeSnow directory is
+    # deliberately lower-case.  Keep the notebook case identifier identical
+    # to its on-disk path so it also opens on case-sensitive filesystems.
+    folder = "paper_figures"
     cells = [
         markdown(
             "# ISeeSnow three-case manuscript figure\n\n"

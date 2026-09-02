@@ -13,7 +13,9 @@ from avac_qgis.core.preprocessing import AvacRaster, read_avac_topography, write
 with TemporaryDirectory() as temporary:
     source = Path(temporary) / "topography.asc"
     raster = AvacRaster(
-        np.array([100.0, 102.0, 104.0]), np.array([200.0, 202.0]),
+        # Axes name values at cell centres; topotype-3 headers retain the
+        # outer cell corners at 100/200.
+        np.array([101.0, 103.0, 105.0]), np.array([201.0, 203.0]),
         np.array([[1.0, np.nan, 3.0], [4.0, 5.0, 6.0]]),
         {"xmin": 100.0, "xmax": 106.0, "ymin": 200.0, "ymax": 204.0,
          "ncols": 3, "nrows": 2, "cellsize": 2.0, "nodata_value": -9999.0},

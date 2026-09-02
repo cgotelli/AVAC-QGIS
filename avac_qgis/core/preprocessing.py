@@ -32,6 +32,15 @@ class PreparationCancelled(InterruptedError):
 
 @dataclass(frozen=True)
 class AvacRaster:
+    """A regular raster whose axes locate cell centres.
+
+    ``metadata[\"xmin\"]``/``xmax`` and ``ymin``/``ymax`` are the outer
+    cell edges.  Keeping those two coordinate conventions explicit is
+    important here: GeoClaw shifts topotype-3 ``xllcorner``/``yllcorner``
+    values to centres, and AVAC's qinit readers likewise locate each supplied
+    value at its listed centre.
+    """
+
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray  # South-to-north, matching gui.services.read_ascii_raster.
@@ -50,6 +59,11 @@ class PreparedInputs:
     mask: np.ndarray
     coverage: np.ndarray
     depth: np.ndarray
+
+
+def _cell_centres(lower_edge: float, count: int, cell_size: float) -> np.ndarray:
+    """Return the centres of ``count`` contiguous cells from an outer edge."""
+    return float(lower_edge) + (np.arange(int(count), dtype=float) + 0.5) * float(cell_size)
 
 
 def _qgis_crs_identifier(crs) -> str:
@@ -91,24 +105,29 @@ def raster_from_qgis_layer(layer, band: int = 1, extent=None, grid_cell_size: fl
         read_extent = source_extent.intersect(extent)
         if read_extent.isNull() or read_extent.width() <= 0 or read_extent.height() <= 0:
             raise ValueError("Requested DEM preview extent does not overlap the selected raster layer.")
-        pixel_x = source_extent.width() / width
-        pixel_y = source_extent.height() / height
-        if grid_cell_size is None:
-            width, height = max(1, int(round(read_extent.width() / pixel_x))), max(1, int(round(read_extent.height() / pixel_y)))
-        else:
-            requested_cell = float(grid_cell_size)
-            if not np.isfinite(requested_cell) or requested_cell <= 0.0:
-                raise ValueError("Requested raster grid cell size must be positive and finite.")
-            if requested_cell + max(pixel_x, pixel_y, 1.0) * 1e-8 < max(pixel_x, pixel_y):
-                raise ValueError("Requested raster grid cannot be finer than the source DEM resolution.")
-            intervals_x = read_extent.width() / requested_cell
-            intervals_y = read_extent.height() / requested_cell
-            if not np.isclose(intervals_x, round(intervals_x), rtol=0.0, atol=1e-8) or not np.isclose(intervals_y, round(intervals_y), rtol=0.0, atol=1e-8):
-                raise ValueError("Requested raster extent must span a whole number of output grid cells.")
-            # AVAC/WAVE topography is a node grid: N solver cells require N+1
-            # terrain samples. QGIS performs the windowed provider sampling,
-            # so a large DEM is never materialized in Python.
-            width, height = int(round(intervals_x)) + 1, int(round(intervals_y)) + 1
+    pixel_x = source_extent.width() / width
+    pixel_y = source_extent.height() / height
+    if grid_cell_size is None:
+        if extent is not None:
+            width = max(1, int(round(read_extent.width() / pixel_x)))
+            height = max(1, int(round(read_extent.height() / pixel_y)))
+    else:
+        requested_cell = float(grid_cell_size)
+        if not np.isfinite(requested_cell) or requested_cell <= 0.0:
+            raise ValueError("Requested raster grid cell size must be positive and finite.")
+        if requested_cell + max(pixel_x, pixel_y, 1.0) * 1e-8 < max(pixel_x, pixel_y):
+            raise ValueError("Requested raster grid cannot be finer than the source DEM resolution.")
+        intervals_x = read_extent.width() / requested_cell
+        intervals_y = read_extent.height() / requested_cell
+        if not np.isclose(intervals_x, round(intervals_x), rtol=0.0, atol=1e-8) or not np.isclose(intervals_y, round(intervals_y), rtol=0.0, atol=1e-8):
+            raise ValueError("Requested raster extent must span a whole number of output grid cells.")
+        # A provider block contains one value per output *cell*, not nodes.
+        # Its N values over an N-cell extent therefore lie at the N cell
+        # centres. This also keeps a requested grid size valid when the full
+        # source extent, rather than a cropped window, is read.
+        width, height = int(round(intervals_x)), int(round(intervals_y))
+        if width < 1 or height < 1:
+            raise ValueError("Requested raster extent must contain at least one output grid cell.")
     block = provider.block(band, read_extent, width, height)
     # QgsRasterBlock rows are north-to-south.  Deliberately read through QGIS,
     # then flip to reproduce the legacy ASCII reader's south-to-north array.
@@ -132,23 +151,21 @@ def raster_from_qgis_layer(layer, band: int = 1, extent=None, grid_cell_size: fl
     north_to_south[~np.isfinite(north_to_south)] = np.nan
 
     xmin, xmax, ymin, ymax = read_extent.xMinimum(), read_extent.xMaximum(), read_extent.yMinimum(), read_extent.yMaximum()
-    # QGIS reports raster edges. Keep its established endpoint convention for
-    # AVAC's source-terrain/qinit products. The computational domain is
-    # derived from this selected terrain during preparation, rather than being
-    # inherited from a reference-case YAML file.
-    if grid_cell_size is None:
-        cell_x, cell_y = (xmax - xmin) / width, (ymax - ymin) / height
-        if not np.isclose(cell_x, cell_y, rtol=0.0, atol=max(abs(cell_x), abs(cell_y), 1.0) * 1e-8):
-            layer_name = str(layer.name() or "selected DEM")
-            raise ValueError(
-                f"DEM '{layer_name}' cells must be square for AVAC terrain input "
-                f"(X resolution {cell_x:.12g}, Y resolution {cell_y:.12g})."
-            )
-        output_cell = float(cell_x)
-    else:
-        output_cell = float(grid_cell_size)
-    x = np.linspace(xmin, xmax, width)
-    y = np.linspace(ymin, ymax, height)
+    # QGIS reports outer raster edges, whereas both AVAC's qinit file and
+    # GeoClaw's topotype-3 reader attach each value to a cell centre. Preserve
+    # the edges in metadata/header fields and construct centre coordinates for
+    # release rasterization and qinit output. Endpoint axes would make qinit
+    # both half a cell shifted and slightly stretched relative to the terrain.
+    cell_x, cell_y = (xmax - xmin) / width, (ymax - ymin) / height
+    if not np.isclose(cell_x, cell_y, rtol=0.0, atol=max(abs(cell_x), abs(cell_y), 1.0) * 1e-8):
+        layer_name = str(layer.name() or "selected DEM")
+        raise ValueError(
+            f"DEM '{layer_name}' cells must be square for AVAC terrain input "
+            f"(X resolution {cell_x:.12g}, Y resolution {cell_y:.12g})."
+        )
+    output_cell = float(cell_x)
+    x = _cell_centres(xmin, width, output_cell)
+    y = _cell_centres(ymin, height, output_cell)
     metadata: dict[str, float | int] = {
         "xmin": float(xmin), "xmax": float(xmax), "ymin": float(ymin), "ymax": float(ymax),
         "ncols": width, "nrows": height,
@@ -177,7 +194,7 @@ def crop_raster_to_rings_extent(raster: AvacRaster, rings) -> AvacRaster:
     iy0 = max(0, int(np.floor((float(np.min(points[:, 1])) - ymin0) / cell)))
     iy1 = min(int(raster.metadata["nrows"]), int(np.ceil((float(np.max(points[:, 1])) - ymin0) / cell)) + 1)
     if ix1 - ix0 < 3 or iy1 - iy0 < 3:
-        raise ValueError("Calculation domain is too small; it must cover at least a 3 by 3 DEM-node rectangle.")
+        raise ValueError("Calculation domain is too small; it must cover at least a 3 by 3 DEM-cell rectangle.")
     values = raster.z[iy0:iy1, ix0:ix1]
     metadata = dict(raster.metadata)
     xmin, ymin = xmin0 + ix0 * cell, ymin0 + iy0 * cell
@@ -531,10 +548,14 @@ def read_avac_topography(path: str | Path, crs_authid: str = "") -> AvacRaster:
     if np.isfinite(nodata):
         north_to_south[np.isclose(north_to_south, nodata)] = np.nan
     values = np.flipud(north_to_south)
-    x = xmin + np.arange(ncols, dtype=float) * cell_size
-    y = ymin + np.arange(nrows, dtype=float) * cell_size
+    # ``xllcorner``/``yllcorner`` describe outer cell edges. GeoClaw shifts
+    # them by half a cell on read; expose the same centres to the GUI so a
+    # prepared terrain, its release grid, and its qinit grid stay registered.
+    x = _cell_centres(xmin, ncols, cell_size)
+    y = _cell_centres(ymin, nrows, cell_size)
     metadata: dict[str, float | int] = {
-        "xmin": float(xmin), "xmax": float(x[-1]), "ymin": float(ymin), "ymax": float(y[-1]),
+        "xmin": float(xmin), "xmax": float(xmin + ncols * cell_size),
+        "ymin": float(ymin), "ymax": float(ymin + nrows * cell_size),
         "ncols": ncols, "nrows": nrows, "cellsize": float(cell_size), "nodata_value": float(nodata),
     }
     return AvacRaster(x, y, values, metadata, crs_authid, 1)

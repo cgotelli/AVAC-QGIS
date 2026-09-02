@@ -102,6 +102,11 @@ def _check() -> None:
     assert dem.isValid(), "canonical DEM did not load in QGIS"
     assert release.isValid(), "canonical release layer did not load in QGIS"
     raster = raster_from_qgis_layer(dem)
+    cell = float(raster.metadata["cellsize"])
+    assert np.isclose(raster.x[0] - .5 * cell, raster.metadata["xmin"])
+    assert np.isclose(raster.x[-1] + .5 * cell, raster.metadata["xmax"])
+    assert np.isclose(raster.y[0] - .5 * cell, raster.metadata["ymin"])
+    assert np.isclose(raster.y[-1] + .5 * cell, raster.metadata["ymax"])
     rings = rings_from_qgis_layer(release, dem.crs())
     legacy_mask = legacy_ascii_mask(raster.x, raster.y, rings)
     qgis_mask = release_mask_from_rings(rings, raster.x, raster.y)
@@ -115,9 +120,19 @@ def _check() -> None:
     release_parameters = yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))["release"]
     prepared = prepare_inputs(RUN_ROOT, raster, rings, TEMPLATE, release_parameters)
     assert filecmp.cmp(prepared.topo_path, REFERENCE_TOPO, shallow=False), "topography.asc differs from GUI reference"
+    with prepared.init_path.open("rb") as handle:
+        qinit_header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+    magic, ncols, nrows, components, _flags, xlow, yhigh, dx, dy = qinit_header
+    assert (magic, ncols, nrows, components) == (QINIT_BINARY_MAGIC, raster.x.size, raster.y.size, 1)
+    assert np.isclose(xlow, raster.x[0]) and np.isclose(yhigh, raster.y[-1])
+    assert np.isclose(xlow - .5 * dx, raster.metadata["xmin"])
+    assert np.isclose(xlow + (ncols - .5) * dx, raster.metadata["xmax"])
+    assert np.isclose(yhigh - (nrows - .5) * dy, raster.metadata["ymin"])
+    assert np.isclose(yhigh + .5 * dy, raster.metadata["ymax"])
     prepared_metrics = init_metrics(prepared.init_path)
+    reference_coverage = np.load(REFERENCE_ROOT / "coverage.npy")
     reference_mask = np.load(REFERENCE_ROOT / "mask.npy")
-    assert np.array_equal(qgis_mask, reference_mask), "release mask differs from reference cell-by-cell"
+    reference_depth = np.load(REFERENCE_ROOT / "depth.npy")
     expected_coverage = release_coverage_from_rings(
         rings, raster.x, raster.y, float(raster.metadata["cellsize"]),
     )
@@ -127,6 +142,9 @@ def _check() -> None:
         prepared.depth,
         initial_depth_from_release(raster, expected_coverage, release_parameters),
     )
+    assert np.allclose(prepared.coverage, reference_coverage, rtol=0.0, atol=0.0), "fractional release coverage differs from reference"
+    assert np.array_equal(prepared.mask, reference_mask), "release coverage support differs from reference"
+    assert np.allclose(prepared.depth, reference_depth, rtol=0.0, atol=1e-12), "fractional initial depth differs from reference"
     generated = yaml.safe_load(prepared.configuration_path.read_text())
     template = yaml.safe_load(TEMPLATE.read_text())
     for key in ("rheology", "output", "animation", "refinement", "gauges"):
@@ -140,7 +158,7 @@ def _check() -> None:
     assert rows == raster.z.size == 5_995_001, (rows, raster.z.shape)
     print(f"DEM shape={raster.z.shape} extent={raster.metadata['xmin']},{raster.metadata['xmax']},{raster.metadata['ymin']},{raster.metadata['ymax']} cellsize={raster.metadata['cellsize']} CRS={raster.crs_authid}", flush=True)
     print(
-        f"RELEASE_MASK legacy_reference_equal=True cells={int(qgis_mask.sum())}; "
+        f"RELEASE_MASK legacy_center_check=True cells={int(qgis_mask.sum())}; "
         f"fractional_equivalent_cells={prepared.coverage.sum():.12g}",
         flush=True,
     )

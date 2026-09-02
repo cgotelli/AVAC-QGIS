@@ -6,10 +6,12 @@ from pathlib import Path
 import os
 import signal
 import sys
+from typing import Any
 
 from qgis.PyQt.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
 from .environment import EnvironmentReport
+from .run_diagnostics import solver_failure_reason, write_volume_balance
 from .run_project import update_run_status, validate_prepared_run
 from .runtime_execution import runtime_solver
 
@@ -37,6 +39,9 @@ class AvacRunner(QObject):
         self._stop_requested = False
         self._process_group_id: int | None = None
         self._direct_runtime = False
+        self._solver_output_tail = ""
+        self._solver_failure_reason: str | None = None
+        self._last_volume_balance: dict[str, Any] | None = None
         self._termination_timer = QTimer(self)
         self._termination_timer.setSingleShot(True)
         self._termination_timer.timeout.connect(self._escalate_stop)
@@ -48,6 +53,11 @@ class AvacRunner(QObject):
     def is_running(self) -> bool:
         return self.process.state() != QProcess.ProcessState.NotRunning
 
+    @property
+    def last_volume_balance(self) -> dict[str, Any] | None:
+        """Summary written after the most recent successful run, if available."""
+        return self._last_volume_balance
+
     def start(self, report: EnvironmentReport, *, require_prepared_run: bool = False) -> None:
         if not report.ready:
             raise RuntimeError("AVAC preflight failed; run Environment Check and resolve all failures first.")
@@ -56,6 +66,10 @@ class AvacRunner(QObject):
             update_run_status(report.avac_dir, "running")
         self._prepared_run = require_prepared_run
         self._stop_requested = False
+        self._solver_output_tail = ""
+        self._solver_failure_reason = None
+        self._last_volume_balance = None
+        self._direct_runtime = False
         environment = QProcessEnvironment()
         for key, value in report.environment.items():
             environment.insert(key, value)
@@ -107,6 +121,9 @@ class AvacRunner(QObject):
         self._stop_requested = False
         self._process_group_id = None
         self._direct_runtime = True
+        self._solver_output_tail = ""
+        self._solver_failure_reason = None
+        self._last_volume_balance = None
         self.process.setProgram(str(runtime_solver(runtime_root)))
         self.process.setArguments([])
         self.process.start()
@@ -147,27 +164,109 @@ class AvacRunner(QObject):
                 self._signal_group(signal.SIGKILL)
 
     def _read_stdout(self) -> None:
-        self.stdout.emit(bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace"))
+        text = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        self._record_solver_output(text)
+        self.stdout.emit(text)
 
     def _read_stderr(self) -> None:
-        self.stderr.emit(bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace"))
+        text = bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace")
+        self._record_solver_output(text)
+        self.stderr.emit(text)
+
+    def _record_solver_output(self, text: str) -> None:
+        """Detect fatal Fortran messages, including across QProcess chunks."""
+        if not text:
+            return
+        combined = self._solver_output_tail + text
+        if self._solver_failure_reason is None:
+            self._solver_failure_reason = solver_failure_reason(combined)
+        self._solver_output_tail = combined[-2048:]
 
     def _finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
+        # QProcess may still have a final buffered fragment when ``finished``
+        # arrives.  Drain it before classifying a Fortran STOP, which can exit
+        # with process status zero even after a numerical failure.
+        self._read_stdout()
+        self._read_stderr()
         self._progress_timer.stop()
         self._termination_timer.stop()
         self._emit_progress()
-        if self._prepared_run:
-            status = "cancelled" if self._stop_requested else ("completed" if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit else "failed")
+        stopped = self._stop_requested
+        normal_process_exit = exit_status == QProcess.ExitStatus.NormalExit
+        written_frames = (
+            len(list(self._output_dir.glob("fort.t[0-9]*")))
+            if self._output_dir is not None and self._output_dir.is_dir()
+            else 0
+        )
+        incomplete_output = bool(
+            not stopped
+            and self._expected_frames is not None
+            and written_frames < self._expected_frames
+        )
+        if incomplete_output and self._solver_failure_reason is None:
+            self._solver_failure_reason = (
+                f"incomplete output ({written_frames}/{self._expected_frames} fort.t frames)"
+            )
+        succeeded = bool(
+            not stopped
+            and exit_code == 0
+            and normal_process_exit
+            and self._solver_failure_reason is None
+        )
+        diagnostic_fields = {}
+        if succeeded and self._output_dir is not None:
             try:
-                update_run_status(self._run_avac_dir or Path(self.process.workingDirectory()), status, exit_code=exit_code)
+                balance = write_volume_balance(self._output_dir)
+            except OSError as exc:
+                self.stderr.emit(f"Could not write AVAC volume balance: {exc}\n")
+                balance = None
+            if balance is not None:
+                self._last_volume_balance = balance
+                diagnostic_fields["volume_balance"] = {
+                    key: value for key, value in balance.items()
+                    if key not in {"summary_path", "ledger_path"}
+                }
+                if balance["warning"]:
+                    self.stderr.emit(
+                        "WARNING: AVAC material left the computational domain. "
+                        f"Estimated escaped volume: {balance['escaped_volume_estimate_m3']:.6g} m³ "
+                        f"({balance['escaped_fraction_percent']:.4g}% of the initial volume). "
+                        "The simulation completed, but the domain does not contain the full avalanche runout.\n"
+                    )
+                else:
+                    self.stdout.emit(
+                        f"AVAC volume balance: initial {balance['initial_volume_m3']:.6g} m³; "
+                        f"final {balance['final_volume_m3']:.6g} m³; "
+                        f"net escaped estimate {balance['escaped_volume_estimate_m3']:.6g} m³.\n"
+                    )
+        if self._solver_failure_reason is not None and not stopped:
+            self.stderr.emit(
+                "AVAC numerical failure detected despite the native process exit code: "
+                f"{self._solver_failure_reason}.\n"
+            )
+        if self._prepared_run:
+            status = "cancelled" if stopped else ("completed" if succeeded else "failed")
+            effective_exit_code = exit_code if exit_code != 0 else (0 if succeeded else (130 if stopped else 1))
+            try:
+                update_run_status(
+                    self._run_avac_dir or Path(self.process.workingDirectory()),
+                    status,
+                    exit_code=effective_exit_code,
+                    process_exit_code=exit_code,
+                    solver_failure_reason=self._solver_failure_reason,
+                    **diagnostic_fields,
+                )
             except ValueError as exc:
                 self.stderr.emit(f"Could not update prepared-run status: {exc}\n")
             self._prepared_run = False
-            self._stop_requested = False
+        effective_exit_code = exit_code if exit_code != 0 else (0 if succeeded else (130 if stopped else 1))
         self._process_group_id = None
         self._direct_runtime = False
         self._run_avac_dir = None
-        self.finished.emit(exit_code, exit_status == QProcess.ExitStatus.NormalExit)
+        self._stop_requested = False
+        self.finished.emit(effective_exit_code, bool(succeeded))
+        self._solver_output_tail = ""
+        self._solver_failure_reason = None
 
     def _emit_progress(self) -> None:
         if self._output_dir is None or self._expected_frames is None:
@@ -186,17 +285,32 @@ def output_summary(avac_dir: str | Path) -> str:
     fgout_t = sorted(output.glob("fgout0001.t*"))
     fgout_fields = sorted(output.glob("fgout0001.b*")) + sorted(output.glob("fgout0001.a*"))
     fgmax = output / "fgmax0001.txt"
+    balance_path = output / "avac_volume_balance.json"
     final_time = "unknown"
     if fort_t:
         try:
             final_time = fort_t[-1].read_text(encoding="utf-8", errors="ignore").splitlines()[0].split()[0]
         except (IndexError, OSError):
             pass
-    return "\n".join(
-        [
+    lines = [
             f"Output directory: {output}",
             f"fort.t frames: {len(fort_t)}", f"fort.q frames: {len(fort_q)}",
             f"fgout0001.t frames: {len(fgout_t)}", f"fgout field files: {len(fgout_fields)}",
             f"fgmax0001.txt: {'present' if fgmax.is_file() else 'missing'}", f"Final fort.t time: {final_time}",
         ]
-    )
+    if balance_path.is_file():
+        try:
+            import json
+            balance = json.loads(balance_path.read_text(encoding="utf-8"))
+            lines.extend(
+                [
+                    f"Initial AVAC volume: {balance['initial_volume_m3']:.6g} m³",
+                    f"Final AVAC volume: {balance['final_volume_m3']:.6g} m³",
+                    f"Estimated volume outside domain: {balance['escaped_volume_estimate_m3']:.6g} m³ "
+                    f"({balance['escaped_fraction_percent']:.4g}%)",
+                    f"Volume ledger: {output / balance['ledger']}",
+                ]
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            lines.append(f"Volume balance: unreadable ({balance_path})")
+    return "\n".join(lines)

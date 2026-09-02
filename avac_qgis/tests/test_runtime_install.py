@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from pathlib import Path
+
+# Keep this release check executable directly from a source checkout as well
+# as through the test runner, matching the Wave runtime companion check.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from avac_qgis.core.runtime import (
     RuntimeValidationError,

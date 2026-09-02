@@ -17,7 +17,8 @@ RUN_FORMAT = 1
 # build.  It excludes generated data, objects, executables and old outputs.
 SOLVER_MANIFEST = (
     "Makefile", "config.mk", "setrun.py", "src2.f90", "setprob.f90", "b4step2.f90",
-    "rpn2_geoclaw.f", "rheology_module.f90", "fgmax_values.f90",
+    "bc2amr.f90", "hydraulic_bc_module.f90", "rpn2_geoclaw.f",
+    "rheology_module.f90", "fgmax_values.f90",
     "qinit_module.f90", "qinit.f90",
 )
 # Packaged execution evaluates the verified runtime backend in memory.  No

@@ -5,8 +5,8 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The latest published release is **0.6.0** and targets **QGIS 3.44 LTS**.
-This checkout contains the **0.6.0** source and reproducible validation suite.
+The current release is **0.6.1** and targets **QGIS 3.44 LTS**.
+This checkout contains the **0.6.1** source and reproducible validation suite.
 
 ## Interface overview
 
@@ -22,9 +22,9 @@ WAVE pages, and a shared Results page.
 ## Installation
 
 1. Download the installable package from the
-   [AVAC4QGIS 0.6.0 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.6.0).
+   [AVAC4QGIS 0.6.1 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.6.1).
    The macOS Apple Silicon package is
-   [`avac_qgis-0.6.0-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.6.0/avac_qgis-0.6.0-macos-arm64.zip).
+   [`avac_qgis-0.6.1-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.6.1/avac_qgis-0.6.1-macos-arm64.zip).
    The most recent 64-bit Windows package remains available from the
    [AVAC4QGIS 0.5.12 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.5.12).
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.

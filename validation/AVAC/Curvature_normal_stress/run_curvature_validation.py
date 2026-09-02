@@ -6,8 +6,8 @@ element at the nadir of a planar, concave-circular, or convex-circular track.
 At that point the bed slope is zero and the directional bed curvature is
 constant, so the local Coulomb source has a closed analytical solution. A
 second controlled suite uses a 30-degree tangent and zero applied force to
-verify the Cartesian coordinate transport that preserves terrain-tangent
-speed while the bed normal turns.
+verify that the frozen cell-local source does not convert changing terrain
+orientation into artificial map-plane acceleration.
 """
 
 from __future__ import annotations
@@ -48,8 +48,10 @@ CASES = (
     (1, "Concave circular", 1.0 / RADIUS_M, PAPER_COLORS["green"]),
     (2, "Convex circular", -1.0 / RADIUS_M, PAPER_COLORS["blue"]),
 )
-TRANSPORT_SLOPE_DEG = 30.0
-TRANSPORT_INITIAL_MAP_SPEED_M_S = INITIAL_SPEED_M_S * np.cos(np.deg2rad(TRANSPORT_SLOPE_DEG))
+FROZEN_GEOMETRY_SLOPE_DEG = 30.0
+FROZEN_GEOMETRY_INITIAL_MAP_SPEED_M_S = INITIAL_SPEED_M_S * np.cos(
+    np.deg2rad(FROZEN_GEOMETRY_SLOPE_DEG)
+)
 
 
 def analytical_speed(time_s: np.ndarray, curvature: float) -> np.ndarray:
@@ -66,14 +68,10 @@ def analytical_speed(time_s: np.ndarray, curvature: float) -> np.ndarray:
     return np.where(phase > 0.0, scale * np.tanh(phase), 0.0)
 
 
-def analytical_map_speed(time_s: np.ndarray, curvature: float) -> np.ndarray:
-    """Closed frozen-geometry solution preserving terrain-tangent speed."""
+def frozen_cell_map_speed(time_s: np.ndarray) -> np.ndarray:
+    """Zero-force solution of the frozen cell-local source."""
     time_s = np.asarray(time_s, dtype=float)
-    angle = np.deg2rad(TRANSPORT_SLOPE_DEG)
-    coefficient = curvature * np.tan(angle) * np.cos(angle) ** 2
-    return TRANSPORT_INITIAL_MAP_SPEED_M_S / (
-        1.0 - coefficient * TRANSPORT_INITIAL_MAP_SPEED_M_S * time_s
-    )
+    return np.full_like(time_s, FROZEN_GEOMETRY_INITIAL_MAP_SPEED_M_S)
 
 
 def compile_and_run() -> tuple[np.ndarray, np.ndarray, dict[tuple[int, int], float]]:
@@ -155,12 +153,12 @@ end program curvature_validation
 
     rows = np.loadtxt(output.splitlines())
     histories = rows[(rows[:, 1] >= 0.0) & (rows[:, 0] < 10)]
-    transport_histories = rows[(rows[:, 1] >= 0.0) & (rows[:, 0] >= 10)]
+    frozen_geometry_histories = rows[(rows[:, 1] >= 0.0) & (rows[:, 0] >= 10)]
     source_steps = {
         (int(row[0]), int(-row[1])): float(row[2])
         for row in rows[rows[:, 1] < 0.0]
     }
-    return histories, transport_histories, source_steps
+    return histories, frozen_geometry_histories, source_steps
 
 
 def main() -> None:
@@ -173,9 +171,9 @@ def main() -> None:
     results.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
 
-    histories, transport_histories, source_steps = compile_and_run()
+    histories, frozen_geometry_histories, source_steps = compile_and_run()
     summary_rows: list[dict[str, float | str]] = []
-    transport_rows: list[dict[str, float | str]] = []
+    frozen_geometry_rows: list[dict[str, float | str]] = []
 
     apply_paper_style()
     figure, axes = plt.subplots(2, 1, figsize=figure_size(1, aspect=1.30), sharex=True)
@@ -206,31 +204,31 @@ def main() -> None:
 
     axis.set(ylabel=r"Map speed (m s$^{-1}$)", xlim=(0.0, FINAL_TIME_S))
     axis.set_ylim(bottom=0.0)
-    transport_axis = axes[1]
+    frozen_geometry_axis = axes[1]
     for case_id, name, curvature, color in CASES:
-        selected = transport_histories[transport_histories[:, 0] == case_id + 10]
-        analytical = analytical_map_speed(selected[:, 1], curvature)
+        selected = frozen_geometry_histories[frozen_geometry_histories[:, 0] == case_id + 10]
+        analytical = frozen_cell_map_speed(selected[:, 1])
         error = np.abs(selected[:, 2] - analytical)
-        transport_rows.append(
+        frozen_geometry_rows.append(
             {
                 "case": name,
                 "directional_curvature_per_m": curvature,
-                "slope_degrees": TRANSPORT_SLOPE_DEG,
-                "initial_map_speed_m_s": TRANSPORT_INITIAL_MAP_SPEED_M_S,
+                "slope_degrees": FROZEN_GEOMETRY_SLOPE_DEG,
+                "initial_map_speed_m_s": FROZEN_GEOMETRY_INITIAL_MAP_SPEED_M_S,
                 "maximum_absolute_speed_error_m_s": float(np.max(error)),
             }
         )
-        transport_axis.plot(selected[:, 1], analytical, color=color, label=f"{name}: analytical")
-        transport_axis.scatter(
+        frozen_geometry_axis.plot(selected[:, 1], analytical, color=color, label=f"{name}: frozen-source solution")
+        frozen_geometry_axis.scatter(
             selected[::4, 1], selected[::4, 2], color=color, facecolors="white",
             linewidths=0.8, s=23, label=f"{name}: AVAC source", zorder=3,
         )
-    transport_axis.set(
+    frozen_geometry_axis.set(
         xlabel="Time (s)", ylabel=r"Map speed (m s$^{-1}$)", xlim=(0.0, FINAL_TIME_S)
     )
-    transport_axis.set_ylim(bottom=0.0)
+    frozen_geometry_axis.set_ylim(bottom=0.0)
     axis.set_title("(a) Curvature-dependent Coulomb normal stress", loc="left")
-    transport_axis.set_title("(b) Cartesian curvature transport", loc="left")
+    frozen_geometry_axis.set_title("(b) Frozen-cell geometry safeguard", loc="left")
     handles, labels = axis.get_legend_handles_labels()
     figure.legend(handles, labels, loc="outside lower center", ncol=2)
     figure.subplots_adjust(bottom=0.22, hspace=0.34)
@@ -245,29 +243,29 @@ def main() -> None:
         comments="",
     )
     np.savetxt(
-        results / "coordinate_transport_speed_history.csv",
-        transport_histories,
+        results / "frozen_cell_geometry_speed_history.csv",
+        frozen_geometry_histories,
         delimiter=",",
         header="case_id,time_s,avac_speed_m_s",
         comments="",
     )
     summary = {
-        "method": "compiled AVAC rheology_module compared with closed local Coulomb solutions",
+        "method": "compiled AVAC rheology_module compared with closed local Coulomb solutions and a zero-force frozen-cell safeguard",
         "gravity_m_s2": GRAVITY,
         "coulomb_mu": MU,
         "track_radius_m": RADIUS_M,
         "initial_speed_m_s": INITIAL_SPEED_M_S,
         "contact_condition": "g + directional_curvature * speed^2 >= 0",
         "normal_stress_cases": summary_rows,
-        "coordinate_transport_cases": transport_rows,
+        "frozen_cell_geometry_cases": frozen_geometry_rows,
     }
     (results / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     if max(float(row["maximum_absolute_speed_error_m_s"]) for row in summary_rows) > 2.0e-12:
         raise RuntimeError("curvature source differs from its analytical controlled solution")
     if max(float(row["substep_difference_m_s"]) for row in summary_rows) > 2.0e-12:
         raise RuntimeError("curvature source is not invariant to controlled source substepping")
-    if max(float(row["maximum_absolute_speed_error_m_s"]) for row in transport_rows) > 2.0e-12:
-        raise RuntimeError("Cartesian curvature transport differs from its closed solution")
+    if max(float(row["maximum_absolute_speed_error_m_s"]) for row in frozen_geometry_rows) > 2.0e-12:
+        raise RuntimeError("frozen-cell curvature safeguard differs from its zero-force solution")
     print(json.dumps(summary, indent=2))
 
 

@@ -81,27 +81,59 @@ end program driver
     assert curvature == 0.0
 
 
-def test_curved_coordinate_transport_preserves_tangent_speed_locally(tmp_path: Path):
+def test_curved_frozen_source_does_not_create_coordinate_acceleration(tmp_path: Path):
     values = _compile_rheology_driver(tmp_path, """
 program driver
   use rheology_module
   implicit none
+  integer :: step
   real(kind=8) :: slope, speed, curvature, a, b, cp, cs, ts, kv
+  real(kind=8) :: direct_speed, repeated_speed
   slope = -tan(30.d0*acos(-1.d0)/180.d0)
   speed = 8.d0*cos(30.d0*acos(-1.d0)/180.d0)
   curvature = 1.d0/40.d0
   call cartesian_source_coefficients(1.d0,speed,0.d0,slope,0.d0, &
        curvature,0.d0,0.d0,0.d0,0.d0,0.d0,300.d0,0.d0,1, &
        a,b,cp,cs,ts,kv)
-  write(*,'(7(es24.16,1x))') a,b,cp,cs,ts,kv,speed
+  direct_speed = cartesian_speed_after(speed,20.d0,1.d0,speed,0.d0, &
+       slope,0.d0,curvature,0.d0,0.d0,0.d0,0.d0,0.d0,300.d0,0.d0,1)
+  repeated_speed = speed
+  do step = 1, 20
+    repeated_speed = cartesian_speed_after(repeated_speed,1.d0,1.d0, &
+         repeated_speed,0.d0,slope,0.d0,curvature,0.d0,0.d0, &
+         0.d0,0.d0,0.d0,300.d0,0.d0,1)
+  end do
+  write(*,*) a,b,direct_speed,repeated_speed,speed
 end program driver
 """)
-    a, b, cos_phi, cos_psi, tan_psi, curvature, speed = values
-    expected_acceleration = curvature * tan_psi * cos_psi**2 * speed**2
+    assert values.size == 5
+    a, b, direct_speed, repeated_speed, speed = values
     assert a == 0.0
-    assert -b * speed**2 == pytest.approx(expected_acceleration, abs=1e-13)
-    assert cos_phi == pytest.approx(np.cos(np.deg2rad(30.0)))
-    assert cos_psi == pytest.approx(np.cos(np.deg2rad(30.0)))
+    assert b == 0.0
+    assert np.all(np.isfinite(values))
+    assert direct_speed == pytest.approx(speed, abs=1e-12)
+    assert repeated_speed == pytest.approx(speed, abs=1e-12)
+
+
+def test_convex_contact_transition_never_returns_a_pole_velocity(tmp_path: Path):
+    values = _compile_rheology_driver(tmp_path, """
+program driver
+  use rheology_module
+  implicit none
+  real(kind=8) :: theta, speed, speed_new, contact_speed
+  theta = 60.d0*acos(-1.d0)/180.d0
+  speed = 8.d0
+  contact_speed = sqrt(9.81d0/(1.d0/40.d0))
+  speed_new = cartesian_speed_after(speed,20.d0,1.d0,speed,0.d0, &
+       tan(theta),0.d0,-1.d0/40.d0,0.d0,0.d0,0.3d0,0.d0,0.d0, &
+       300.d0,9.81d0,1)
+  write(*,*) speed_new,contact_speed
+end program driver
+""")
+    assert values.size == 2
+    speed_new, contact_speed = values
+    assert np.isfinite(speed_new)
+    assert contact_speed < speed_new < 1.0e3
 
 
 def test_shallow_velocity_regularization_is_exact_when_resolved(tmp_path: Path):
@@ -157,6 +189,32 @@ end program driver
     assert np.array_equal(values.astype(int), [0, 1])
 
 
+def test_static_yield_ratio_uses_the_full_free_surface_gradient(tmp_path: Path):
+    values = _compile_rheology_driver(tmp_path, """
+program driver
+  use rheology_module
+  implicit none
+  real(kind=8) :: diagonal_super, diagonal_sub, axial_sub
+  diagonal_super = static_yield_ratio_2d(10.d0, -0.4d0, 0.4d0, -0.4d0, 0.4d0, &
+       0.d0, 0.d0, 0.d0, 0.d0, 1.d0, 1.d0, 0.5d0, 0.d0, 300.d0, 9.81d0, 1)
+  diagonal_sub = static_yield_ratio_2d(10.d0, -0.3d0, 0.3d0, -0.3d0, 0.3d0, &
+       0.d0, 0.d0, 0.d0, 0.d0, 1.d0, 1.d0, 0.5d0, 0.d0, 300.d0, 9.81d0, 1)
+  axial_sub = static_yield_ratio_2d(10.d0, -0.49d0, 0.49d0, 0.d0, 0.d0, &
+       0.d0, 0.d0, 0.d0, 0.d0, 1.d0, 1.d0, 0.5d0, 0.d0, 300.d0, 9.81d0, 1)
+  write(*,*) diagonal_super, diagonal_sub, axial_sub
+end program driver
+""")
+    diagonal_super, diagonal_sub, axial_sub = values
+    assert diagonal_super == pytest.approx(np.hypot(0.4, 0.4) / 0.5)
+    assert diagonal_super > 1.0
+    assert diagonal_sub == pytest.approx(np.hypot(0.3, 0.3) / 0.5)
+    assert diagonal_sub < 1.0
+    # A real axial sub-yield state must still be eligible: this prevents a
+    # superficially similar but incorrect mu/sqrt(2) directional threshold.
+    assert axial_sub == pytest.approx(0.49 / 0.5)
+    assert axial_sub < 1.0
+
+
 def test_fortran_source_uses_one_general_steep_slope_formulation():
     source = (ROOT / "avac-main" / "src" / "AVAC" / "src2.f90").read_text(encoding="utf-8")
     rheology = (ROOT / "avac-main" / "src" / "AVAC" / "rheology_module.f90").read_text(encoding="utf-8")
@@ -165,7 +223,7 @@ def test_fortran_source_uses_one_general_steep_slope_formulation():
     assert "sin2_phi * tan_psi + mu * cos_phi * cos_psi" in rheology
     assert "grav / (xi * h * cos_phi * cos_psi)" in rheology
     assert "mu * curvature * cos_phi * cos_psi" in rheology
-    assert "curvature * tan_psi * cos_psi**2" in rheology
+    assert "- curvature * tan_psi * cos_psi**2" not in rheology
     assert "d2zdx2" in source
     assert "locally_nonplanar_bed" in source
     assert "regularized_velocity" in source

@@ -1,7 +1,7 @@
 [general]
 name=AVAC4QGIS
 description=AVAC avalanche simulation integration for QGIS with managed native runtimes.
-version=0.6.0
+version=0.6.1
 qgisMinimumVersion=3.40
 author=AVAC4QGIS
 email=

@@ -1,4 +1,11 @@
 ! GeoClaw AMR boundary routine with data-driven hydraulic user boundaries.
+!
+! AVAC uses a one-way (diode) form of the standard extrapolation boundary
+! (mthbc=1).  An outward state is copied exactly, retaining GeoClaw's usual
+! zero-gradient outflow.  If the adjacent normal momentum points inward, its
+! ghost-cell sign is reflected so that the boundary Riemann problem has zero
+! normal mass flux.  This prevents the copied ghost state from becoming an
+! infinite external avalanche reservoir without changing a genuine outflow.
 subroutine bc2amr(val,aux,nrow,ncol,meqn,naux,hx,hy,level,time, &
                   xlo_patch,xhi_patch,ylo_patch,yhi_patch)
 
@@ -29,6 +36,7 @@ subroutine bc2amr(val,aux,nrow,ncol,meqn,naux,hx,hy,level,time, &
         case(1)
             do j=1,ncol; do i=1,nxl
                 aux(:,i,j)=aux(:,nxl+1,j); val(:,i,j)=val(:,nxl+1,j)
+                if (val(2,nxl+1,j) > 0.d0) val(2,i,j)=-val(2,nxl+1,j)
             end do; end do
         case(2)
             continue
@@ -56,6 +64,7 @@ subroutine bc2amr(val,aux,nrow,ncol,meqn,naux,hx,hy,level,time, &
         case(1)
             do i=ibeg,nrow; do j=1,ncol
                 aux(:,i,j)=aux(:,ibeg-1,j); val(:,i,j)=val(:,ibeg-1,j)
+                if (val(2,ibeg-1,j) < 0.d0) val(2,i,j)=-val(2,ibeg-1,j)
             end do; end do
         case(2)
             continue
@@ -82,6 +91,7 @@ subroutine bc2amr(val,aux,nrow,ncol,meqn,naux,hx,hy,level,time, &
         case(1)
             do j=1,nyb; do i=1,nrow
                 aux(:,i,j)=aux(:,i,nyb+1); val(:,i,j)=val(:,i,nyb+1)
+                if (val(3,i,nyb+1) > 0.d0) val(3,i,j)=-val(3,i,nyb+1)
             end do; end do
         case(2)
             continue
@@ -109,6 +119,7 @@ subroutine bc2amr(val,aux,nrow,ncol,meqn,naux,hx,hy,level,time, &
         case(1)
             do j=jbeg,ncol; do i=1,nrow
                 aux(:,i,j)=aux(:,i,jbeg-1); val(:,i,j)=val(:,i,jbeg-1)
+                if (val(3,i,jbeg-1) < 0.d0) val(3,i,j)=-val(3,i,jbeg-1)
             end do; end do
         case(2)
             continue

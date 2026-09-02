@@ -17,10 +17,12 @@ from avac_qgis.core.preprocessing import (
 
 def main() -> None:
     raster = AvacRaster(
-        np.array([10.0, 12.0, 14.0]),
-        np.array([20.0, 22.0]),
+        # qinit headers store the centres of the first/southern-last cells,
+        # while raster metadata stores its outer edges.
+        np.array([11.0, 13.0, 15.0]),
+        np.array([21.0, 23.0]),
         np.zeros((2, 3)),
-        {"xmin": 10.0, "xmax": 14.0, "ymin": 20.0, "ymax": 22.0,
+        {"xmin": 10.0, "xmax": 16.0, "ymin": 20.0, "ymax": 24.0,
          "ncols": 3, "nrows": 2, "cellsize": 2.0, "nodata_value": -9999.0},
         "EPSG:2056",
         1,
@@ -32,7 +34,7 @@ def main() -> None:
         with path.open("rb") as handle:
             header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
             payload = np.fromfile(handle, dtype="<f8")
-        assert header == (QINIT_BINARY_MAGIC, 3, 2, 1, 0, 10.0, 22.0, 2.0, 2.0)
+        assert header == (QINIT_BINARY_MAGIC, 3, 2, 1, 0, 11.0, 23.0, 2.0, 2.0)
         assert path.stat().st_size == QINIT_BINARY_HEADER.size + depth.size * 8
         assert np.array_equal(payload.reshape((2, 3)), np.array([
             [4.0, 5.0, 6.0],

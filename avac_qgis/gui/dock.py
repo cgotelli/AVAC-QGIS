@@ -3037,13 +3037,27 @@ class AvacDockWidget(QDockWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(1 if exit_code == 0 and normal_exit else 0)
         if exit_code == 0 and normal_exit:
-            self.status.setText("AVAC completed successfully. Raw output was checked; see log.")
-            self.progress.setFormat("Completed")
+            balance = self.runner.last_volume_balance
+            if balance is not None and balance.get("warning"):
+                self.status.setText(
+                    "AVAC completed with a boundary-outflow warning: "
+                    f"approximately {balance['escaped_volume_estimate_m3']:.6g} m³ "
+                    f"({balance['escaped_fraction_percent']:.4g}%) left the computational domain."
+                )
+                self.progress.setFormat("Completed with warning")
+            else:
+                self.status.setText("AVAC completed successfully. Raw output was checked; see log.")
+                self.progress.setFormat("Completed")
             active_avac = self.prepared_avac_dir or Path(self.avac_dir.text()).resolve()
             self.log.appendPlainText("\n" + output_summary(active_avac))
             self.results_run_root.setText(str(active_avac.parent))
             self.refresh_results_runs()
-            self.results_status.setText("Run completed. Open / Load Completed Run is now available in Results.")
+            self.results_status.setText(
+                "Run completed. Open / Load Completed Run is available in Results. "
+                "Check the AVAC volume ledger before interpreting runout beyond the domain."
+                if balance is not None and balance.get("warning")
+                else "Run completed. Open / Load Completed Run is now available in Results."
+            )
             self.results_progress.setRange(0, 1); self.results_progress.setValue(1); self.results_progress.setFormat("Completed run available")
         else:
             self.status.setText(f"AVAC failed (exit code {exit_code}). See log.")

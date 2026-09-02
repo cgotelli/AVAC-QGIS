@@ -1,5 +1,5 @@
 {
-  "runtime_version": "0.6.0",
-  "archive": "wave-runtime-macos-arm64-0.6.0.tar.gz",
-  "runtime_manifest_sha256": "26f115a416630d49be7aeaff63c91911d55d7bcff297d064070a96cbb3828a6e"
+  "runtime_version": "0.6.1",
+  "archive": "wave-runtime-macos-arm64-0.6.1.tar.gz",
+  "runtime_manifest_sha256": "3a851d17ef5f8bd5bb015c6f0e724183912061676baf2635f770390d070595ba"
 }

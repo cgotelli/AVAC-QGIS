@@ -20,9 +20,13 @@ c
        xlow   = rnode(cornxlo,mptr) - nghost*hx
        ylow   = rnode(cornylo,mptr) - nghost*hy
 
-c     Need to check to make sure that this has the right values/signature
-       call b4step2(nghost, mitot, mjtot, nvar, valbig, xlow, ylow,
-     1              hx, hy, time, dt, naux, auxbig, .false.)
+c     b4step2 uses mx,my as interior dimensions while valbig and auxbig
+c     already include nghost cells on each side.  Passing mitot,mjtot here
+c     made its assumed-shape bounds extend beyond these Richardson scratch
+c     arrays.  Use the same interior dimensions and lower corner as advanc.
+       call b4step2(nghost, nx, ny, nvar, valbig,
+     1              rnode(cornxlo,mptr), rnode(cornylo,mptr),
+     2              hx, hy, time, dt, naux, auxbig, .false.)
 
        call stepgrid(valbig,fm,fp,gm,gp,
      1               mitot,mjtot,nghost,

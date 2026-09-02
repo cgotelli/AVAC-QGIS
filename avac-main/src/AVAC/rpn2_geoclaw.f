@@ -12,18 +12,24 @@ c
 c Modified from the standard GeoClaw rpn2_geoclaw.f to add a D-Claw
 c static Coulomb yield check (George & Iverson 2014, J. Geophys. Res.).
 c Once every cell in the local four-cell stencil can reach rest under the
-c current exact friction impulse, the limited free-surface gradient is
-c tested against Coulomb yield.  Below yield, the set-valued static
-c friction balances the interface force and both mass and momentum waves
-c are set to zero.  The depth states are not changed.  This is the 2D
-c generalisation of the D-Claw 1D static-yield principle.
+c current exact friction impulse, the limited normal free-surface gradient
+c is tested against Coulomb yield.  A cell-centred two-dimensional yield
+c ratio, precomputed in b4step2 and passed in aux(2), must also be below one.
+c This avoids falsely arresting a diagonal state whose two individual sweep
+c increments are sub-yield but whose vector free-surface gradient is not.
+c Below yield, the set-valued static friction balances the interface force
+c and both mass and momentum waves are set to zero.  The depth states are
+c not changed.  This remains a directional f-wave update with a 2D eligibility
+c guard, not a monolithic two-dimensional complementarity solve.
 c
 c Requires:
 c   rheology_module : dx_avac, dy_avac  (set by b4step2.f90)
 c   rheology_module: rho_rh, imodel_rh and get_mu_xi (set by setprob.f90)
+c   aux(1)           : fixed bed elevation
+c   aux(2)           : cell-centred 2D static-yield ratio (AVAC Cartesian)
 
       use geoclaw_module, only: g => grav, drytol => dry_tolerance, rho
-      use geoclaw_module, only: earth_radius, deg2rad
+      use geoclaw_module, only: earth_radius, deg2rad, coordinate_system
       use amr_module, only: mcapa
 
       use storm_module, only: pressure_forcing, pressure_index
@@ -74,6 +80,7 @@ c   rheology_module: rho_rh, imodel_rh and get_mu_xi (set by setprob.f90)
       double precision deta_L, deta_C, deta_R, slope_eta_L, slope_eta_R
       logical stops_LL, stops_L, stops_R, stops_RR
       logical rests_LL, rests_L, rests_R, rests_RR
+      logical yield_ok_LL, yield_ok_L, yield_ok_R, yield_ok_RR
 
       ! In case there is no pressure forcing
       pL = 0.d0
@@ -169,6 +176,22 @@ c        !set normal direction
          wall(2) = 1.d0
          wall(3) = 1.d0
 
+c        aux(2) is the cell-centred full-vector static-yield ratio prepared
+c        by b4step2.  A missing, dry, or otherwise invalid marker is negative
+c        and deliberately disables static interface suppression.  Do not fall
+c        back to the old component-wise test for maux=1: allowing a flux is
+c        conservative, whereas falsely pinning a diagonal super-yield state is
+c        not.  ql/qr can differ in direct Riemann calls, so use the marker of
+c        the corresponding state rather than an average.
+         yield_ok_L = .false.
+         yield_ok_R = .false.
+         if (maux .ge. 2 .and. coordinate_system .eq. 1) then
+            if (auxr(2,i-1) .ge. 0.d0 .and.
+     &          auxr(2,i-1) .le. 1.d0) yield_ok_L = .true.
+            if (auxl(2,i) .ge. 0.d0 .and.
+     &          auxl(2,i) .le. 1.d0) yield_ok_R = .true.
+         endif
+
 c        ---- D-Claw yield check at wet/dry interface ----
 c        When the wet cell is EXACTLY at rest (u=v=0, produced by the
 c        floor-at-zero in src2.f90) and the free-surface head above the
@@ -186,7 +209,8 @@ c        adjacent dry terrain via the dam-break Riemann solution.
             endif
 c           Right cell dry, left cell wet and exactly at rest
             if (hR .le. drytol .and. hL .gt. drytol .and.
-     &          dsqrt(uL**2 + vL**2) .eq. 0.d0) then
+     &          dsqrt(uL**2 + vL**2) .eq. 0.d0 .and.
+     &          yield_ok_L) then
                dh_n     = max(0.d0, hL + bL - bR)
                db_n     = dabs(bR - bL)
                costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
@@ -209,7 +233,8 @@ c              at either orientation of a wet/dry interface.
             endif
 c           Left cell dry, right cell wet and exactly at rest
             if (hL .le. drytol .and. hR .gt. drytol .and.
-     &          dsqrt(uR**2 + vR**2) .eq. 0.d0) then
+     &          dsqrt(uR**2 + vR**2) .eq. 0.d0 .and.
+     &          yield_ok_R) then
                dh_n     = max(0.d0, hR + bR - bL)
                db_n     = dabs(bR - bL)
                costh_n  = dx_n / dsqrt(dx_n**2 + db_n**2)
@@ -269,13 +294,15 @@ c          vnorm_new = friction_speed_after(vnorm,dt,...)
 c        The classification uses the closed-form local source update, so no
 c        user-selected stopping velocity (u_cr) is introduced.
 c
-c        The FREE-SURFACE gradient |d(h+b)/dn| is compared with the
-c        static Coulomb yield threshold mu*cos(theta)*dx.
-c        If the gradient is below the threshold, static friction balances
-c        the full interface force and both mass and momentum f-waves are
-c        zero.  The depth states are deliberately not equalised: a stopped
-c        granular deposit may retain a non-horizontal free surface, and
-c        averaging it would itself cause unphysical mass creep.
+c        The normal free-surface increments are compared with the static
+c        Coulomb threshold mu*dx (plus the terrain-normal cohesion term).
+c        In addition, the cell-centred 2D ratio |grad(h+b)|/yield_strength
+c        must not exceed one for every available wet cell in the stencil.
+c        If these necessary conditions hold, static friction balances the
+c        interface force and both mass and momentum f-waves are zero.  The
+c        depth states are deliberately not equalised: a stopped granular
+c        deposit may retain a non-horizontal free surface, and averaging it
+c        would itself cause unphysical mass creep.
          spd_L = dsqrt(uL**2 + vL**2)
          spd_R = dsqrt(uR**2 + vR**2)
 
@@ -306,6 +333,8 @@ c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
             stops_RR = .true.
             rests_LL = .true.
             rests_RR = .true.
+            yield_ok_LL = .true.
+            yield_ok_RR = .true.
             if (i .ge. 3-mbc .and. i .le. mx+mbc-1) then
                h_LL = 0.5d0 * (ql(1,i-2) + qr(1,i-2))
                if (h_LL .gt. drytol) then
@@ -317,6 +346,13 @@ c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
      &                 h_LL,mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
                   stops_LL = speed_after_LL .le. 0.d0
                   rests_LL = spd_LL .eq. 0.d0
+                  yield_ok_LL = .false.
+                  if (maux .ge. 2 .and. coordinate_system .eq. 1) then
+                     if (auxl(2,i-2) .ge. 0.d0 .and.
+     &                   auxl(2,i-2) .le. 1.d0 .and.
+     &                   auxr(2,i-2) .ge. 0.d0 .and.
+     &                   auxr(2,i-2) .le. 1.d0) yield_ok_LL = .true.
+                  endif
                endif
                h_RR = 0.5d0 * (ql(1,i+1) + qr(1,i+1))
                if (h_RR .gt. drytol) then
@@ -328,6 +364,13 @@ c           introduced: every test uses the exact dt*tau/(rho*h) impulse.
      &                 h_RR,mu_rp,xi_rp,C_rp,rho_rh,g,imodel_rh)
                   stops_RR = speed_after_RR .le. 0.d0
                   rests_RR = spd_RR .eq. 0.d0
+                  yield_ok_RR = .false.
+                  if (maux .ge. 2 .and. coordinate_system .eq. 1) then
+                     if (auxl(2,i+1) .ge. 0.d0 .and.
+     &                   auxl(2,i+1) .le. 1.d0 .and.
+     &                   auxr(2,i+1) .ge. 0.d0 .and.
+     &                   auxr(2,i+1) .le. 1.d0) yield_ok_RR = .true.
+                  endif
                endif
             endif
 
@@ -401,6 +444,8 @@ c           closed-form Coulomb update, so this adds no velocity threshold.
      &          stops_R .and. stops_RR .and.
      &          rests_LL .and. rests_L .and.
      &          rests_R .and. rests_RR .and.
+     &          yield_ok_LL .and. yield_ok_L .and.
+     &          yield_ok_R .and. yield_ok_RR .and.
      &          dh_n .le. thresh_n .and.
      &          dh_span .le. thresh_n) go to 30
             endif

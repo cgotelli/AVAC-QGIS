@@ -15,16 +15,19 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     !
     ! AVAC evolves vertical depth and horizontal map velocity.  The source
     ! applies the flow-parallel Cartesian steep-slope correction of Hergarten
-    ! and Robl (2015), so gravity, normal stress, depth, and velocity are
-    ! transformed consistently.  On a flat bed this is exactly the previous
-    ! AVAC Coulomb/Voellmy source.
+    ! and Robl (2015) to gravity, normal stress, depth, and basal resistance.
+    ! It rescales existing map-plane momentum but does not rotate velocity
+    ! through a changing terrain tangent within this frozen cell-local step.
+    ! On a flat bed this is exactly the previous AVAC Coulomb/Voellmy source.
     !
-    ! Closed-form update of dv/dt = -a - b*v^2, with a floor at zero:
+    ! Closed-form update of dv/dt = -a - b*v^2, with a static-yield-aware
+    ! zero-speed safeguard:
     !   speed_new = cartesian_speed_after(...)
-    !   (hu)^{n+1} = (hu / speed) * h * speed_new
-    !   (hv)^{n+1} = (hv / speed) * h * speed_new
+    !   (hu)^{n+1} = (hu / speed) * speed_new
+    !   (hv)^{n+1} = (hv / speed) * speed_new
     !
-    ! This allows exact stopping (speed = 0 precisely).
+    ! This allows exact stopping (speed = 0 precisely) only where static
+    ! resistance can support the layer.
 
     use geoclaw_module, only: g => grav, dry_tolerance, speed_limit
     use geoclaw_module, only: friction_forcing, friction_depth
@@ -124,11 +127,11 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                     end if
 
                     if (.not. at_rest .and. speed > 0.d0) then
-                        ! Closed-form source update with floor at zero.  Unlike
-                        ! forward Euler, this gives the same accumulated local
+                        ! Closed-form source update.  Unlike forward Euler,
+                        ! this gives the same accumulated local
                         ! Voellmy drag when AMR subcycling changes dt.
-                        ! Mohr-Coulomb stop: if kinetic friction brings speed to zero
-                        ! (speed_new <= 0) AND the driving stress is below yield,
+                        ! Mohr-Coulomb stop: if kinetic friction leaves no positive
+                        ! speed AND the driving stress is below yield,
                         ! the cell stops definitively.  A cell on a super-yield slope
                         ! (tau_driving > tau_static) must NOT be zeroed, otherwise
                         ! the slope re-accelerates it on the next step, creating a
@@ -138,21 +141,21 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                                                          d2zdxdy, d2zdy2, mu_local, &
                                                          xi_local, C_local, rho_rh, &
                                                          g, imodel_rh)
-                        if (speed_new <= 0.d0 .and. &
-                            tau_driving_rho <= tau_static_rho) then
+                        if (speed_new > 0.d0) then
+                            q(2,i,j) = hu * speed_new / speed
+                            q(3,i,j) = hv * speed_new / speed
+                        else if (tau_driving_rho <= tau_static_rho) then
                             ! Definitive stop: slope cannot restart the cell.
                             q(2,i,j) = 0.d0
                             q(3,i,j) = 0.d0
                         else
-                            ! Floor at zero, but no forced stop on super-yield slopes.
-                            speed_new = max(0.d0, speed_new)
-                            if (speed_new > 0.d0) then
-                                q(2,i,j) = hu * speed_new / speed
-                                q(3,i,j) = hv * speed_new / speed
-                            else
-                                q(2,i,j) = 0.d0
-                                q(3,i,j) = 0.d0
-                            end if
+                            ! The scalar, split source update has reached
+                            ! zero, but a super-yield bed cannot remain at
+                            ! rest.  There is no unique map-plane direction
+                            ! to assign at zero speed, and this source step
+                            ! does not own the Riemann bed-slope drive.
+                            ! Keep the incoming momentum; the coupled flux
+                            ! update supplies the resolved driving direction.
                         end if
                     end if
                 end if

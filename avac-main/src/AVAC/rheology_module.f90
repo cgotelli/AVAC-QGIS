@@ -21,9 +21,10 @@ module rheology_module
     ! shallow-water equations.  On steep terrain these variables are not the
     ! normal depth and terrain-tangent speed used by the basal law.  The
     ! moving-state source therefore applies the flow-parallel Cartesian
-    ! correction of Hergarten and Robl (2015), transforming gravity, normal
-    ! stress, depth, and velocity together.  It reduces exactly to the
-    ! established AVAC source on a flat bed.
+    ! correction of Hergarten and Robl (2015) to gravity, normal stress,
+    ! depth, and basal resistance.  It does not rotate horizontal velocity
+    ! through a changing terrain tangent within a frozen cell-local source
+    ! step.  It reduces exactly to the established AVAC source on a flat bed.
     !
     ! Altitude-zoned rheology (set by setprob.f90, used by src2.f90):
     !   n_zones_rh   : number of altitude zones (>= 1)
@@ -131,6 +132,52 @@ contains
     end function locally_nonplanar_bed
 
     ! ------------------------------------------------------------------
+    ! Dimensionless two-dimensional static-yield ratio for one cell.
+    !
+    ! This is an eligibility diagnostic for the static Riemann limiter, not
+    ! a momentum source.  The normal Riemann solver only receives a 1-D
+    ! slice, so b4step2 computes this full map-plane free-surface gradient
+    ! before the directional sweeps.  A value <= 1 means that the local
+    ! vector driving gradient is no greater than the static Coulomb/cohesive
+    ! strength; a negative value means that no safe static classification is
+    ! available (dry cell, invalid spacing, or zero static strength).
+    !
+    ! The gradient is centred on the cell.  The bed-normal cohesion factor
+    ! uses the full two-dimensional DEM slope, cos(theta_b)^2 =
+    ! 1/(1 + B_x^2 + B_y^2).  Voellmy drag vanishes at rest and therefore
+    ! does not enter this static condition.
+    ! ------------------------------------------------------------------
+    pure function static_yield_ratio_2d(h, eta_w, eta_e, eta_s, eta_n, &
+                                        b_w, b_e, b_s, b_n, dx, dy, mu, C, &
+                                        rho, grav, imodel) result(ratio)
+        implicit none
+        real(kind=8), intent(in) :: h, eta_w, eta_e, eta_s, eta_n
+        real(kind=8), intent(in) :: b_w, b_e, b_s, b_n, dx, dy, mu, C, rho, grav
+        integer, intent(in) :: imodel
+        real(kind=8) :: ratio
+        real(kind=8) :: eta_x, eta_y, b_x, b_y, cos2_theta
+        real(kind=8) :: yield_gradient
+
+        ratio = -1.d0
+        if (h <= 0.d0 .or. dx <= 0.d0 .or. dy <= 0.d0) return
+
+        eta_x = (eta_e - eta_w) / (2.d0 * dx)
+        eta_y = (eta_n - eta_s) / (2.d0 * dy)
+        b_x = (b_e - b_w) / (2.d0 * dx)
+        b_y = (b_n - b_s) / (2.d0 * dy)
+        cos2_theta = 1.d0 / (1.d0 + b_x**2 + b_y**2)
+
+        yield_gradient = max(0.d0, mu)
+        if (imodel == 3 .and. C > 0.d0 .and. rho > 0.d0 .and. grav > 0.d0) then
+            yield_gradient = yield_gradient + C / (rho * grav * h * cos2_theta)
+        end if
+        if (yield_gradient > 0.d0) then
+            ratio = dsqrt(eta_x**2 + eta_y**2) / yield_gradient
+        end if
+
+    end function static_yield_ratio_2d
+
+    ! ------------------------------------------------------------------
     ! Exact non-negative solution of the frozen-coefficient source
     !
     !     d(speed)/dt = -a - b*speed^2.
@@ -223,19 +270,20 @@ contains
     !   a = g[sin(phi)^2 tan(psi) + mu cos(phi) cos(psi)]
     !       + C cos(psi)/(rho h cos(phi)),
     !   b = g/[xi h cos(phi) cos(psi)]
-    !       + mu k_v cos(phi) cos(psi)
-    !       - k_v tan(psi) cos(psi)^2.
+    !       + mu k_v cos(phi) cos(psi).
     !
     ! k_v is the bed Hessian projected onto the horizontal flow direction.
-    ! The first k_v term is the Fischer et al. (2012) centripetal correction
-    ! to normal load: positive concave curvature increases Coulomb resistance;
-    ! negative convex curvature decreases it.  The second is the coordinate
-    ! transport required because AVAC evolves horizontal map speed rather than
-    ! terrain-tangent speed.  It preserves terrain-tangent speed while the bed
-    ! normal turns, avoiding the additional horizontal-component loss described
-    ! for Cartesian shallow-water implementations by Wirbel et al. (2026).
-    ! The component transverse to the instantaneous flow direction is not
-    ! included.
+    ! Its term is the Fischer et al. (2012) centripetal correction to normal
+    ! load: positive concave curvature increases Coulomb resistance; negative
+    ! convex curvature decreases it.  AVAC deliberately does not add a local
+    ! source for rotation of the terrain-tangent velocity into the horizontal
+    ! map plane.  That changing-basis effect requires the material position
+    ! and changing terrain angle along its path.  Treating it as a coefficient
+    ! frozen at one cell produces a spurious Riccati acceleration and a
+    ! finite-time pole.  The horizontal map velocity is therefore not rotated
+    ! by this source step; a terrain-following state or a coupled flux/source
+    ! formulation would be required for that extension.  The component
+    ! transverse to the instantaneous flow direction is not included.
     ! ------------------------------------------------------------------
     subroutine cartesian_source_coefficients(h, u, v, dzdx, dzdy, &
                                              d2zdx2, d2zdxdy, d2zdy2, &
@@ -276,17 +324,10 @@ contains
         if (imodel >= 2 .and. xi > 0.d0 .and. h > 0.d0) then
             b = grav / (xi * h * cos_phi * cos_psi)
         end if
-        ! A terrain-tangent speed U is represented by the horizontal speed
-        ! speed = U*cos(psi).  Along a locally fixed horizontal flow direction,
-        ! d(cos(psi))/dt = k_v*speed*tan(psi)*cos(psi)^3, hence
-        !
-        !   d(speed)/dt = k_v*tan(psi)*cos(psi)^2*speed^2.
-        !
-        ! ``source_speed_after`` uses d(speed)/dt = -a-b*speed^2, so this
-        ! geometric transport enters b with a minus sign.  It is identically
-        ! zero on every planar bed and at a curved-track nadir.
-        b = b + mu * curvature * cos_phi * cos_psi &
-              - curvature * tan_psi * cos_psi**2
+        ! Curvature contributes only through the contact-normal load.  A
+        ! changing-basis transport term is not a frozen local source; see the
+        ! formulation note above.
+        b = b + mu * curvature * cos_phi * cos_psi
 
     end subroutine cartesian_source_coefficients
 

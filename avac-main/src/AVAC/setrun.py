@@ -120,8 +120,12 @@ def setrun(claw_pkg='geoclaw'):
     # ---------------
     # Number of equations in the system:
     clawdata.num_eqn = 3
-    # Number of auxiliary variables in the aux array (initialized in setaux)
-    clawdata.num_aux = 1
+    # aux(1) is the fixed bed.  aux(2) is a transient, cell-centred AVAC
+    # static-yield ratio refreshed by b4step2 before every Riemann sweep.  It
+    # lets the directional solver reject a diagonal vector-super-yield state.
+    # AVAC uses Cartesian coordinates, so this does not conflict with
+    # GeoClaw's spherical capacity/latitude auxiliary fields.
+    clawdata.num_aux = 2
     # Index of aux array corresponding to capacity function, if there is one:
     clawdata.capa_index = 0
 
@@ -166,7 +170,11 @@ def setrun(claw_pkg='geoclaw'):
     #---------------
     clawdata.output_format = OUT['output_format']      # 'ascii', 'binary32" "binary64
     clawdata.output_q_components   = 'all'   # could be list such as [True,True]
-    clawdata.output_aux_components = [True]  # could be list
+    # GeoClaw 5.14 writes all auxiliary fields when any are requested.  Keep
+    # bed output for legacy post-processing; aux(2) is solver scratch and is
+    # recomputed before each step, so output files are not restart-compatible
+    # with the former one-auxiliary-field AVAC layout.
+    clawdata.output_aux_components = 'all'
     clawdata.output_aux_onlyonce   = False   # output aux arrays only at t0. False required for post process in jupyter
 
     # ---------------------------------------------------
@@ -240,7 +248,7 @@ def setrun(claw_pkg='geoclaw'):
 
     # Choice of BCs at xlower and xupper:
     #   0 => user specified (must modify bcN.f to use this option)
-    #   1 => extrapolation (non-reflecting outflow)
+    #   1 => AVAC one-way extrapolation (unchanged outflow; attempted inflow blocked)
     #   2 => periodic (must specify this at both boundaries)
     #   3 => solid wall for systems where q(2) is normal velocity
     if topo_source == 'real_world':
@@ -294,7 +302,7 @@ def setrun(claw_pkg='geoclaw'):
     # Specify type of each aux variable in amrdata.auxtype.
     # This must be a list of length maux, each element of which is one of:
     #   'center',  'capacity', 'xleft', or 'yleft'  (see documentation).
-    amrdata.aux_type = ['center']
+    amrdata.aux_type = ['center', 'center']
 
     # Flag using refinement routine flag2refine rather than richardson error
     amrdata.flag_richardson = False    # use Richardson?

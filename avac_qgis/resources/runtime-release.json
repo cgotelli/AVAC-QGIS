@@ -1,5 +1,5 @@
 {
-  "runtime_version": "0.6.0",
-  "archive": "avac-runtime-macos-arm64-0.6.0.tar.gz",
-  "runtime_manifest_sha256": "0b19eaf58316e80067ea0cf1b66e49d2ca988bdb3b3cc581fb0f306dda47a520"
+  "runtime_version": "0.6.1",
+  "archive": "avac-runtime-macos-arm64-0.6.1.tar.gz",
+  "runtime_manifest_sha256": "52bff6162054eeb36a59410bf065a7fe427d328826371860b576454a78bab88f"
 }

@@ -1,6 +1,6 @@
 subroutine qinit(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
-    use geoclaw_module, only: sea_level
+    use geoclaw_module, only: sea_level, coordinate_system
     use amr_module, only: t0
     use qinit_module, only: qinit_type,add_perturbation
     use qinit_module, only: variable_eta_init
@@ -24,6 +24,14 @@ subroutine qinit(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
     real(kind=8) :: ddxy
 
     q = 0.d0   ! initialize all elements to 0
+
+    ! AVAC reserves aux(2) for its transient, cell-centred static-yield
+    ! marker on Cartesian runs.  add_perturbation initializes it for the
+    ! usual qinit_type > 0 path, but qinit_type = 0 bypasses that routine.
+    ! Define the conservative invalid sentinel here as well so initial
+    ! auxiliary output never exposes allocator contents.  b4step2 refreshes
+    ! the physical marker before the first Riemann solve.
+    if (maux >= 2 .and. coordinate_system == 1) aux(2,:,:) = -1.d0
 
     if (variable_eta_init) then
         ! Set initial surface eta based on eta_init

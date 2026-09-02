@@ -27,7 +27,7 @@ def main() -> None:
         wave_root = root / "wave"
         installed = install_runtime_archive(archive, version, destination_root=wave_root)
         assert installed == (wave_root / version / platform_key()).resolve()
-        backend = installed / "backend" / "Wave" / "setrun.py"
+        backend = installed / "backend" / "WAVE" / "setrun.py"
         assert backend.is_file()
         backend_text = backend.read_text(encoding="utf-8")
         assert "force_dry.tend = 0.5+computation['t_0']" in backend_text

@@ -54,10 +54,14 @@ def prepare_wave_boundary_conditions(runtime_root: str | Path, wave_root: str | 
 def prepare_wave_runtime_execution(runtime_root: str | Path, wave_root: str | Path, source_avac_root: str | Path) -> Path:
     runtime_root, wave_root, source_avac_root = Path(runtime_root).resolve(), Path(wave_root).resolve(), Path(source_avac_root).resolve()
     manifest = validate_runtime(runtime_root)
-    backend = runtime_root / "backend" / "Wave" / "setrun.py"
+    # Runtime archive builders use the solver's canonical source directory
+    # name (``WAVE``).  Keep this lookup byte-for-byte aligned with the
+    # manifest record so installed packages do not depend on a case-insensitive
+    # development filesystem.
+    backend = runtime_root / "backend" / "WAVE" / "setrun.py"
     wave_dir = wave_root / "Wave"
     required = {
-        "bundled Wave backend (backend/Wave/setrun.py)": backend,
+        "bundled Wave backend (backend/WAVE/setrun.py)": backend,
         "prepared Wave configuration (impulse_configuration.yaml)": wave_root / "impulse_configuration.yaml",
         "prepared lake topography (Topo/topography_lake.asc)": wave_root / "Topo" / "topography_lake.asc",
         "prepared force-dry lake mask (Topo/mask.asc)": wave_root / "Topo" / "mask.asc",

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -47,9 +48,9 @@ PROJECT_ROOT = VALIDATION_ROOT.parents[1]
 from avac4qgis_validation.datasets import ensure_iseesnow  # noqa: E402
 from avac4qgis_validation.runtime import (  # noqa: E402
     CLAWPACK_SOURCE,
+    build_solver,
     prepare_source_execution,
     runtime as source_runtime,
-    solver_executable,
 )
 
 BENCHMARK_ROOT = ensure_iseesnow()
@@ -57,7 +58,7 @@ PLUGIN_ROOT = PROJECT_ROOT / "avac_qgis"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from avac_qgis.core.configuration import controlled_values, load_complete_configuration  # noqa: E402
-from avac_qgis.core.preprocessing import AvacRaster, write_init_xyz  # noqa: E402
+from avac_qgis.core.preprocessing import AvacRaster, write_init_binary  # noqa: E402
 from avac_qgis.core.run_project import (  # noqa: E402
     prepare_isolated_runtime_run,
     read_run_metadata,
@@ -114,6 +115,32 @@ LOCAL_CARTESIAN_CRS_WKT = (
 )
 
 
+def fixed_grid_output_frame_count(simulation_end_s: float, output_interval_s: float) -> int:
+    """Return an exact valid ISeeSnow fixed-grid frame count.
+
+    GeoClaw accepts a final time and a number of frames, not an independent
+    output interval.  Rounding a nonintegral ratio would silently change the
+    requested cadence, so validation runs require an exact whole number of
+    intervals and at least two frames for the fixed-grid machinery.
+    """
+    simulation_end_s = float(simulation_end_s)
+    output_interval_s = float(output_interval_s)
+    if not np.isfinite(simulation_end_s) or not np.isfinite(output_interval_s) or simulation_end_s <= 0.0 or output_interval_s <= 0.0:
+        raise ValueError("Simulation end time and output interval must be positive finite values.")
+    ratio = simulation_end_s / output_interval_s
+    rounded = round(ratio)
+    if not np.isclose(ratio, rounded, rtol=1.0e-10, atol=1.0e-10):
+        raise ValueError(
+            "ISeeSnow simulation end time must be an exact multiple of the fixed-grid output interval."
+        )
+    if rounded < 2:
+        raise ValueError(
+            "ISeeSnow validation needs at least two fixed-grid output frames; "
+            "increase --simulation-end or decrease --output-interval."
+        )
+    return int(rounded)
+
+
 def plugin_version() -> str:
     for line in (PLUGIN_ROOT / "metadata.txt").read_text(encoding="utf-8").splitlines():
         if line.startswith("version="):
@@ -121,14 +148,22 @@ def plugin_version() -> str:
     raise RuntimeError("AVAC4QGIS metadata has no version entry.")
 
 
+@cache
 def current_source_solver() -> Path:
-    """Return the locally compiled AVAC executable under validation.
+    """Build the current AVAC source once, then return its executable.
 
-    Validation must follow the current source tree, which may be newer than
-    the last packaged plugin archive.  The exact executable hash is retained
-    in every result rather than silently substituting an installed runtime.
+    An existing ``xgeoclaw`` may pre-date an edit to the AVAC or GeoClaw
+    sources.  ISeeSnow is a release-validation workflow, so it must not use
+    that stale binary merely because it happens to exist.  ``build_solver``
+    deliberately invokes the forced executable target, rebuilding the source
+    tree once for this driver process.  The cache avoids rebuilding separately
+    for each case in an ``--case all`` invocation.
     """
-    return solver_executable("avac").resolve()
+    source = build_solver("avac").resolve()
+    executable = source / ("xgeoclaw.exe" if os.name == "nt" else "xgeoclaw")
+    if not executable.is_file():
+        raise RuntimeError(f"AVAC build completed without its solver executable: {executable}")
+    return executable
 
 
 @dataclass(frozen=True)
@@ -217,13 +252,13 @@ def read_polygon_rings(shapefile: Path) -> list[tuple[np.ndarray, list[np.ndarra
 
 
 def benchmark_raster(dem: EsriGrid, *, crs_authid: str) -> AvacRaster:
-    """Create AVAC terrain nodes at the supplied ISeeSnow raster centres.
+    """Create an AVAC cell-centred terrain grid from an ISeeSnow raster.
 
-    AVAC's topotype-3 reader interprets the header's lower-left *corner* as
-    the corner of a terrain pixel and its samples as terrain nodes. The
-    benchmark ASCII headers, in contrast, give cell centres. Keeping the
-    terrain samples at those centres and retaining the half-cell lower/left
-    corner makes the fixed grid capable of matching the benchmark exactly.
+    ISeeSnow ASCII headers locate values at cell centres.  AVAC keeps the
+    same centre coordinates in :class:`AvacRaster`, while its topotype-3
+    header records the outer cell edges; GeoClaw converts those edges back to
+    centres on read.  This common registration makes the terrain, qinit and
+    fixed-result grids coincide exactly with the benchmark cells.
     """
     xmin = dem.xllcenter - dem.cellsize / 2.0
     ymin = dem.yllcenter - dem.cellsize / 2.0
@@ -307,6 +342,24 @@ def normal_depth_to_vertical(dem: EsriGrid, coverage_south_to_north: np.ndarray)
     return vertical_depth, cos_slope
 
 
+def write_iseesnow_initial_condition(
+    path: Path,
+    raster: AvacRaster,
+    dem: EsriGrid,
+    coverage_south_to_north: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Write the ISeeSnow depth conversion in AVAC's active qinit format.
+
+    The normal-depth conversion is validation-specific, but the transport
+    format must remain the plugin's binary ``init.avacbin`` contract.  Keeping
+    the two actions together prevents a caller from accidentally overwriting
+    the prepared binary file with a legacy text grid.
+    """
+    vertical_depth, cosine_slope = normal_depth_to_vertical(dem, coverage_south_to_north)
+    write_init_binary(path, raster, vertical_depth)
+    return vertical_depth, cosine_slope
+
+
 def normal_peak_thickness(
     peak_depth_south_to_north: np.ndarray,
     initial_vertical_depth_south_to_north: np.ndarray,
@@ -348,13 +401,14 @@ def configure_template(
     refinement_levels: int = 1,
 ) -> Path:
     specification = CASE_SPECIFICATIONS[case_name]
+    output_frames = fixed_grid_output_frame_count(simulation_end_s, output_interval_s)
     template = yaml.safe_load((PLUGIN_ROOT / "resources" / "AVAC_configuration100.yaml").read_text(encoding="utf-8"))
     template["computation"].update({
         "cell_size": CELL_SIZE_M, "refinement": int(refinement_levels), "t_max": simulation_end_s,
-        "nb_simul": int(round(simulation_end_s / output_interval_s)), "boundary": "extrap",
+        "nb_simul": output_frames, "boundary": "extrap",
         "limiter": limiter, "cfl_target": cfl_target,
     })
-    template["animation"]["n_out"] = int(round(simulation_end_s / output_interval_s))
+    template["animation"]["n_out"] = output_frames
     template["output"].update({"delta_t": output_interval_s, "output_format": "binary32", "verbosity": 0})
     template["release"].update({
         "d0": NORMAL_RELEASE_THICKNESS_M, "correction_slope": False,
@@ -830,8 +884,9 @@ def run_case(
     )
     set_benchmark_computational_extent(prepared.configuration_path, dem)
     enable_validation_gauge(prepared.configuration_path, diagnostic_gauge)
-    vertical_depth, cosine_slope = normal_depth_to_vertical(dem, prepared.coverage)
-    write_init_xyz(prepared.init_path, raster, vertical_depth)
+    vertical_depth, cosine_slope = write_iseesnow_initial_condition(
+        prepared.init_path, raster, dem, prepared.coverage,
+    )
     write_esri_ascii(
         case_root / "initial_depth_normal.asc",
         dem,
@@ -980,14 +1035,14 @@ def main() -> None:
         return
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
-    if args.simulation_end <= 0 or args.output_interval <= 0:
-        raise SystemExit("--simulation-end and --output-interval must be positive")
+    try:
+        fixed_grid_output_frame_count(args.simulation_end, args.output_interval)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if not 0 < args.cfl_target <= 1:
         raise SystemExit("--cfl-target must lie in (0, 1]")
     if args.refinement_ratio < 2:
         raise SystemExit("--refinement-ratio must be at least two")
-    if args.simulation_end / args.output_interval < 1:
-        raise SystemExit("--simulation-end must span at least one output interval")
     cases = list(CASE_SPECIFICATIONS) if args.case == "all" else [args.case]
     diagnostic_gauge = tuple(args.diagnostic_gauge) if args.diagnostic_gauge else None
     ensure_plugin_case_configurations(cases)

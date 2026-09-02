@@ -1,24 +1,32 @@
-"""Materialize a reference using the standalone GUI's current preprocessing code.
+"""Materialize a QGIS-independent oracle for the current preprocessing path.
 
-This is a dependency-light transcription of the relevant functions because the
-standalone GUI imports PyQt6, while the verified AVAC Conda environment does
-not.  Algorithmic statements and formatting intentionally match the source.
+The reference deliberately uses the same pure fractional-release routines as
+the plugin.  Its purpose is to compare QGIS raster/geometry ingestion and file
+formatting, not to preserve the obsolete centre-point Boolean release mask.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import yaml
-from matplotlib.path import Path as MplPath
+
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from avac_qgis.core.preprocessing import (  # noqa: E402
+    AvacRaster,
+    initial_depth_from_release,
+    release_coverage_from_rings,
+)
 
 
 CASE = Path("/Users/cmgotelli/Downloads/Lac_Clusaz")
-ROOT = Path(os.environ["AVAC_GUI_REFERENCE_ROOT"])
-CONFIGURATION = Path(os.environ.get("AVAC_QGIS_CANONICAL_CONFIGURATION", CASE / "AVAC" / "AVAC_configuration300.yaml"))
 
 
 def read_ascii_raster(path: Path):
@@ -35,38 +43,32 @@ def read_ascii_raster(path: Path):
     ncols, nrows, cell = int(meta["ncols"]), int(meta["nrows"]), meta["cellsize"]
     xmin, ymin = meta["xllcorner"], meta["yllcorner"]
     xmax, ymax = xmin + ncols * cell, ymin + nrows * cell
-    return np.linspace(xmin, xmax, ncols), np.linspace(ymin, ymax, nrows), grid[::-1, :], {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax, "ncols": ncols, "nrows": nrows, "cellsize": cell, "nodata_value": nodata}
+    # ESRI ``xllcorner``/``yllcorner`` values are outer cell edges.  AVAC
+    # terrain and qinit both consume cell-centred samples, so use the same
+    # centre coordinates as the QGIS preprocessing path.
+    x = xmin + (np.arange(ncols, dtype=float) + .5) * cell
+    y = ymin + (np.arange(nrows, dtype=float) + .5) * cell
+    return x, y, grid[::-1, :], {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax, "ncols": ncols, "nrows": nrows, "cellsize": cell, "nodata_value": nodata}
 
 
-def mask(frame, x, y):
-    xx, yy = np.meshgrid(x, y)
-    points = np.column_stack((xx.ravel(), yy.ravel()))
-    inside_any = np.zeros(points.shape[0], dtype=bool)
+def rings_from_geodataframe(frame):
+    """Convert GeoPandas Polygon/MultiPolygon values to preprocessing rings."""
+    rings = []
     for geom in frame.geometry:
         polygons = [geom] if geom.geom_type == "Polygon" else list(geom.geoms) if geom.geom_type == "MultiPolygon" else []
         for poly in polygons:
-            # Matplotlib's planar predicate needs X/Y.  The canonical ZA has
-            # a third (Z) coordinate, which carries no release-area meaning.
-            inside = MplPath(np.asarray(poly.exterior.coords)[:, :2]).contains_points(points)
-            for interior in poly.interiors:
-                inside &= ~MplPath(np.asarray(interior.coords)[:, :2]).contains_points(points)
-            inside_any |= inside
-    return inside_any.reshape((y.size, x.size))
+            exterior = np.asarray(poly.exterior.coords, dtype=float)[:, :2]
+            holes = [np.asarray(interior.coords, dtype=float)[:, :2] for interior in poly.interiors]
+            if exterior.shape[0] >= 3:
+                rings.append((exterior, holes))
+    return rings
 
 
-def initial_depth(z, zone_mask, metadata, release):
-    depth = np.zeros_like(z, dtype=float)
-    d0, z_ref = float(release["d0"]), float(release["z_ref"])
-    gradient_hypso, theta_cr, nu = float(release["gradient_hypso"]), float(release["theta_cr"]), float(release["nu"])
-    valid = np.isfinite(z); z_fill = np.nan_to_num(z, nan=float(np.nanmean(z[valid])))
-    grad_y, grad_x = np.gradient(z_fill, float(metadata["cellsize"])); slope = np.sqrt(grad_x * grad_x + grad_y * grad_y)
-    q_angle = np.arctan(slope); denominator = np.sin(q_angle) - nu * np.cos(q_angle)
-    factor1 = np.zeros_like(slope); safe = (q_angle > np.deg2rad(25.0)) & (np.abs(denominator) > 1e-12)
-    factor1[safe] = (np.sin(np.deg2rad(theta_cr)) - nu * np.cos(np.deg2rad(theta_cr))) / denominator[safe]
-    factor2 = (z - z_ref) * gradient_hypso / 100.0
-    depth[zone_mask] = ((d0 + factor2) * factor1)[zone_mask]
-    depth[~np.isfinite(depth)] = 0.0
-    return depth
+def fractional_release_fields(x, y, z, metadata, rings, release):
+    """Return the exact current-plugin coverage and depth fields."""
+    raster = AvacRaster(x, y, z, metadata, "", 1)
+    coverage = release_coverage_from_rings(rings, x, y, float(metadata["cellsize"]))
+    return coverage, initial_depth_from_release(raster, coverage, release)
 
 
 def write_topography(path, z, metadata):
@@ -83,14 +85,29 @@ def write_init(path, x, y, depth):
                 handle.write(f"{xv:.12g} {y[j]:.12g} {float(depth[j, i]) if np.isfinite(depth[j, i]) else 0.0:.12g}\n")
 
 
-ROOT.mkdir(parents=True, exist_ok=False)
-x, y, z, metadata = read_ascii_raster(CASE / "Topo" / "topo1m_simple.asc")
-polygons = gpd.read_file(CASE / "Topo" / "ZA.shp")
-release = yaml.safe_load(CONFIGURATION.read_text(encoding="utf-8"))["release"]
-zone_mask = mask(polygons, x, y)
-depth = initial_depth(z, zone_mask, metadata, release)
-write_topography(ROOT / "topography.asc", z, metadata)
-write_init(ROOT / "init.xyz", x, y, depth)
-np.save(ROOT / "mask.npy", zone_mask)
-np.save(ROOT / "depth.npy", depth)
-print(f"REFERENCE_PREPROCESS configuration={CONFIGURATION.name} cells={int(zone_mask.sum())} nonzero={int(np.count_nonzero(depth))} min={depth.min():.12g} max={depth.max():.12g} sum={depth.sum():.12g}")
+def main() -> None:
+    root = Path(os.environ["AVAC_GUI_REFERENCE_ROOT"])
+    configuration = Path(os.environ.get(
+        "AVAC_QGIS_CANONICAL_CONFIGURATION", CASE / "AVAC" / "AVAC_configuration300.yaml",
+    ))
+    root.mkdir(parents=True, exist_ok=False)
+    x, y, z, metadata = read_ascii_raster(CASE / "Topo" / "topo1m_simple.asc")
+    release = yaml.safe_load(configuration.read_text(encoding="utf-8"))["release"]
+    coverage, depth = fractional_release_fields(
+        x, y, z, metadata, rings_from_geodataframe(gpd.read_file(CASE / "Topo" / "ZA.shp")), release,
+    )
+    mask = coverage > 0.0
+    write_topography(root / "topography.asc", z, metadata)
+    write_init(root / "init.xyz", x, y, depth)
+    np.save(root / "coverage.npy", coverage)
+    np.save(root / "mask.npy", mask)
+    np.save(root / "depth.npy", depth)
+    print(
+        f"REFERENCE_PREPROCESS configuration={configuration.name} covered_cells={int(mask.sum())} "
+        f"fractional_equivalent_cells={coverage.sum():.12g} nonzero={int(np.count_nonzero(depth))} "
+        f"min={depth.min():.12g} max={depth.max():.12g} sum={depth.sum():.12g}"
+    )
+
+
+if __name__ == "__main__":
+    main()

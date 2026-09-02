@@ -133,6 +133,13 @@ contains
         real(kind=8) :: xim,x,xip,yjm,y,yjp,dq
         real(kind=8) :: x_source_low,x_source_high
         real(kind=8) :: y_source_low,y_source_high
+
+        ! AVAC reserves aux(2) for a dynamic two-dimensional static-yield
+        ! marker.  b4step2 refreshes it before the first solve; use the
+        ! conservative invalid sentinel in t=0 output instead of leaving the
+        ! newly allocated field undefined.  This module is AVAC's Cartesian
+        ! qinit replacement, so aux(2) is not GeoClaw's spherical capacity.
+        if (maux >= 2 .and. coordinate_system == 1) aux(2,:,:) = -1.d0
         
         if (qinit_type > 0) then
             do i=1-mbc,mx+mbc

@@ -49,9 +49,20 @@ def complete(dock) -> None:
     with binary.open("rb") as handle:
         header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
         binary_values = np.fromfile(handle, dtype="<f8")
+    # The text qinit is ordered north-to-south and west-to-east. Read only
+    # the few coordinates needed for the binary-header registration check;
+    # this reference can contain millions of rows.
+    reference_first = np.loadtxt(REFERENCE / "init.xyz", usecols=(0, 1), max_rows=2)
+    reference_next_row_y = float(np.loadtxt(
+        REFERENCE / "init.xyz", usecols=1, skiprows=int(header[1]), max_rows=1,
+    ))
     reference_values = np.loadtxt(REFERENCE / "init.xyz", usecols=2)
     assert header[0] == QINIT_BINARY_MAGIC
     assert binary_values.size == header[1] * header[2]
+    assert np.isclose(header[5], reference_first[0, 0])
+    assert np.isclose(header[6], reference_first[0, 1])
+    assert np.isclose(header[7], reference_first[1, 0] - reference_first[0, 0])
+    assert np.isclose(header[8], reference_first[0, 1] - reference_next_row_y)
     assert np.array_equal(binary_values, reference_values)
     assert (ROOT / ".avac_qgis_run.json").is_file()
     assert dock.run_prepared_button.isEnabled()
