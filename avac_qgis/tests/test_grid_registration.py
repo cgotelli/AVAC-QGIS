@@ -3,19 +3,30 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import numpy as np
+import pytest
+import yaml
 
 from avac_qgis.core.preprocessing import (
+    AvacRaster,
     QINIT_BINARY_HEADER,
     QINIT_BINARY_MAGIC,
+    configuration_for_raster,
+    geoclaw_overlay_topography,
+    geoclaw_topography_halo,
+    prepare_inputs,
     raster_from_qgis_layer,
     read_avac_topography,
     release_coverage_from_rings,
     write_init_binary,
     write_topography,
 )
+
+
+TEMPLATE = Path(__file__).resolve().parents[1] / "resources" / "AVAC_configuration100.yaml"
 
 
 class _Extent:
@@ -134,6 +145,33 @@ def _install_fake_qgis(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "qgis.core", core)
 
 
+def _registered_raster(
+    ncols: int = 4,
+    nrows: int = 4,
+    cell_size: float = 1.0,
+) -> AvacRaster:
+    """Small QGIS-style raster with physical edges and centre coordinates."""
+    xmin, ymin = 0.0, 0.0
+    xmax, ymax = ncols * cell_size, nrows * cell_size
+    return AvacRaster(
+        xmin + (np.arange(ncols, dtype=float) + 0.5) * cell_size,
+        ymin + (np.arange(nrows, dtype=float) + 0.5) * cell_size,
+        np.arange(nrows * ncols, dtype=float).reshape((nrows, ncols)),
+        {
+            "xmin": xmin,
+            "xmax": xmax,
+            "ymin": ymin,
+            "ymax": ymax,
+            "ncols": ncols,
+            "nrows": nrows,
+            "cellsize": cell_size,
+            "nodata_value": -9999.0,
+        },
+        "EPSG:2056",
+        1,
+    )
+
+
 def test_qgis_cells_release_topography_and_qinit_share_one_registration(tmp_path, monkeypatch) -> None:
     """A provider's edge extent must become centre axes everywhere downstream."""
     _install_fake_qgis(monkeypatch)
@@ -183,6 +221,203 @@ def test_qgis_cells_release_topography_and_qinit_share_one_registration(tmp_path
     assert (magic, ncols, nrows, components, dx, dy) == (QINIT_BINARY_MAGIC, 5, 4, 1, 2.0, 2.0)
     assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (100.0, 110.0)
     assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (200.0, 208.0)
+
+
+def test_full_qgis_domain_has_geoclaw_terrain_support_without_qinit_padding(tmp_path) -> None:
+    """The former upper/right loss is fixed without moving the QGIS grid."""
+    raster = _registered_raster()
+    configuration = configuration_for_raster(
+        {"computation": {"cell_size": 2.0}, "dem_extent": {}, "gauges": {}}, raster,
+    )
+    extent = configuration["dem_extent"]
+    assert extent == {
+        "xmin": 0.0,
+        "xmax": 4.0,
+        "ymin": 0.0,
+        "ymax": 4.0,
+        "nbx": 2,
+        "nby": 2,
+        "cell_size": 2.0,
+        "nodata_value": -9999.0,
+    }
+
+    halo = geoclaw_topography_halo(raster)
+    assert halo.z.shape == (6, 6)
+    assert np.array_equal(halo.z, np.pad(raster.z, ((1, 1), (1, 1)), mode="edge"))
+    assert np.array_equal(halo.x, np.array([-.5, .5, 1.5, 2.5, 3.5, 4.5]))
+    assert np.array_equal(halo.y, np.array([-.5, .5, 1.5, 2.5, 3.5, 4.5]))
+    assert halo.metadata["xmin"] == -1.0 and halo.metadata["xmax"] == 5.0
+    assert halo.metadata["ymin"] == -1.0 and halo.metadata["ymax"] == 5.0
+
+    topography = tmp_path / "topography.asc"
+    write_topography(topography, halo)
+    restored = read_avac_topography(topography, raster.crs_authid)
+    assert np.array_equal(restored.x, halo.x)
+    assert np.array_equal(restored.y, halo.y)
+    # GeoClaw treats these positions as interpolation nodes.  They bracket
+    # every solver edge, unlike the unpadded QGIS cell centres.
+    assert restored.x[0] < extent["xmin"] < extent["xmax"] < restored.x[-1]
+    assert restored.y[0] < extent["ymin"] < extent["ymax"] < restored.y[-1]
+
+    # qinit deliberately remains the original 4-by-4 cell grid; the terrain
+    # support halo is not a source of initialized mass.
+    qinit = tmp_path / "init.avacbin"
+    write_init_binary(qinit, raster, np.ones_like(raster.z))
+    with qinit.open("rb") as handle:
+        header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+    _magic, ncols, nrows, _components, _flags, xlow, yhigh, dx, dy = header
+    assert (ncols, nrows) == (4, 4)
+    assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (0.0, 4.0)
+    assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (0.0, 4.0)
+
+
+def test_prepare_inputs_retains_a_release_in_the_former_top_right_loss_cell(tmp_path) -> None:
+    raster = _registered_raster()
+    # This cell was outside the old [0, 2] x [0, 2] solver configuration.
+    upper_right = np.array([
+        [3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0], [3.0, 3.0],
+    ])
+    release = {
+        "d0": 1.0,
+        "z_ref": 0.0,
+        "gradient_hypso": 0.0,
+        "theta_cr": 30.0,
+        "nu": 0.2,
+        "correction_elevation": False,
+        "correction_slope": False,
+    }
+    prepared = prepare_inputs(tmp_path / "run", raster, [(upper_right, [])], TEMPLATE, release)
+
+    assert prepared.coverage[-1, -1] == pytest.approx(1.0)
+    assert prepared.depth[-1, -1] == pytest.approx(1.0)
+    assert np.count_nonzero(prepared.depth) == 1
+
+    generated = yaml.safe_load(prepared.configuration_path.read_text(encoding="utf-8"))
+    assert generated["dem_extent"]["xmin"] == 0.0
+    assert generated["dem_extent"]["xmax"] == 4.0
+    assert generated["dem_extent"]["ymin"] == 0.0
+    assert generated["dem_extent"]["ymax"] == 4.0
+
+    terrain = read_avac_topography(prepared.topo_path, raster.crs_authid)
+    assert terrain.z.shape == (6, 6)
+    assert terrain.x[0] < 0.0 < 4.0 < terrain.x[-1]
+    assert terrain.y[0] < 0.0 < 4.0 < terrain.y[-1]
+
+    with prepared.init_path.open("rb") as handle:
+        header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+        payload = np.fromfile(handle, dtype="<f8").reshape((4, 4))
+    _magic, ncols, nrows, _components, _flags, xlow, yhigh, dx, dy = header
+    assert (ncols, nrows) == (4, 4)
+    assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (0.0, 4.0)
+    assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (0.0, 4.0)
+    # qinit is north-to-south, so the source grid's north-east cell is [0, -1].
+    assert payload[0, -1] == pytest.approx(1.0)
+    assert np.count_nonzero(payload) == 1
+
+
+def test_fine_overlay_closes_geoclaw_node_support_at_the_qgis_footprint(tmp_path) -> None:
+    """A fine topofile must not override coarse terrain outside its DEM."""
+    fine = AvacRaster(
+        np.array([1.5, 2.5]),
+        np.array([11.5, 12.5]),
+        np.array([[1.0, 3.0], [5.0, 7.0]]),
+        {
+            "xmin": 1.0, "xmax": 3.0, "ymin": 11.0, "ymax": 13.0,
+            "ncols": 2, "nrows": 2, "cellsize": 1.0, "nodata_value": -9999.0,
+        },
+        "EPSG:2056",
+        1,
+    )
+    overlay = geoclaw_overlay_topography(fine)
+
+    # Topotype-3 shifts the stored lower corner by half its 0.5 m spacing,
+    # hence the nodes themselves span exactly the QGIS outer edges [1, 3]
+    # rather than an extrapolated half-cell fringe.
+    assert np.array_equal(overlay.x, np.array([1.0, 1.5, 2.0, 2.5, 3.0]))
+    assert np.array_equal(overlay.y, np.array([11.0, 11.5, 12.0, 12.5, 13.0]))
+    assert overlay.metadata["xmin"] == pytest.approx(0.75)
+    assert overlay.metadata["xmax"] == pytest.approx(3.25)
+    np.testing.assert_allclose(
+        overlay.z,
+        np.array([
+            [1.0, 1.0, 2.0, 3.0, 3.0],
+            [1.0, 1.0, 2.0, 3.0, 3.0],
+            [3.0, 3.0, 4.0, 5.0, 5.0],
+            [5.0, 5.0, 6.0, 7.0, 7.0],
+            [5.0, 5.0, 6.0, 7.0, 7.0],
+        ]),
+    )
+
+    path = tmp_path / "fine_topography.asc"
+    write_topography(path, overlay)
+    restored = read_avac_topography(path, fine.crs_authid)
+    assert np.array_equal(restored.x, overlay.x)
+    assert np.array_equal(restored.y, overlay.y)
+    np.testing.assert_allclose(restored.z, overlay.z)
+
+
+def test_prepare_inputs_keeps_fine_raster_bounds_with_closed_terrain_support(tmp_path) -> None:
+    main = _registered_raster()
+    fine = _registered_raster(8, 8, 0.5)
+    release = {
+        "d0": 1.0,
+        "z_ref": 0.0,
+        "gradient_hypso": 0.0,
+        "theta_cr": 30.0,
+        "nu": 0.2,
+        "correction_elevation": False,
+        "correction_slope": False,
+    }
+    ring = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]])
+    prepared = prepare_inputs(tmp_path / "run", main, [(ring, [])], TEMPLATE, release, fine_raster=fine)
+
+    generated = yaml.safe_load(prepared.configuration_path.read_text(encoding="utf-8"))
+    fine_dict = generated["refinement"]["fine_dict"]
+    assert fine_dict["xmin"] == 0.0 and fine_dict["xmax"] == 4.0
+    assert fine_dict["ymin"] == 0.0 and fine_dict["ymax"] == 4.0
+    assert (fine_dict["nbx"], fine_dict["nby"], fine_dict["cell_size"]) == (8, 8, 0.5)
+
+    fine_terrain = read_avac_topography(tmp_path / "run" / "Topo" / "fine_topography.asc", main.crs_authid)
+    # The half-spaced nodes reach, but never extend beyond, the fine QGIS
+    # footprint. This avoids an edge-padded fine terrain replacing the main
+    # DEM in a strip outside [0, 4] by [0, 4].
+    assert fine_terrain.z.shape == (17, 17)
+    assert np.isclose(fine_terrain.x[0], 0.0) and np.isclose(fine_terrain.x[-1], 4.0)
+    assert np.isclose(fine_terrain.y[0], 0.0) and np.isclose(fine_terrain.y[-1], 4.0)
+    assert fine_terrain.metadata["xmin"] == -0.125 and fine_terrain.metadata["xmax"] == 4.125
+    assert fine_terrain.metadata["ymin"] == -0.125 and fine_terrain.metadata["ymax"] == 4.125
+
+
+def test_nondivisible_qgis_extent_is_rejected_instead_of_cropping_or_padding() -> None:
+    with pytest.raises(ValueError, match="must each be divisible"):
+        configuration_for_raster(
+            {"computation": {"cell_size": 2.0}, "dem_extent": {}, "gauges": {}},
+            _registered_raster(5, 4),
+        )
+
+
+def test_metadata_extent_uses_the_same_integer_grid_tolerance_as_setrun() -> None:
+    """Preparation must not emit a domain the backend then rejects."""
+    metadata = {
+        "xmin": 0.0,
+        # A former span-scaled tolerance accepted this 0.1 mm inconsistency
+        # for a 100 km grid, but the backend correctly sees 50000.00005
+        # two-metre cells rather than an integer number of cells.
+        "xmax": 100000.0001,
+        "ymin": 0.0,
+        "ymax": 2.0,
+        "ncols": 100000,
+        "nrows": 2,
+        "cellsize": 1.0,
+        "nodata_value": -9999.0,
+    }
+    malformed = AvacRaster(
+        np.empty(0), np.empty(0), np.empty((0, 0)), metadata, "EPSG:2056", 1,
+    )
+    with pytest.raises(ValueError, match="do not describe one regular"):
+        configuration_for_raster(
+            {"computation": {"cell_size": 2.0}, "dem_extent": {}, "gauges": {}}, malformed,
+        )
 
 
 def test_qgis_explicit_grid_size_uses_n_cells_not_n_plus_one_samples(monkeypatch) -> None:

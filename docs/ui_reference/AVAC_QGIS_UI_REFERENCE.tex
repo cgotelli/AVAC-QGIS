@@ -180,7 +180,15 @@ prepare again before executing it.
         first raster band must have a valid CRS, finite usable cells, and square
         pixels. The selected DEM extent defines the rectangular AVAC
         calculation domain. The terrain resolution must equal or evenly
-        subdivide the chosen computational cell size.
+        subdivide the chosen computational cell size, and the selected DEM
+        dimensions must be divisible by the corresponding number of DEM cells
+        per computational cell. AVAC4QGIS rejects an incompatible extent
+        rather than silently cropping release cells or extending the solver
+        domain. Internally it writes one replicated edge-sample halo for
+        GeoClaw terrain interpolation only; this does not add release or qinit
+        cells. If the optional fine-DEM backend is enabled programmatically,
+        its local terrain file uses a closed node envelope at the selected fine
+        DEM edges, so it cannot replace the base terrain outside that footprint.
   \item \control{Release polygon layer} selects polygon or multipolygon
         features defining the initially mobile release area. Geometries are
         transformed to the DEM CRS during preparation when needed. At least one
@@ -221,8 +229,11 @@ snow-surface product equals the DEM.
 \end{itemize}
 
 The initial-depth preview should be inspected when corrections are active.
-The code replaces nonfinite corrected values with zero, but does not silently
-substitute a different scientific correction model.
+AVAC4QGIS rejects non-finite release controls, a release polygon over a
+non-finite DEM cell, and any correction that produces a negative or non-finite
+candidate depth. It does not silently replace those values with zero: revise
+the release depth, reference elevation, hypsometric gradient, or slope
+correction before preparing the run.
 
 \uiscreenshot{ui_avac_parameters_release.png}{AVAC Parameters with Release / initial conditions open.}
 

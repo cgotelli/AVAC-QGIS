@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 import numpy as np
@@ -22,6 +22,68 @@ PARAMETER_PATHS = (
     "output.output_format", "output.delta_t", "output.verbosity",
     "animation.variable", "animation.n_out",
 )
+
+
+# These defaults are the established AVAC initial-condition defaults.  Keep
+# them in the configuration layer as well as using them during preprocessing,
+# so a preview, a prepared qinit file, and a saved complete configuration all
+# enforce the same physical input contract.
+RELEASE_DEPTH_DEFAULTS: dict[str, float | bool] = {
+    "d0": 0.0,
+    "z_ref": 0.0,
+    "gradient_hypso": 0.0,
+    "theta_cr": 30.0,
+    "nu": 0.2,
+    "correction_elevation": False,
+    "correction_slope": False,
+}
+
+
+def validate_release_depth_parameters(release: Mapping[str, Any]) -> list[str]:
+    """Return errors for parameters that define AVAC's initial mobile depth.
+
+    This deliberately validates the numeric inputs before any terrain-based
+    correction is evaluated.  A comparison with ``NaN`` is false in Python,
+    so checking only inequalities would otherwise let non-finite values reach
+    qinit preparation and be silently converted to zero downstream.
+
+    The preprocessing layer is not a second, hidden calibration interface:
+    finite elevation, slope, and hypsometric controls are accepted, while the
+    resulting terrain-dependent candidate is checked separately.  Only
+    ``d0`` has a direct physical sign constraint because it is a thickness
+    before any correction is applied.
+    """
+    if not isinstance(release, Mapping):
+        return ["Release parameters must be a mapping."]
+
+    issues: list[str] = []
+    numeric_controls = {
+        "d0": "Release d0",
+        "z_ref": "Release reference elevation",
+        "gradient_hypso": "Hypsometric gradient",
+        "theta_cr": "Critical slope",
+        "nu": "Slope correction ν",
+    }
+    for key, label in numeric_controls.items():
+        value = release.get(key, RELEASE_DEPTH_DEFAULTS[key])
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            issues.append(f"{label} must be a finite number.")
+            continue
+        if not np.isfinite(number):
+            issues.append(f"{label} must be a finite number.")
+        elif key == "d0" and number < 0.0:
+            issues.append("Release d0 must be non-negative.")
+
+    for key, label in (
+        ("correction_elevation", "Elevation correction"),
+        ("correction_slope", "Slope correction"),
+    ):
+        value = release.get(key, RELEASE_DEPTH_DEFAULTS[key])
+        if not isinstance(value, (bool, np.bool_)):
+            issues.append(f"{label} must be true or false.")
+    return issues
 
 
 def load_complete_configuration(path: str | Path) -> dict[str, Any]:
@@ -78,8 +140,15 @@ def validate_controlled_values(values: dict[str, Any]) -> list[str]:
     """Only enforce constraints established by the standalone controls/code."""
     issues: list[str] = []
     try:
-        if float(values["release.d0"]) < 0:
-            issues.append("Release d0 must be non-negative.")
+        issues.extend(validate_release_depth_parameters({
+            "d0": values["release.d0"],
+            "z_ref": values["release.z_ref"],
+            "gradient_hypso": values["release.gradient_hypso"],
+            "theta_cr": values["release.theta_cr"],
+            "nu": values["release.nu"],
+            "correction_elevation": values["release.correction_elevation"],
+            "correction_slope": values["release.correction_slope"],
+        }))
         # This is scenario metadata supplied by the user, not a value AVAC-QGIS
         # derives from the terrain, release field, or model results.  The
         # historical complete configuration schema expresses it as a positive
@@ -112,7 +181,7 @@ def validate_controlled_values(values: dict[str, Any]) -> list[str]:
             issues.append("Rheology μ and ξ values must be positive.")
         if any(float(item) < 0 for item in cohesion):
             issues.append("Rheology cohesion values must be non-negative.")
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         issues.append(f"Invalid parameter value: {exc}")
     return issues
 
@@ -138,6 +207,10 @@ def validate_grid_contract(configuration: dict[str, Any], source_cell_size: floa
                 issues.append(
                     f"Computational {axis}-domain span must be a whole number of {cell_size:g} m cells. "
                     "Choose a compatible computational cell size or domain template."
+                )
+            elif int(round(cells)) < 2:
+                issues.append(
+                    f"Computational {axis}-domain needs at least two cells for GeoClaw FGmax and QGIS raster results."
                 )
         if source_cell_size is not None:
             source = float(source_cell_size)

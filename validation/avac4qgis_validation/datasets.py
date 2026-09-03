@@ -22,7 +22,6 @@ ISEESNOW_REQUIRED_FILES = (
     "data/CoulombOnly/Inputs/release1HS.shp",
 )
 
-
 def iseesnow_dataset_complete(root: Path) -> bool:
     """Return whether *root* contains the pinned benchmark inputs and table."""
     return all((root / relative).is_file() for relative in ISEESNOW_REQUIRED_FILES)

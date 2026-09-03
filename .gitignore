@@ -97,3 +97,6 @@ to-do.md
 # Local recovery copies of regenerable validation outputs and development
 # experiments are never part of a reproducible source checkout.
 /Archive/
+
+# Native-build identity sidecars written by validation.runtime.
+/validation/.solver-build-stamps/

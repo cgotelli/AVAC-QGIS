@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 import sys
@@ -56,8 +57,9 @@ def release_rings(path: Path) -> list[np.ndarray]:
     return rings
 
 
-def main() -> None:
+def main(results_root: Path = REPO / "validation" / "ISeeSnow") -> None:
     apply_paper_style()
+    results_root = results_root.expanduser().resolve()
     cmap = LinearSegmentedColormap.from_list(
         "avac_terrain",
         ["#DDEBF7", "#B8D8C0", "#F4E4A6", "#F4B183", "#C77C6A"],
@@ -70,7 +72,7 @@ def main() -> None:
     provenance: dict[str, object] = {}
 
     for label, axis, (folder, dem_name, release_name, title, parameters) in zip("abc", axes, CASES):
-        inputs = REPO / "validation" / "ISeeSnow" / folder / "Inputs"
+        inputs = results_root / folder / "Inputs"
         x, y, elevation_north = read_ascii(inputs / dem_name)
         elevation = np.flipud(elevation_north)
         x0, y0 = float(x[0]), float(y[0])
@@ -140,4 +142,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--results-root",
+        type=Path,
+        default=REPO / "validation" / "ISeeSnow",
+        help="Directory containing the completed ISeeSnow case folders and their copied Inputs.",
+    )
+    main(parser.parse_args().results_root)

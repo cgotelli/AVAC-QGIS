@@ -35,6 +35,8 @@ SOURCE_ROOTS = {
     "avac": WORKSPACE / "avac-main" / "src" / "AVAC",
     "wave": WORKSPACE / "avac-main" / "src" / "WAVE",
 }
+BUILD_STAMP_ROOT = VALIDATION_ROOT / ".solver-build-stamps"
+_BUILD_INPUT_SUFFIXES = frozenset({".c", ".f", ".f90", ".f95", ".h", ".inc"})
 
 
 def _solver_executable(source: Path) -> Path:
@@ -59,8 +61,93 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _is_build_input(path: Path) -> bool:
+    """Whether a file can affect the native source build."""
+    name = path.name.lower()
+    return (
+        path.suffix.lower() in _BUILD_INPUT_SUFFIXES
+        or name.startswith("makefile")
+        or name == "config.mk"
+    )
+
+
+def solver_fingerprint(kind: str) -> str:
+    """Return a content hash of every source input used by a solver build.
+
+    ``make -B .exe`` recompiles the local AVAC/WAVE sources and the vendored
+    GeoClaw dependency tree.  Timestamp tests alone are insufficient here:
+    a
+    notebook can retain an executable built before an edit, and a restored
+    checkout can preserve file timestamps.  Hashing the small set of native
+    source and make inputs makes the executable provenance explicit.
+    """
+    if kind not in SOURCE_ROOTS:
+        raise ValueError(f"Unknown runtime kind: {kind}")
+
+    inputs: list[tuple[str, Path]] = []
+    for label, root in (("solver", SOURCE_ROOTS[kind]), ("clawpack", CLAWPACK_SOURCE)):
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and _is_build_input(path):
+                relative = path.relative_to(root).as_posix()
+                inputs.append((f"{label}/{relative}", path))
+
+    digest = hashlib.sha256()
+    for relative, path in sorted(inputs):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+    return digest.hexdigest()
+
+
+def _build_stamp_path(kind: str) -> Path:
+    return BUILD_STAMP_ROOT / f"{kind}.json"
+
+
+def _write_build_stamp(kind: str, executable: Path, compiler: str) -> None:
+    """Atomically record the source and executable identities after a build."""
+    stamp = _build_stamp_path(kind)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "format": 1,
+        "kind": kind,
+        "solver_fingerprint": solver_fingerprint(kind),
+        "executable_sha256": _sha256(executable),
+        "compiler": compiler,
+        "platform": sys.platform,
+    }
+    temporary = stamp.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(stamp)
+
+
+def _has_current_build(kind: str) -> bool:
+    """Return whether the executable exactly matches the current build inputs."""
+    source = SOURCE_ROOTS[kind]
+    executable = _solver_executable(source)
+    stamp = _build_stamp_path(kind)
+    if not executable.is_file() or not stamp.is_file():
+        return False
+    try:
+        payload = json.loads(stamp.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if payload.get("format") != 1 or payload.get("kind") != kind:
+        return False
+    return (
+        payload.get("solver_fingerprint") == solver_fingerprint(kind)
+        and payload.get("executable_sha256") == _sha256(executable)
+    )
+
+
 def build_solver(kind: str, cores: int | None = None) -> Path:
-    """Build one source solver when a clean checkout has no executable.
+    """Build one source solver and record its exact native-source identity.
 
     The repository deliberately excludes compiled binaries.  Validation
     notebooks therefore call this routine through :func:`runtime` on first
@@ -106,6 +193,7 @@ def build_solver(kind: str, cores: int | None = None) -> Path:
     executable = _solver_executable(source)
     if not executable.is_file():
         raise RuntimeError(f"The {kind.upper()} build completed without creating {executable}")
+    _write_build_stamp(kind, executable, compiler)
     return source
 
 
@@ -119,8 +207,7 @@ def runtime(kind: str) -> Path:
     if kind not in SOURCE_ROOTS:
         raise ValueError(f"Unknown runtime kind: {kind}")
     candidate = SOURCE_ROOTS[kind]
-    executable = _solver_executable(candidate)
-    if not executable.is_file():
+    if not _has_current_build(kind):
         return build_solver(kind)
     return candidate
 
@@ -291,7 +378,13 @@ def write_depth_xyz(path: Path, x: np.ndarray, y: np.ndarray, depth) -> None:
 
 
 def _activate_packaged_clawpack(source_root: Path) -> None:
-    """Prioritize the plugin's vendored Clawpack over a broken local editable install."""
+    """Expose this checkout and prioritize its vendored Clawpack package.
+
+    Validation notebooks install only ``avac4qgis_validation``.  Their driver
+    subprocesses run from case directories, so the repository root is not
+    otherwise guaranteed to be importable when a current ``setrun.py`` imports
+    the plugin's ``avac_qgis`` helpers.
+    """
     for name in tuple(sys.modules):
         if name == "clawpack" or name.startswith("clawpack."):
             del sys.modules[name]
@@ -299,6 +392,8 @@ def _activate_packaged_clawpack(source_root: Path) -> None:
         finder for finder in sys.meta_path
         if finder.__class__.__module__ != "_clawpack_editable_loader"
     ]
+    if str(WORKSPACE) not in sys.path:
+        sys.path.insert(0, str(WORKSPACE))
     if str(source_root) not in sys.path:
         sys.path.insert(0, str(source_root))
 

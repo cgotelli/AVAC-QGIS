@@ -33,6 +33,32 @@ with open(current_dir / "AVAC_configuration.yaml") as file:
     topo_source = Files['topo_source']
 topo_dir    = proj_dir / "Topo"
 
+
+def _whole_cell_count(lower, upper, cell_size, axis):
+    """Return an exact positive grid-cell count without truncating roundoff.
+
+    AVAC-QGIS validates the prepared domain before this backend runs, but the
+    YAML values are ordinary binary floats.  ``int(span / cell_size)`` can
+    truncate an otherwise valid value such as ``0.1 / 0.1`` to zero (or drop
+    a full cell from a larger real-world domain).  Round only after checking
+    that the ratio is genuinely integral, so hand-written invalid YAMLs also
+    fail explicitly rather than producing a different domain from the one
+    recorded in the configuration.
+    """
+    span = float(upper) - float(lower)
+    spacing = float(cell_size)
+    if not np.isfinite(span) or not np.isfinite(spacing) or spacing <= 0.0:
+        raise ValueError(f"AVAC {axis}-domain bounds and cell size must be finite, with positive spacing.")
+    raw_count = span / spacing
+    count = int(round(raw_count))
+    if span <= 0.0 or count < 1 or not np.isclose(raw_count, count, rtol=0.0, atol=1e-8):
+        raise ValueError(
+            f"AVAC {axis}-domain span {span:.12g} is not a whole number of "
+            f"{spacing:.12g} m computational cells."
+        )
+    return count
+
+
 #------------------------------
 def setrun(claw_pkg='geoclaw'):
 #------------------------------
@@ -92,8 +118,8 @@ def setrun(claw_pkg='geoclaw'):
 
         clawdata.lower[1] = DEM['ymin']
         clawdata.upper[1] = DEM['ymax']
-        ny = int((DEM['ymax']-DEM['ymin'])/Param['cell_size'])
-        nx = int((DEM['xmax']-DEM['xmin'])/Param['cell_size'])
+        nx = _whole_cell_count(DEM['xmin'], DEM['xmax'], Param['cell_size'], 'x')
+        ny = _whole_cell_count(DEM['ymin'], DEM['ymax'], Param['cell_size'], 'y')
         # Number of grid cells: Coarsest grid
         clawdata.num_cells[0] = nx
         clawdata.num_cells[1] = ny
@@ -106,12 +132,21 @@ def setrun(claw_pkg='geoclaw'):
         clawdata.lower[1] = Param['ylower']
         clawdata.upper[1] = Param['yupper']
         
-        nx = int((Param['xupper']-Param['xlower'])/Param['dx'])
-        ny = int((Param['yupper']-Param['ylower'])/Param['dy'])
+        nx = _whole_cell_count(Param['xlower'], Param['xupper'], Param['dx'], 'x')
+        ny = _whole_cell_count(Param['ylower'], Param['yupper'], Param['dy'], 'y')
         
         # Number of grid cells: Coarsest grid
         clawdata.num_cells[0] = nx
         clawdata.num_cells[1] = ny
+
+    # GeoClaw FGmax ``point_style = 2`` derives its spacing from n-1, and the
+    # QGIS reader needs two centres to reconstruct a raster envelope.  Fail
+    # before writing an invalid fixed-grid setup for hand-authored YAML too.
+    if nx < 2 or ny < 2:
+        raise ValueError(
+            "AVAC fixed-grid results require at least two computational cells "
+            "along both x and y."
+        )
     print(f"* computational domain x = [{clawdata.lower[0]:.2f}, {clawdata.upper[0]:.2f}] m, nx = {nx}")
     print(f"* computational domain y = [{clawdata.lower[1]:.2f}, {clawdata.upper[1]:.2f}] m, ny = {ny}")
 
@@ -396,15 +431,24 @@ def setrun(claw_pkg='geoclaw'):
     fg = fgmax_tools.FGmaxGrid()
     fg.point_style = 2  # uniform rectangular x-y grid
     if ResultGrid:
+        if int(ResultGrid['ncols']) < 2 or int(ResultGrid['nrows']) < 2:
+            raise ValueError(
+                "AVAC result_grid requires at least two centre samples along both x and y."
+            )
         fg.x1 = float(ResultGrid['xllcenter'])
         fg.x2 = fg.x1 + (int(ResultGrid['ncols']) - 1) * dx_fine
         fg.y1 = float(ResultGrid['yllcenter'])
         fg.y2 = fg.y1 + (int(ResultGrid['nrows']) - 1) * dy_fine
     else:
-        fg.x1 = clawdata.lower[0]
-        fg.x2 = clawdata.upper[0]
-        fg.y1 = clawdata.lower[1]
-        fg.y2 = clawdata.upper[1]
+        # Unlike FGout, GeoClaw FGmax ``point_style = 2`` interprets x1/x2
+        # and y1/y2 as its first and last *sample points*, inclusively.
+        # They must therefore be the finite-volume cell centres rather than
+        # the computational edges.  Passing edges produces N+1 samples and
+        # makes the QGIS maximum raster one cell wider than the AVAC domain.
+        fg.x1 = clawdata.lower[0] + dx_fine / 2.0
+        fg.x2 = clawdata.upper[0] - dx_fine / 2.0
+        fg.y1 = clawdata.lower[1] + dy_fine / 2.0
+        fg.y2 = clawdata.upper[1] - dy_fine / 2.0
     fg.dx = dx_fine
     fg.dy = dy_fine
     # A maximum-over-the-run product includes the initial release state.  In
@@ -428,13 +472,28 @@ def setrun(claw_pkg='geoclaw'):
     fgmax_grids.append(fg)    # written to fgmax_grids.data
 
     if use_zoom_output:
+        fine_nx = _whole_cell_count(
+            Refine['fine_dict']['xmin'], Refine['fine_dict']['xmax'],
+            Refine['fine_dict']['cell_size'], 'fine x',
+        )
+        fine_ny = _whole_cell_count(
+            Refine['fine_dict']['ymin'], Refine['fine_dict']['ymax'],
+            Refine['fine_dict']['cell_size'], 'fine y',
+        )
+        if fine_nx < 2 or fine_ny < 2:
+            raise ValueError(
+                "AVAC refined fixed-grid results require at least two cells along both x and y."
+            )
         fg_zoom = fgmax_tools.FGmaxGrid()
         fg_zoom.point_style = 2  # uniform rectangular x-y grid
-        fg_zoom.x1 = Refine['fine_dict']['xmin']
-        fg_zoom.x2 = Refine['fine_dict']['xmax']
-        fg_zoom.y1 = Refine['fine_dict']['ymin']
-        fg_zoom.y2 = Refine['fine_dict']['ymax']
         fg_zoom.dx = Refine['fine_dict']['cell_size']
+        fg_zoom.dy = fg_zoom.dx
+        # FGmax endpoints are sample centres (not cell edges); retain the
+        # fine QGIS footprint exactly when its samples are rasterized.
+        fg_zoom.x1 = Refine['fine_dict']['xmin'] + fg_zoom.dx / 2.0
+        fg_zoom.x2 = Refine['fine_dict']['xmax'] - fg_zoom.dx / 2.0
+        fg_zoom.y1 = Refine['fine_dict']['ymin'] + fg_zoom.dy / 2.0
+        fg_zoom.y2 = Refine['fine_dict']['ymax'] - fg_zoom.dy / 2.0
         fg_zoom.tstart_max = 0.      # when to start monitoring max values
         fg_zoom.tend_max   = Param['t_max']       # when to stop monitoring max values
         fg_zoom.dt_check   = 0.0
@@ -466,15 +525,15 @@ def setrun(claw_pkg='geoclaw'):
         fgout.y1 = float(ResultGrid['yllcenter']) - dy_fine / 2.0
         fgout.y2 = fgout.y1 + fgout.ny * dy_fine
     elif topo_source == 'real_world':
-        fgout.nx = int((DEM['xmax']-DEM['xmin'])/Param['cell_size'])
-        fgout.ny = int((DEM['ymax']-DEM['ymin'])/Param['cell_size'])
+        fgout.nx = _whole_cell_count(DEM['xmin'], DEM['xmax'], Param['cell_size'], 'x')
+        fgout.ny = _whole_cell_count(DEM['ymin'], DEM['ymax'], Param['cell_size'], 'y')
         fgout.x1 = DEM['xmin']
         fgout.x2 = DEM['xmax']
         fgout.y1 = DEM['ymin']
         fgout.y2 = DEM['ymax']
     else:
-        fgout.nx = int((DEM['xmax']-DEM['xmin'])/Param['dx'])
-        fgout.ny = int((DEM['ymax']-DEM['ymin'])/Param['dy'])
+        fgout.nx = _whole_cell_count(DEM['xmin'], DEM['xmax'], Param['dx'], 'x')
+        fgout.ny = _whole_cell_count(DEM['ymin'], DEM['ymax'], Param['dy'], 'y')
         fgout.x1 = DEM['xmin']
         fgout.x2 = DEM['xmax']
         fgout.y1 = DEM['ymin']
@@ -489,8 +548,14 @@ def setrun(claw_pkg='geoclaw'):
         fgout_zoom.fgno          = 2
         fgout_zoom.point_style   = 2
         fgout_zoom.output_format = OUT['output_format']
-        fgout_zoom.nx = int((Refine['fine_dict']['xmax'] - Refine['fine_dict']['xmin']) / Refine['fine_dict']['cell_size'])
-        fgout_zoom.ny = int((Refine['fine_dict']['ymax'] - Refine['fine_dict']['ymin']) / Refine['fine_dict']['cell_size'])
+        fgout_zoom.nx = _whole_cell_count(
+            Refine['fine_dict']['xmin'], Refine['fine_dict']['xmax'],
+            Refine['fine_dict']['cell_size'], 'fine x',
+        )
+        fgout_zoom.ny = _whole_cell_count(
+            Refine['fine_dict']['ymin'], Refine['fine_dict']['ymax'],
+            Refine['fine_dict']['cell_size'], 'fine y',
+        )
         fgout_zoom.x1 = Refine['fine_dict']['xmin']
         fgout_zoom.x2 = Refine['fine_dict']['xmax']
         fgout_zoom.y1 = Refine['fine_dict']['ymin']

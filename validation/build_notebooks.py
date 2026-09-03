@@ -186,96 +186,45 @@ def avac_notebooks() -> None:
     ]
     write(f"AVAC/{name}/Coulomb_sloping_bed.ipynb", cells)
 
-    name = "Real_terrain_conservation"
-    cells = [
-        markdown(
-            "# Real-terrain volume conservation and positivity — AVAC\n\n"
-            "This focused property test checks the numerical invariants needed before the "
-            "full Coulomb verification is repeated. It uses the normal AVAC executable and "
-            "the same solver path as every operational case.\n"
-        ),
-        *environment("AVAC", name),
-        markdown(
-            "## Physical and numerical definition\n\n"
-            "A compact two-dimensional release moves over a smooth inclined surface with a "
-            "ridge and transverse undulations. All four boundaries are closed, and there is "
-            "no mass source, so the discrete material volume must remain constant. The same "
-            "initial state is run on a uniform 0.20 m mesh and with two dynamically regridded "
-            "AMR levels. The AMR run deliberately creates and removes fine patches as the "
-            "wet--dry front moves. The case is not calibrated to a site or analytical profile; "
-            "it tests nonnegative depth and conservation properties that must hold for every "
-            "AVAC simulation.\n"
-        ),
-        code(
-            "VARIANT = 'current'\n"
-            "case.run('run_conservation_validation.py', '--variant', VARIANT, "
-            "'--mode', 'both', '--cores', CORES)\n"
-        ),
-        markdown(
-            "## Acceptance diagnostics\n\n"
-            "Native AMR output is integrated as a non-overlapping hierarchy: coarse cells "
-            "covered by finer patches are excluded. The summary reports volume variation, "
-            "minimum active depth, boundary clearance, achieved AMR level, patch-layout "
-            "changes, and the exact solver hash.\n"
-        ),
-        code("summary = case.json(f'results/{VARIANT}_summary.json')\nsummary\n"),
-        code("case.show(f'figures/{VARIANT}_real_terrain_conservation.png')\n"),
-    ]
-    write(f"AVAC/{name}/Real_terrain_conservation.ipynb", cells)
-
-    name = "Static_cohesive_arrest"
-    cells = [
-        markdown(
-            "# Static Coulomb and cohesive arrest — AVAC\n\n"
-            "This focused verification exercises the production AVAC executable immediately "
-            "below and above the static-yield boundary. Each physical state is mirrored to "
-            "separate the constitutive transition from a left/right numerical bias.\n"
-        ),
-        *environment("AVAC", name),
-        markdown(
-            "## Physical and numerical definition\n\n"
-            "A one-meter vertical-depth layer initially rests on a planar bed. Two Coulomb "
-            "cases place the bed slope below and above $\\mu=0.2$. Two cohesive-Voellmy "
-            "cases use a 0.30 bed slope and cohesion 2% below or above the analytical critical "
-            "value $C_{cr}=\\rho g h\\cos^2(\\phi)[\\tan(\\phi)-\\mu]$. Turbulent resistance "
-            "is negligible at onset and is assigned $\\xi=10^{12}$ m s$^{-2}$. Every case is "
-            "run with both signs of the bed slope. Two additional symmetric triangular "
-            "Coulomb deposits exercise the wet/dry interface below and above yield.\n"
-        ),
-        code(
-            "case.run('run_static_cohesive_validation.py', '--cores', CORES)\n"
-        ),
-        markdown(
-            "## Acceptance diagnostics\n\n"
-            "Sub-yield states must remain at machine rest; super-yield states must accelerate "
-            "downslope. Mirrored inclined layers and the two sides of each compact deposit "
-            "must agree, with no material transverse velocity.\n"
-        ),
-        code("summary = case.json('results/summary.json')\nsummary\n"),
-        code("case.show('figures/static_cohesive_arrest.png')\n"),
-    ]
-    write(f"AVAC/{name}/Static_cohesive_arrest.ipynb", cells)
-
     name = "Paper_figures"
     cells = [
         markdown(
             "# AVAC analytical-verification figures\n\n"
-            "This notebook creates the Section 4 manuscript figures exclusively from the "
-            "saved `publication_amr/results` products of the three AVAC case notebooks. It "
-            "does not launch either solver, so later style and layout changes do not require "
-            "new simulations.\n"
+            "This notebook creates the Section 4 manuscript figures from the three AVAC "
+            "publication cases. On a clean checkout it visibly regenerates those cases with "
+            "the current source before plotting; set `ENSURE_CURRENT_RESULTS=False` only to "
+            "restyle already-audited results.\n"
         ),
         *environment("AVAC", name),
         markdown(
             "## Required numerical products\n\n"
-            "Run the WRR, Kerswell horizontal-Coulomb, and inclined-Coulomb notebooks first. "
-            "Their summaries retain the solver hash, AMR controls, and achieved levels. The "
+            "The WRR, Kerswell horizontal-Coulomb, and inclined-Coulomb drivers below use "
+            "the same controls as their dedicated notebooks. Their summaries retain the "
+            "solver hash, AMR controls, and achieved levels. The "
             "two Coulomb rows are postprocessed with one boundary definition: the wet support "
             "uses the solver dry tolerance and the undisturbed rear uses a 0.1% relative-depth "
             "tolerance so AMR interpolation noise is not mistaken for motion. Both the raw run "
             "summaries and the common manuscript diagnostics are archived with the figures.\n"
         ),
         code(
+            "ENSURE_CURRENT_RESULTS = True\n"
+            "AVAC_ROOT = case.path.parent\n"
+            "if ENSURE_CURRENT_RESULTS:\n"
+            "    wrr = AVAC_ROOT / '2008_WRR_sloping_bed'\n"
+            "    case.run(wrr / 'run_avac_validation.py', '--dx', 0.04, '--t-final', 5.0, "
+            "'--nout', 20, '--cores', CORES, '--amr-levels', 3, '--amr-ratio', 4, "
+            "'--speed-tolerance', 0.02, '--ny', 5, '--max1d', 1000, "
+            "'--output-root', wrr / 'publication_amr', cwd=wrr)\n"
+            "    kerswell = AVAC_ROOT / 'Kerswell_Coulomb'\n"
+            "    case.run(kerswell / 'run_avac_validation.py', '--dx', 0.04, '--t-final', 10.0, "
+            "'--nout', 40, '--cores', CORES, '--case-name', 'publication_amr', "
+            "'--amr-levels', 3, '--amr-ratio', 4, '--speed-tolerance', 0.02, "
+            "'--max1d', 1000, cwd=kerswell)\n"
+            "    inclined = AVAC_ROOT / 'Coulomb_sloping_bed'\n"
+            "    case.run(inclined / 'run_avac_validation.py', '--dx', 0.03, '--ny', 5, "
+            "'--t-final', 6.0, '--nout', 30, '--case-name', 'publication_amr', "
+            "'--cores', CORES, '--amr-levels', 3, '--amr-ratio', 4, "
+            "'--speed-tolerance', 0.02, '--max1d', 1000, '--replace', cwd=inclined)\n"
             "case.run('make_avac_verification_figures.py', '--output-root', "
             "REPOSITORY / 'docs' / 'article' / 'figures')\n"
         ),
@@ -386,12 +335,31 @@ def wave_notebooks() -> None:
     cells = [
         markdown(
             "# WAVE analytical-verification figure\n\n"
-            "This notebook creates the main-paper WAVE figure from already completed lake-at-rest "
-            "and Thacker simulations. It does not launch WAVE, so stylistic revisions remain "
-            "independent of the numerical runs.\n"
+            "This notebook creates the main-paper WAVE figures. It visibly regenerates every "
+            "required WAVE benchmark with the current source on a clean checkout; set "
+            "`ENSURE_CURRENT_RESULTS=False` only when restyling existing audited results.\n"
         ),
         *environment("WAVE", folder),
-        code("case.run('make_wave_verification_figures.py')\ncase.run('make_wave_appendix_figures.py')\n"),
+        code(
+            "ENSURE_CURRENT_RESULTS = True\n"
+            "WAVE_ROOT = case.path.parent\n"
+            "if ENSURE_CURRENT_RESULTS:\n"
+            "    for CASE_KEY in ('transcritical_shock', 'macdonald_smooth_shock', "
+            "'ritter_dry_dam_break', 'thacker_planar_paraboloid'):\n"
+            "        case.run(WAVE_ROOT / 'run_validation.py', CASE_KEY, '--solver', 'wave', "
+            "'--output-root', WAVE_ROOT, '--cores', CORES, cwd=WAVE_ROOT)\n"
+            "    case.run(WAVE_ROOT / '07_baines_flow_over_bump' / 'run_baines_validation.py', "
+            "cwd=WAVE_ROOT / '07_baines_flow_over_bump')\n"
+            "    case.run(WAVE_ROOT / '08_amr_parallel' / 'run_amr_parallel_validation.py', "
+            "cwd=WAVE_ROOT / '08_amr_parallel')\n"
+            "    wrr_driver = WAVE_ROOT.parents[1] / 'AVAC' / '2008_WRR_sloping_bed' / 'run_avac_validation.py'\n"
+            "    case.run(wrr_driver, '--solver', 'wave', '--output-root', "
+            "WAVE_ROOT / '2008_WRR_sloping_bed', '--dx', 0.005, '--t-final', 5.0, "
+            "'--nout', 100, '--cores', CORES, '--xlower', -10.0, '--xupper', 40.0, "
+            "'--rear-tracker', 'tutorial', cwd=WAVE_ROOT / '2008_WRR_sloping_bed')\n"
+            "case.run('make_wave_verification_figures.py')\n"
+            "case.run('make_wave_appendix_figures.py')\n"
+        ),
         code(
             "case.show('../../../docs/article/figures/wave_analytical_verification.png', "
             "'../../../docs/article/figures/wave_additional_benchmarks.png', "
@@ -431,11 +399,18 @@ def coupling_notebook() -> None:
     cells = [
         markdown(
             "# AVAC-to-WAVE coupling figure\n\n"
-            "This notebook reads only the archived coupling ledgers and WAVE closure metrics. "
-            "It can revise the manuscript figure without rerunning either solver.\n"
+            "This notebook creates the coupling figure. It visibly regenerates the coupling "
+            "verification with current AVAC and WAVE sources on a clean checkout; set "
+            "`ENSURE_CURRENT_RESULTS=False` only to restyle audited products.\n"
         ),
         *environment("COUPLING", folder),
-        code("case.run('make_coupling_figure.py')\n"),
+        code(
+            "ENSURE_CURRENT_RESULTS = True\n"
+            "if ENSURE_CURRENT_RESULTS:\n"
+            "    case.run(case.path.parent / 'run_coupling_verification.py', '--cores', CORES, "
+            "'--output-root', case.path.parent / 'publication', cwd=case.path.parent)\n"
+            "case.run('make_coupling_figure.py')\n"
+        ),
         code("case.show('../../../docs/article/figures/coupling_verification.png')\n"),
     ]
     write(f"COUPLING/{folder}/Coupling_verification_figures.ipynb", cells)
@@ -512,15 +487,22 @@ def iseesnow_notebooks() -> None:
     cells = [
         markdown(
             "# ISeeSnow three-case manuscript figure\n\n"
-            "This notebook creates the cross-case AVAC4QGIS intercomparison figure from archived "
-            "exact-grid field summaries. It does not rerun AVAC or modify any participating-model field.\n"
+            "This notebook creates the cross-case AVAC4QGIS intercomparison figure. It visibly "
+            "regenerates all three official cases with the current source on a clean checkout; "
+            "set `ENSURE_CURRENT_RESULTS=False` only to restyle audited field summaries.\n"
         ),
         *environment("ISeeSnow", folder),
         code(
+            "ENSURE_CURRENT_RESULTS = True\n"
+            "RESULTS_ROOT = Path(os.environ.get('AVAC_ISEESNOW_RESULTS_ROOT', case.path.parent)).expanduser().resolve()\n"
+            "if ENSURE_CURRENT_RESULTS:\n"
+            "    case.run(case.path.parent / 'run_iseesnow_avac.py', '--case', 'all', "
+            "'--workers', CORES, '--spatial-order', 2, '--results-root', RESULTS_ROOT, "
+            "'--overwrite', cwd=case.path.parent)\n"
             "case.run(case.path.parent / 'compare_iseesnow.py', '--case', 'all', "
-            "cwd=case.path.parent)\n"
-            "case.run('make_iseesnow_case_figure.py')\n"
-            "case.run('make_iseesnow_figures.py')\n"
+            "'--results-root', RESULTS_ROOT, '--output-root', RESULTS_ROOT, cwd=case.path.parent)\n"
+            "case.run('make_iseesnow_case_figure.py', '--results-root', RESULTS_ROOT)\n"
+            "case.run('make_iseesnow_figures.py', '--results-root', RESULTS_ROOT)\n"
         ),
         code(
             "case.show('../../../docs/article/figures/iseesnow_case_setup.png', "

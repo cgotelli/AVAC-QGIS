@@ -33,8 +33,13 @@ def run() -> None:
     dock.release_layer.setLayer(release)
     dock.run_root.setText(str(ROOT))
     dock.configuration_template.setText(str(CASE / "AVAC" / "AVAC_configuration100.yaml"))
+    # The canonical 2999 by 1999 QGIS DEM has physical 1 m cells.  A 2 m
+    # solver grid cannot span both odd dimensions without silently cropping
+    # or extending the domain, so exercise the dock's normal controlled
+    # parameter route with the compatible 1 m choice.
     dock._set_controlled_parameters({
         "release.d0": 1.6, "release.correction_elevation": True, "release.correction_slope": True,
+        "computation.cell_size": 1.0,
     })
     dock.prepare_inputs_button.click()
     task = dock._preparation_task

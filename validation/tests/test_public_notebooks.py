@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -10,8 +11,6 @@ PUBLIC_NOTEBOOKS = (
     "AVAC/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb",
     "AVAC/Kerswell_Coulomb/Kerswell_Coulomb.ipynb",
     "AVAC/Coulomb_sloping_bed/Coulomb_sloping_bed.ipynb",
-    "AVAC/Real_terrain_conservation/Real_terrain_conservation.ipynb",
-    "AVAC/Static_cohesive_arrest/Static_cohesive_arrest.ipynb",
     "AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb",
     "AVAC/Paper_figures/AVAC_verification_figures.ipynb",
     "WAVE/01_transcritical_shock/transcritical_shock.ipynb",
@@ -33,12 +32,45 @@ PUBLIC_NOTEBOOKS = (
 )
 
 
-def test_validation_tree_contains_only_the_public_notebooks() -> None:
+def test_published_validation_notebooks_are_present() -> None:
     actual = {
         path.relative_to(VALIDATION).as_posix()
         for path in VALIDATION.rglob("*.ipynb")
     }
     assert actual == set(PUBLIC_NOTEBOOKS)
+
+
+def test_repository_notebooks_have_no_saved_outputs() -> None:
+    """Notebook files remain reviewable source, not a cache of old results."""
+    notebooks = [
+        path for path in ROOT.rglob("*.ipynb")
+        if ".git" not in path.parts
+    ]
+    assert notebooks
+    for path in notebooks:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for cell in payload["cells"]:
+            if cell["cell_type"] == "code":
+                assert cell.get("outputs", []) == [], path
+                assert cell.get("execution_count") is None, path
+
+
+def test_figure_notebooks_can_regenerate_current_prerequisites() -> None:
+    expected_markers = {
+        "AVAC/Paper_figures/AVAC_verification_figures.ipynb": "make_avac_verification_figures.py",
+        "WAVE/Paper_figures/WAVE_verification_figures.ipynb": "make_wave_verification_figures.py",
+        "COUPLING/Paper_figures/Coupling_verification_figures.ipynb": "make_coupling_figure.py",
+        "ISeeSnow/paper_figures/ISeeSnow_intercomparison_figures.ipynb": "run_iseesnow_avac.py",
+    }
+    for relative, marker in expected_markers.items():
+        payload = json.loads((VALIDATION / relative).read_text(encoding="utf-8"))
+        source = "".join(
+            "".join(cell["source"])
+            for cell in payload["cells"]
+            if cell["cell_type"] == "code"
+        )
+        assert "ENSURE_CURRENT_RESULTS = True" in source
+        assert marker in source
 
 
 def test_iseesnow_figure_sources_are_published() -> None:

@@ -20,15 +20,3 @@ launches AVAC; plots can therefore be revised without repeating a simulation.
 
 See the [validation suite index](../README.md) for notebook links and system
 requirements.
-
-## Observational validation
-
-Development of the field-validation workflow is isolated on the
-`avac-validation-observations` branch. The selected first case is the
-[Armancette avalanche of 9 April 2023](Observations/Armancette_2023/README.md),
-for which Escobar Rincon et al. (2026) provide the terrain, release mask and
-depth, observed deposit mask, Voellmy parameters and reference result as open
-numerical data. No author contact, figure digitization or inferred release
-geometry is required. The companion full manuscript is not yet linked publicly
-by the data record, so the case currently relies on the citable dataset and EGU
-abstract and must be described that way.

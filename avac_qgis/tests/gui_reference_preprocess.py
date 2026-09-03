@@ -21,8 +21,11 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from avac_qgis.core.preprocessing import (  # noqa: E402
     AvacRaster,
+    geoclaw_topography_halo,
     initial_depth_from_release,
     release_coverage_from_rings,
+    write_init_xyz,
+    write_topography,
 )
 
 
@@ -43,9 +46,9 @@ def read_ascii_raster(path: Path):
     ncols, nrows, cell = int(meta["ncols"]), int(meta["nrows"]), meta["cellsize"]
     xmin, ymin = meta["xllcorner"], meta["yllcorner"]
     xmax, ymax = xmin + ncols * cell, ymin + nrows * cell
-    # ESRI ``xllcorner``/``yllcorner`` values are outer cell edges.  AVAC
-    # terrain and qinit both consume cell-centred samples, so use the same
-    # centre coordinates as the QGIS preprocessing path.
+    # ESRI ``xllcorner``/``yllcorner`` values are outer cell edges.  AVAC's
+    # qinit and release fields consume the corresponding cell centres.  The
+    # production topography writer adds its GeoClaw-only terrain halo later.
     x = xmin + (np.arange(ncols, dtype=float) + .5) * cell
     y = ymin + (np.arange(nrows, dtype=float) + .5) * cell
     return x, y, grid[::-1, :], {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax, "ncols": ncols, "nrows": nrows, "cellsize": cell, "nodata_value": nodata}
@@ -71,20 +74,6 @@ def fractional_release_fields(x, y, z, metadata, rings, release):
     return coverage, initial_depth_from_release(raster, coverage, release)
 
 
-def write_topography(path, z, metadata):
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(f"ncols {z.shape[1]}\nnrows {z.shape[0]}\nxllcorner {float(metadata['xmin'])}\nyllcorner {float(metadata['ymin'])}\ncellsize {float(metadata['cellsize'])}\nNODATA_value {float(metadata['nodata_value'])}\n")
-        for row in np.flipud(np.where(np.isfinite(z), z, metadata["nodata_value"])):
-            handle.write(" ".join(f"{float(value):.10g}" for value in row) + "\n")
-
-
-def write_init(path, x, y, depth):
-    with path.open("w", encoding="utf-8") as handle:
-        for j in range(y.size - 1, -1, -1):
-            for i, xv in enumerate(x):
-                handle.write(f"{xv:.12g} {y[j]:.12g} {float(depth[j, i]) if np.isfinite(depth[j, i]) else 0.0:.12g}\n")
-
-
 def main() -> None:
     root = Path(os.environ["AVAC_GUI_REFERENCE_ROOT"])
     configuration = Path(os.environ.get(
@@ -97,8 +86,12 @@ def main() -> None:
         x, y, z, metadata, rings_from_geodataframe(gpd.read_file(CASE / "Topo" / "ZA.shp")), release,
     )
     mask = coverage > 0.0
-    write_topography(root / "topography.asc", z, metadata)
-    write_init(root / "init.xyz", x, y, depth)
+    raster = AvacRaster(x, y, z, metadata, "", 1)
+    # GeoClaw treats topotype-3 elevations as nodal values after moving the
+    # ESRI lower-left coordinate to the first sample centre.  The halo is
+    # terrain-only: qinit retains the original QGIS cell grid.
+    write_topography(root / "topography.asc", geoclaw_topography_halo(raster))
+    write_init_xyz(root / "init.xyz", raster, depth)
     np.save(root / "coverage.npy", coverage)
     np.save(root / "mask.npy", mask)
     np.save(root / "depth.npy", depth)

@@ -27,7 +27,7 @@ def main() -> None:
         "EPSG:2056",
         1,
     )
-    depth = np.array([[1.2345678901234, np.nan, 3.0], [4.0, 5.0, 6.0]])
+    depth = np.array([[1.2345678901234, 0.0, 3.0], [4.0, 5.0, 6.0]])
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "init.avacbin"
         write_init_binary(path, raster, depth)
@@ -40,6 +40,12 @@ def main() -> None:
             [4.0, 5.0, 6.0],
             [1.23456789012, 0.0, 3.0],
         ]))
+        try:
+            write_init_binary(Path(directory) / "invalid.avacbin", raster, np.array([[np.nan, 0.0, 0.0], [0.0, 0.0, 0.0]]))
+        except ValueError as exc:
+            assert "finite and non-negative" in str(exc)
+        else:
+            raise AssertionError("non-finite qinit depth must be rejected")
     print("binary qinit header/order/precision: PASS")
 
 

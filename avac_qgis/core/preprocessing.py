@@ -18,12 +18,23 @@ import numpy as np
 import yaml
 from matplotlib.path import Path as MplPath
 
-from .configuration import apply_controlled_values, load_complete_configuration, validate_grid_contract
+from .configuration import (
+    RELEASE_DEPTH_DEFAULTS,
+    apply_controlled_values,
+    load_complete_configuration,
+    validate_grid_contract,
+    validate_release_depth_parameters,
+)
 
 
 QINIT_BINARY_MAGIC = b"AVACQIN1"
 QINIT_BINARY_HEADER = struct.Struct("<8sqqii4d")
 QINIT_BINARY_NAME = "init.avacbin"
+# A grid count is an integer quantity.  Keep this criterion aligned with
+# ``setrun._whole_cell_count`` and ``validate_grid_contract`` so a prepared
+# QGIS configuration cannot pass the frontend only to fail when the solver
+# reads the same physical bounds.
+GRID_COUNT_TOLERANCE = 1.0e-8
 
 
 class PreparationCancelled(InterruptedError):
@@ -151,11 +162,13 @@ def raster_from_qgis_layer(layer, band: int = 1, extent=None, grid_cell_size: fl
     north_to_south[~np.isfinite(north_to_south)] = np.nan
 
     xmin, xmax, ymin, ymax = read_extent.xMinimum(), read_extent.xMaximum(), read_extent.yMinimum(), read_extent.yMaximum()
-    # QGIS reports outer raster edges, whereas both AVAC's qinit file and
-    # GeoClaw's topotype-3 reader attach each value to a cell centre. Preserve
-    # the edges in metadata/header fields and construct centre coordinates for
-    # release rasterization and qinit output. Endpoint axes would make qinit
-    # both half a cell shifted and slightly stretched relative to the terrain.
+    # QGIS reports outer raster edges, whereas AVAC qinit values are attached
+    # to cell centres. GeoClaw likewise shifts a topotype-3 ``xllcorner`` to
+    # its first terrain-sample centre, but later interpolates those samples as
+    # nodes; ``prepare_inputs`` supplies its terrain-only edge halo separately.
+    # Keep the original centre axes here for release rasterization and qinit
+    # output. Endpoint axes would make qinit both half a cell shifted and
+    # slightly stretched relative to the QGIS cells.
     cell_x, cell_y = (xmax - xmin) / width, (ymax - ymin) / height
     if not np.isclose(cell_x, cell_y, rtol=0.0, atol=max(abs(cell_x), abs(cell_y), 1.0) * 1e-8):
         layer_name = str(layer.name() or "selected DEM")
@@ -207,10 +220,18 @@ def crop_raster_to_rings_extent(raster: AvacRaster, rings) -> AvacRaster:
 def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) -> dict[str, Any]:
     """Return a configuration whose computational domain is covered by ``raster``.
 
-    GeoClaw's ESRI ASCII reader moves lower-left corners to cell centres. The
-    working Lac Lachat setup therefore keeps one computational terrain cell at
-    the upper and right edges. Retain that coverage rule while treating a YAML
-    as a reusable scientific template, not as a fixed geographic scenario.
+    A QGIS raster represents a rectangular set of physical cells, so AVAC's
+    computational domain must retain all of its outer edges.  GeoClaw reads
+    topotype-3 values as nodal samples after shifting an ESRI ``xllcorner`` to
+    its first sample centre.  :func:`prepare_inputs` therefore supplies an
+    extra, topography-only edge halo; it never shortens the solver domain or
+    the cell-centred qinit/release grid to compensate for that reader
+    convention.
+
+    The selected terrain extent must contain a whole number of computational
+    cells.  Extending a non-divisible raster would create a solver strip with
+    extrapolated terrain but no matching QGIS qinit cells, while silently
+    cropping it loses release mass.  Reject that ambiguity explicitly.
     """
     result = deepcopy(configuration)
     metadata = raster.metadata
@@ -218,10 +239,23 @@ def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) 
         source_cell = float(metadata["cellsize"])
         computational_cell = float(result["computation"]["cell_size"])
         ncols, nrows = int(metadata["ncols"]), int(metadata["nrows"])
-    except (KeyError, TypeError, ValueError) as exc:
+        xmin, xmax = float(metadata["xmin"]), float(metadata["xmax"])
+        ymin, ymax = float(metadata["ymin"]), float(metadata["ymax"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"Cannot derive an AVAC domain from the selected DEM: {exc}") from exc
     if not np.isfinite(source_cell) or source_cell <= 0 or not np.isfinite(computational_cell) or computational_cell <= 0:
         raise ValueError("DEM and computational cell sizes must be positive finite values.")
+    if ncols < 1 or nrows < 1:
+        raise ValueError("Selected DEM must contain at least one row and one column.")
+    if not all(np.isfinite(value) for value in (xmin, xmax, ymin, ymax)):
+        raise ValueError("Selected DEM outer extent must contain finite coordinates.")
+    if (
+        not np.isclose((xmax - xmin) / source_cell, ncols, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+        or not np.isclose((ymax - ymin) / source_cell, nrows, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+    ):
+        raise ValueError(
+            "Selected DEM edges, dimensions, and cell size do not describe one regular cell-centred grid."
+        )
     ratio = computational_cell / source_cell
     cells_per_computation = round(ratio)
     if cells_per_computation < 1 or not np.isclose(ratio, cells_per_computation, rtol=0.0, atol=1e-8):
@@ -229,20 +263,33 @@ def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) 
             "Source DEM cell size must equal or evenly subdivide the computational cell size; "
             "AVAC does not silently resample terrain during preparation."
         )
-    nx, ny = ncols // cells_per_computation - 1, nrows // cells_per_computation - 1
-    if nx < 1 or ny < 1:
+    if ncols % cells_per_computation or nrows % cells_per_computation:
+        raise ValueError(
+            f"Selected DEM dimensions ({ncols} x {nrows} cells) must each be divisible by "
+            f"{cells_per_computation}, the number of DEM cells per {computational_cell:g} m "
+            "computational cell. Crop or regrid the DEM, or choose a compatible computational cell size; "
+            "AVAC will not silently crop release cells or extend the solver domain."
+        )
+    nx, ny = ncols // cells_per_computation, nrows // cells_per_computation
+    # GeoClaw FGmax point_style=2 uses the first and last sample coordinates
+    # to derive spacing with (n-1).  QGIS also needs two centre coordinates
+    # per axis to reconstruct a raster envelope.  Reject a domain that could
+    # run the finite-volume solver but cannot produce a valid AVAC result
+    # raster through the configured fixed-grid output path.
+    if nx < 2 or ny < 2:
         raise ValueError(
             f"Selected DEM ({ncols} x {nrows} cells) is too small for a {computational_cell:g} m AVAC grid. "
-            "AVAC needs at least one computational cell plus its terrain-coverage margin on both axes."
+            "AVAC fixed-grid results need at least two computational cells on both axes."
         )
     dem_extent = result.get("dem_extent")
     if not isinstance(dem_extent, dict):
         raise ValueError("Configuration is missing its dem_extent mapping.")
-    xmin, ymin = float(metadata["xmin"]), float(metadata["ymin"])
     dem_extent.update({
-        "xmin": xmin, "xmax": xmin + nx * computational_cell,
-        "ymin": ymin, "ymax": ymin + ny * computational_cell,
-        "nbx": nx + 1, "nby": ny + 1,
+        "xmin": xmin, "xmax": xmax,
+        "ymin": ymin, "ymax": ymax,
+        # ``setrun.py`` derives Clawpack's grid from the physical span.  Keep
+        # these legacy informational fields consistent with that cell count.
+        "nbx": nx, "nby": ny,
         "cell_size": computational_cell,
         "nodata_value": float(metadata["nodata_value"]),
     })
@@ -422,52 +469,121 @@ def release_coverage_from_rings(
     return coverage
 
 
+def _initial_depth_parameter_values(release: dict[str, Any]) -> dict[str, float | bool]:
+    """Validate and fill the parameters used by the initial-depth equation."""
+    issues = validate_release_depth_parameters(release)
+    if issues:
+        raise ValueError("Invalid AVAC release parameters: " + " ".join(issues))
+    return {key: release.get(key, default) for key, default in RELEASE_DEPTH_DEFAULTS.items()}
+
+
+def _selected_cell_message(mask: np.ndarray) -> str:
+    """Give a compact, reproducible location for an invalid release cell."""
+    row, column = np.argwhere(mask)[0]
+    return f"{int(np.count_nonzero(mask))} selected DEM cell(s); first at row {int(row)}, column {int(column)}"
+
+
 def initial_depth_from_release(raster: AvacRaster, zone_mask: np.ndarray, release: dict[str, Any]) -> np.ndarray:
-    """Return cell-average release depth from a mask or fractional coverage."""
-    altitude = np.array(raster.z, dtype=float)
+    """Return a finite, non-negative cell-average release-depth field.
+
+    Corrections are part of the stated release model, not a numerical repair.
+    Therefore a non-finite terrain/input value or a negative corrected depth
+    in any covered cell is rejected instead of being silently converted to a
+    dry cell or written to qinit as negative mass.
+    """
+    altitude = np.asarray(raster.z, dtype=float)
+    if altitude.ndim != 2:
+        raise ValueError("DEM elevation grid must be two-dimensional.")
     depth = np.zeros_like(altitude, dtype=float)
     coverage = np.asarray(zone_mask, dtype=float)
     if coverage.shape != altitude.shape:
         raise ValueError("Release coverage shape does not match DEM.")
     if np.any(~np.isfinite(coverage)) or np.any(coverage < 0.0) or np.any(coverage > 1.0):
         raise ValueError("Release coverage values must be finite fractions between zero and one.")
+
+    parameters = _initial_depth_parameter_values(release)
+    d0 = float(parameters["d0"])
+    z_ref = float(parameters["z_ref"])
+    gradient_hypso = float(parameters["gradient_hypso"])
+    theta_cr = float(parameters["theta_cr"])
+    nu = float(parameters["nu"])
+    corr_elevation = bool(parameters["correction_elevation"])
+    corr_slope = bool(parameters["correction_slope"])
+
     selected = coverage > 0.0
     if not np.any(selected):
         return depth
-    d0 = float(release.get("d0", 0.0))
-    z_ref = float(release.get("z_ref", 0.0))
-    gradient_hypso = float(release.get("gradient_hypso", 0.0))
-    theta_cr = float(release.get("theta_cr", 30.0))
-    nu = float(release.get("nu", 0.2))
-    corr_elevation = bool(release.get("correction_elevation", False))
-    corr_slope = bool(release.get("correction_slope", False))
-    cellsize = float(raster.metadata.get("cellsize", 1.0))
-    valid = np.isfinite(altitude)
-    fill_value = float(np.nanmean(altitude[valid])) if np.any(valid) else 0.0
-    z_fill = np.nan_to_num(altitude, nan=fill_value)
-    grad_y, grad_x = np.gradient(z_fill, cellsize)
-    slope = np.sqrt(grad_x * grad_x + grad_y * grad_y)
+    invalid_terrain = selected & ~np.isfinite(altitude)
+    if np.any(invalid_terrain):
+        raise ValueError(
+            "Release polygons cover non-finite DEM elevation values in "
+            + _selected_cell_message(invalid_terrain)
+            + "."
+        )
+
     if corr_slope:
-        theta_rad = np.deg2rad(theta_cr)
-        q_angle = np.arctan(slope)
-        numerator = np.sin(theta_rad) - nu * np.cos(theta_rad)
-        denominator = np.sin(q_angle) - nu * np.cos(q_angle)
-        factor1 = np.zeros_like(slope, dtype=float)
-        safe = (q_angle > np.deg2rad(25.0)) & (np.abs(denominator) > 1e-12)
-        factor1[safe] = numerator / denominator[safe]
+        try:
+            cellsize = float(raster.metadata.get("cellsize", 1.0))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("DEM cell size must be a positive finite value for slope correction.") from exc
+        if not np.isfinite(cellsize) or cellsize <= 0.0:
+            raise ValueError("DEM cell size must be a positive finite value for slope correction.")
+        if min(altitude.shape) < 2:
+            raise ValueError("Slope correction requires at least two DEM rows and columns.")
+        valid = np.isfinite(altitude)
+        fill_value = float(np.mean(altitude[valid]))
+        # Do not turn +/-inf neighbours into huge finite values.  Covered
+        # non-finite cells were rejected above; this fill only keeps an
+        # unrelated no-data hole from poisoning every surrounding gradient.
+        z_fill = np.where(valid, altitude, fill_value)
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            grad_y, grad_x = np.gradient(z_fill, cellsize)
+            slope = np.sqrt(grad_x * grad_x + grad_y * grad_y)
+            theta_rad = np.deg2rad(theta_cr)
+            q_angle = np.arctan(slope)
+            numerator = np.sin(theta_rad) - nu * np.cos(theta_rad)
+            denominator = np.sin(q_angle) - nu * np.cos(q_angle)
+            factor1 = np.zeros_like(slope, dtype=float)
+            safe = (q_angle > np.deg2rad(25.0)) & (np.abs(denominator) > 1e-12)
+            factor1[safe] = numerator / denominator[safe]
     else:
-        factor1 = np.ones_like(slope, dtype=float)
-    factor2 = (altitude - z_ref) * gradient_hypso / 100.0 if corr_elevation else np.zeros_like(altitude)
-    if corr_elevation and corr_slope:
-        candidate = (d0 + factor2) * factor1
-    elif corr_elevation:
-        candidate = d0 + factor2
-    elif corr_slope:
-        candidate = d0 * factor1
-    else:
-        candidate = np.full_like(altitude, d0, dtype=float)
-    depth[selected] = candidate[selected] * coverage[selected]
-    depth[~np.isfinite(depth)] = 0.0
+        factor1 = np.ones_like(altitude, dtype=float)
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        factor2 = (altitude - z_ref) * gradient_hypso / 100.0 if corr_elevation else np.zeros_like(altitude)
+        if corr_elevation and corr_slope:
+            candidate = (d0 + factor2) * factor1
+        elif corr_elevation:
+            candidate = d0 + factor2
+        elif corr_slope:
+            candidate = d0 * factor1
+        else:
+            candidate = np.full_like(altitude, d0, dtype=float)
+
+    invalid_candidate = selected & ~np.isfinite(candidate)
+    if np.any(invalid_candidate):
+        raise ValueError(
+            "Initial-depth correction produced non-finite candidate depth in "
+            + _selected_cell_message(invalid_candidate)
+            + "."
+        )
+    negative_candidate = selected & (candidate < 0.0)
+    if np.any(negative_candidate):
+        minimum = float(np.min(candidate[negative_candidate]))
+        raise ValueError(
+            "Initial-depth correction produced negative candidate depth "
+            f"(minimum {minimum:.12g} m) in {_selected_cell_message(negative_candidate)}. "
+            "Adjust d0, reference elevation, hypsometric gradient, or slope-correction parameters."
+        )
+    with np.errstate(over="ignore", invalid="ignore"):
+        depth[selected] = candidate[selected] * coverage[selected]
+    invalid_depth = selected & (~np.isfinite(depth) | (depth < 0.0))
+    if np.any(invalid_depth):
+        raise ValueError(
+            "Initial release depth must be finite and non-negative in "
+            + _selected_cell_message(invalid_depth)
+            + "."
+        )
     return depth
 
 
@@ -486,6 +602,128 @@ def initial_snow_surface_elevation(raster: AvacRaster, depth: np.ndarray) -> np.
     surface = altitude + depth
     surface[~np.isfinite(altitude)] = np.nan
     return surface
+
+
+def _validated_topography_grid(
+    raster: AvacRaster,
+) -> tuple[np.ndarray, float, float, float, float, float, int, int]:
+    """Validate a QGIS terrain raster before converting it to GeoClaw nodes."""
+    values = np.asarray(raster.z, dtype=float)
+    metadata = raster.metadata
+    try:
+        cell_size = float(metadata["cellsize"])
+        xmin, xmax = float(metadata["xmin"]), float(metadata["xmax"])
+        ymin, ymax = float(metadata["ymin"]), float(metadata["ymax"])
+        ncols, nrows = int(metadata["ncols"]), int(metadata["nrows"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Cannot create GeoClaw terrain support from the selected DEM: {exc}") from exc
+    if values.ndim != 2 or values.shape != (nrows, ncols):
+        raise ValueError("DEM elevation array does not match its declared row and column dimensions.")
+    if ncols < 1 or nrows < 1 or not np.isfinite(cell_size) or cell_size <= 0.0:
+        raise ValueError("DEM must have positive finite cell size and at least one row and one column.")
+    if not all(np.isfinite(value) for value in (xmin, xmax, ymin, ymax)):
+        raise ValueError("DEM outer extent must contain finite coordinates.")
+    if (
+        not np.isclose((xmax - xmin) / cell_size, ncols, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+        or not np.isclose((ymax - ymin) / cell_size, nrows, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+    ):
+        raise ValueError("DEM edges, dimensions, and cell size do not describe one regular grid.")
+    return values, cell_size, xmin, xmax, ymin, ymax, ncols, nrows
+
+
+def geoclaw_topography_halo(raster: AvacRaster) -> AvacRaster:
+    """Return the topotype-3 terrain support needed around a base QGIS DEM.
+
+    QGIS values and AVAC qinit values are cell-centred, piecewise-constant
+    fields whose physical envelope is the metadata edge extent.  GeoClaw's
+    topotype-3 reader, in contrast, shifts an ESRI ``xllcorner`` by half a
+    cell and interpolates the values as *nodal* terrain samples.  Writing the
+    original raster directly therefore leaves half a source cell unsupported
+    at every solver edge.
+
+    Replicate the outer terrain samples once on each side only for the
+    GeoClaw topography file.  The resulting nodal support extends half a DEM
+    cell beyond the original QGIS extent while the solver domain, release
+    coverage and qinit raster retain their original physical bounds.  This
+    intentionally avoids using a terrain halo as an extra release or qinit
+    cell.  A supplemental fine DEM is an overlay on this base terrain and
+    uses :func:`geoclaw_overlay_topography` instead, so it does not replace
+    the base terrain beyond its declared footprint.
+    """
+    values, cell_size, xmin, xmax, ymin, ymax, ncols, nrows = _validated_topography_grid(raster)
+
+    halo_metadata = dict(raster.metadata)
+    halo_metadata.update({
+        "xmin": xmin - cell_size,
+        "xmax": xmax + cell_size,
+        "ymin": ymin - cell_size,
+        "ymax": ymax + cell_size,
+        "ncols": ncols + 2,
+        "nrows": nrows + 2,
+        "cellsize": cell_size,
+    })
+    return AvacRaster(
+        _cell_centres(float(halo_metadata["xmin"]), ncols + 2, cell_size),
+        _cell_centres(float(halo_metadata["ymin"]), nrows + 2, cell_size),
+        np.pad(values, ((1, 1), (1, 1)), mode="edge"),
+        halo_metadata,
+        raster.crs_authid,
+        raster.band,
+    )
+
+
+def _midpoint_nodal_samples(values: np.ndarray, axis: int) -> np.ndarray:
+    """Sample a linearly interpolated field at its cell edges and centres."""
+    samples = np.moveaxis(np.asarray(values, dtype=float), axis, -1)
+    count = samples.shape[-1]
+    result = np.empty(samples.shape[:-1] + (2 * count + 1,), dtype=float)
+    # Odd locations are the original QGIS sample centres.  Even interior
+    # locations are their linear midpoints; the two outer nodes use the same
+    # constant edge continuation as the base-DTM halo.
+    result[..., 1::2] = samples
+    result[..., 0] = samples[..., 0]
+    result[..., -1] = samples[..., -1]
+    if count > 1:
+        result[..., 2:-1:2] = 0.5 * (samples[..., :-1] + samples[..., 1:])
+    return np.moveaxis(result, -1, axis)
+
+
+def geoclaw_overlay_topography(raster: AvacRaster) -> AvacRaster:
+    """Convert a fine QGIS DEM to a closed-support GeoClaw terrain overlay.
+
+    GeoClaw gives the finest overlapping topotype-3 file priority.  Padding a
+    local fine DEM as though it were the base DEM therefore extrapolates its
+    edge terrain by half a fine cell beyond the QGIS footprint and overwrites
+    the base terrain there.  This reconstruction instead uses half the source
+    spacing and node positions exactly on the QGIS outer edges.  It samples
+    the same edge-padded bilinear terrain that :func:`geoclaw_topography_halo`
+    represents *inside* the fine footprint, while its node envelope is closed
+    at that footprint.  GeoClaw can consequently retain the base terrain at
+    every exterior point.
+    """
+    values, cell_size, xmin, xmax, ymin, ymax, ncols, nrows = _validated_topography_grid(raster)
+    node_values = _midpoint_nodal_samples(_midpoint_nodal_samples(values, 1), 0)
+    node_cell_size = 0.5 * cell_size
+    overlay_metadata = dict(raster.metadata)
+    overlay_metadata.update({
+        # ``write_topography`` records topotype-3's ESRI-style lower edge;
+        # GeoClaw shifts it by half ``node_cell_size`` to the first node.
+        "xmin": xmin - 0.25 * cell_size,
+        "xmax": xmax + 0.25 * cell_size,
+        "ymin": ymin - 0.25 * cell_size,
+        "ymax": ymax + 0.25 * cell_size,
+        "ncols": 2 * ncols + 1,
+        "nrows": 2 * nrows + 1,
+        "cellsize": node_cell_size,
+    })
+    return AvacRaster(
+        _cell_centres(float(overlay_metadata["xmin"]), 2 * ncols + 1, node_cell_size),
+        _cell_centres(float(overlay_metadata["ymin"]), 2 * nrows + 1, node_cell_size),
+        node_values,
+        overlay_metadata,
+        raster.crs_authid,
+        raster.band,
+    )
 
 
 def write_topography(path: Path, raster: AvacRaster, cancelled: Callable[[], bool] | None = None) -> None:
@@ -561,18 +799,31 @@ def read_avac_topography(path: str | Path, crs_authid: str = "") -> AvacRaster:
     return AvacRaster(x, y, values, metadata, crs_authid, 1)
 
 
+def _validated_qinit_depth(raster: AvacRaster, depth: np.ndarray) -> np.ndarray:
+    """Return qinit values only when every stored cell is physically valid."""
+    values = np.asarray(depth, dtype=float)
+    if values.shape != raster.z.shape:
+        raise ValueError("Initial-depth array shape does not match DEM.")
+    invalid = ~np.isfinite(values) | (values < 0.0)
+    if np.any(invalid):
+        raise ValueError(
+            "Initial-depth qinit values must be finite and non-negative; invalid values occur in "
+            + _selected_cell_message(invalid)
+            + "."
+        )
+    return values
+
+
 def write_init_xyz(path: Path, raster: AvacRaster, depth: np.ndarray, cancelled: Callable[[], bool] | None = None) -> None:
     """Write legacy NW-to-SE qinit ordering and precision."""
+    values = _validated_qinit_depth(raster, depth)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if depth.shape != raster.z.shape:
-        raise ValueError("Initial-depth array shape does not match DEM.")
     with path.open("w", encoding="utf-8") as handle:
         for row in range(raster.y.size - 1, -1, -1):
             if cancelled and cancelled():
                 raise PreparationCancelled("AVAC input preparation cancelled.")
             for column, x_value in enumerate(raster.x):
-                value = depth[row, column]
-                handle.write(f"{x_value:.12g} {raster.y[row]:.12g} {float(value) if np.isfinite(value) else 0.0:.12g}\n")
+                handle.write(f"{x_value:.12g} {raster.y[row]:.12g} {float(values[row, column]):.12g}\n")
 
 
 def write_init_binary(path: Path, raster: AvacRaster, depth: np.ndarray, cancelled: Callable[[], bool] | None = None) -> None:
@@ -583,10 +834,7 @@ def write_init_binary(path: Path, raster: AvacRaster, depth: np.ndarray, cancell
     ``init.xyz`` reader without serially formatting and parsing millions of
     redundant x/y coordinates.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    values = np.asarray(depth, dtype=float)
-    if values.shape != raster.z.shape:
-        raise ValueError("Initial-depth array shape does not match DEM.")
+    values = _validated_qinit_depth(raster, depth)
     if raster.x.size < 2 or raster.y.size < 2:
         raise ValueError("Initial-condition raster must contain at least two rows and columns.")
     dx = float(raster.x[1] - raster.x[0])
@@ -604,19 +852,29 @@ def write_init_binary(path: Path, raster: AvacRaster, depth: np.ndarray, cancell
         dx,
         dy,
     )
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as handle:
         handle.write(header)
         for row in range(raster.y.size - 1, -1, -1):
             if cancelled and cancelled():
                 raise PreparationCancelled("AVAC input preparation cancelled.")
-            row_values = np.nan_to_num(values[row], nan=0.0, posinf=0.0, neginf=0.0)
+            row_values = values[row]
             # Retain the legacy writer's ``.12g`` scientific-input precision
             # so switching transport formats does not alter solver results.
+            # Extremely small finite values cannot be multiplied by a decimal
+            # scale without overflowing that scale.  They are already far
+            # below any practical dry tolerance, but retain their finite
+            # binary value rather than turning them into NaN during rounding.
             nonzero = row_values != 0.0
             if np.any(nonzero):
                 row_values = row_values.copy()
-                scale = np.power(10.0, 11.0 - np.floor(np.log10(np.abs(row_values[nonzero]))))
-                row_values[nonzero] = np.rint(row_values[nonzero] * scale) / scale
+                indices = np.flatnonzero(nonzero)
+                exponent = 11.0 - np.floor(np.log10(np.abs(row_values[indices])))
+                roundable = exponent <= 308.0
+                if np.any(roundable):
+                    selected = indices[roundable]
+                    scale = np.power(10.0, exponent[roundable])
+                    row_values[selected] = np.rint(row_values[selected] * scale) / scale
             row_values.astype("<f8", copy=False).tofile(handle)
 
 
@@ -628,7 +886,12 @@ def materialize_configuration(template: Path, destination: Path, raster: AvacRas
     issues = validate_grid_contract(config, float(raster.metadata["cellsize"]))
     if issues:
         raise ValueError(" ".join(issues))
+    if not isinstance(config.get("release"), dict):
+        raise ValueError("Template requires a complete release mapping.")
     config["release"].update(release)
+    release_issues = validate_release_depth_parameters(config["release"])
+    if release_issues:
+        raise ValueError("Invalid AVAC release parameters: " + " ".join(release_issues))
     config["file_names"].update({"topofile": "topography.asc", "initiation_file": QINIT_BINARY_NAME, "type_dem": 3, "type_init": 1})
     if not config["file_names"].get("topo_source"):
         raise ValueError("Template requires file_names.topo_source for the current setrun.py.")
@@ -693,9 +956,16 @@ def prepare_inputs(
     topo_path, init_path, configuration_path = topo_dir / "topography.asc", avac_dir / QINIT_BINARY_NAME, avac_dir / "AVAC_configuration.yaml"
     if progress:
         progress(50)
-    write_topography(topo_path, raster, cancelled)
+    # GeoClaw interpolates topotype-3 terrain as nodal samples.  Give that
+    # reader edge support without changing the physical QGIS/qinit grid.
+    write_topography(topo_path, geoclaw_topography_halo(raster), cancelled)
     if fine_raster is not None:
-        write_topography(topo_dir / "fine_topography.asc", fine_raster, cancelled)
+        # A local fine DEM overlays the base terrain.  Unlike the base file,
+        # it must not be edge-padded beyond its QGIS footprint because GeoClaw
+        # would give that extrapolated fringe precedence over the base DEM.
+        write_topography(
+            topo_dir / "fine_topography.asc", geoclaw_overlay_topography(fine_raster), cancelled,
+        )
     if progress:
         progress(72)
     write_init_binary(init_path, raster, depth, cancelled)

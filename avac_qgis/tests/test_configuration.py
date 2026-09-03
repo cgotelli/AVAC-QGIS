@@ -50,14 +50,14 @@ def main() -> None:
         assert generated["release"]["period_return"] == 300
         assert not generated["gauges"]["gauge_recording"] and generated["gauges"]["gauges"] == template["gauges"]["gauges"]
         assert not generated["refinement"]["topo_refinement"]
-        assert generated["dem_extent"] == {"xmin": 0.0, "xmax": 2.0, "ymin": 0.0, "ymax": 2.0, "nbx": 2, "nby": 2, "cell_size": 2.0, "nodata_value": -9999.0}
+        assert generated["dem_extent"] == {"xmin": 0.0, "xmax": 4.0, "ymin": 0.0, "ymax": 4.0, "nbx": 2, "nby": 2, "cell_size": 2.0, "nodata_value": -9999.0}
         refined = materialize_configuration(TEMPLATE, Path(directory) / "refined.yaml", raster, {"d0": 1.6}, Path(directory), changed, raster)
         assert refined["refinement"]["topo_refinement"] and refined["refinement"]["finer_dem"] == "fine_topography.asc"
         assert refined["refinement"]["fine_dict"]["cell_size"] == 1.0
         lachat = AvacRaster(np.empty(0), np.empty(0), np.empty((0, 0)), {"xmin": 967799.0, "xmax": 971701.0, "ymin": 6537699.0, "ymax": 6540901.0, "ncols": 3902, "nrows": 3202, "cellsize": 1.0, "nodata_value": -9999.0}, "EPSG:2154", 1)
         lachat_domain = configuration_for_raster(apply_controlled_values(template, changed), lachat)["dem_extent"]
-        assert lachat_domain["xmin"] == 967799.0 and lachat_domain["xmax"] == 971699.0
-        assert lachat_domain["ymin"] == 6537699.0 and lachat_domain["ymax"] == 6540899.0
+        assert lachat_domain["xmin"] == 967799.0 and lachat_domain["xmax"] == 971701.0
+        assert lachat_domain["ymin"] == 6537699.0 and lachat_domain["ymax"] == 6540901.0
         with_gauge = apply_controlled_values(template, changed)
         with_gauge["gauges"] = {"gauge_recording": True, "gauges": [[7, 50.0, 50.0]]}
         prepared = configuration_for_raster(with_gauge, raster)
