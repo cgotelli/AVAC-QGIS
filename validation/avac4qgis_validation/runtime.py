@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -291,11 +292,44 @@ def working_directory(path: Path):
         os.chdir(previous)
 
 
+def _close_file_handlers_below(directory: Path) -> None:
+    """Release logging files inside a generated directory before deletion.
+
+    PyClaw's import-time logging configuration can leave ``pyclaw.log`` open
+    in the current work directory.  POSIX permits unlinking that file, while
+    Windows correctly rejects the cleanup with a sharing violation.  Limit
+    the cleanup to handlers whose resolved files are below the directory that
+    is about to be recreated; unrelated application and plugin logs remain
+    untouched.
+    """
+    directory = directory.resolve()
+    loggers = [logging.getLogger()]
+    loggers.extend(
+        candidate
+        for candidate in logging.Logger.manager.loggerDict.values()
+        if isinstance(candidate, logging.Logger)
+    )
+    handlers: set[logging.FileHandler] = set()
+    for logger in loggers:
+        for handler in tuple(logger.handlers):
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            try:
+                Path(handler.baseFilename).resolve().relative_to(directory)
+            except (AttributeError, OSError, TypeError, ValueError):
+                continue
+            logger.removeHandler(handler)
+            handlers.add(handler)
+    for handler in handlers:
+        handler.close()
+
+
 def clean_case(case: Path) -> None:
     """Recreate only the generated working folders of a validation case."""
     for name in ("AVAC", "Wave", "Topo", "CL", "results"):
         target = case / name
         if target.exists():
+            _close_file_handlers_below(target)
             shutil.rmtree(target)
     for name in ("AVAC", "Wave", "Topo", "CL", "results"):
         (case / name).mkdir(parents=True, exist_ok=True)
@@ -629,6 +663,8 @@ def _run_setrun(kind: str, case: Path, qinit: bool) -> None:
     source_root = CLAWPACK_SOURCE
     with working_directory(work):
         _activate_packaged_clawpack(source_root)
+        from avac_qgis.core.clawpack_logging import suppress_pyclaw_file_logging
+
         # ``sys.path[0]`` remains the directory of the calling validation
         # script after chdir.  Add the generated work directory explicitly so
         # the dependency-free local ``yaml.py`` shim is importable.
@@ -638,8 +674,9 @@ def _run_setrun(kind: str, case: Path, qinit: bool) -> None:
         # Do not execute the backend as __main__: Jupyter adds kernel arguments
         # to sys.argv, which the legacy setrun footer would mistake for inputs.
         namespace = {"__name__": "validation_backend", "__file__": str(work / "setrun.py")}
-        exec(compile(source, str(backend), "exec"), namespace)
-        namespace["setrun"]().write()
+        with suppress_pyclaw_file_logging():
+            exec(compile(source, str(backend), "exec"), namespace)
+            namespace["setrun"]().write()
 
 
 def prepare_wave_case(case: Path, *, xlower: float, xupper: float, ylower: float, yupper: float,

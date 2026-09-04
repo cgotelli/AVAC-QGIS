@@ -115,7 +115,12 @@ def _consolidated_sources(directory: Path, *, real_world_topo: bool) -> tuple[li
     def consolidate(custom_values: list[Path], common_values: list[Path], excluded: list[Path]) -> list[Path]:
         custom_values = unique(custom_values)
         excluded_stems = {_stem(path) for path in [*custom_values, *excluded]}
-        return [*custom_values, *(path for path in unique(common_values) if _stem(path) not in excluded_stems)]
+        # Match Clawpack's check_src.py ordering: shared modules must be
+        # compiled before application modules that USE them.
+        return [
+            *(path for path in unique(common_values) if _stem(path) not in excluded_stems),
+            *custom_values,
+        ]
 
     return (
         consolidate(custom_sources, common_sources, excluded_sources),

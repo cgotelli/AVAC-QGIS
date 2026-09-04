@@ -231,17 +231,11 @@ c            # with capa array.
 
 c 50      continue
 c
-c     # AVAC depth is a conserved cell average.  The high-order update can
-c     # produce a small negative undershoot at a wet/dry front; simply clipping
-c     # it to zero creates mass.  Recover the deficit only from face-sharing
-c     # downstream recipient states whose momentum carries them away
-c     # from the undershot cell.  Momentum in those states is scaled
-c     # with depth, preserving their velocity.  This is a general AVAC
-c     # correction and is not selected by validation case.
-      if (conserve_depth_amr) then
-         call redistribute_negative_depth(q,mitot,mjtot,mbc,nvar,
-     &                                    dry_tolerance)
-      endif
+c     # Keep this wet/dry correction cell-local.  Post-update cell momentum
+c     # is not the interface mass flux that caused an undershoot; using it to
+c     # redistribute depth destabilizes transversely extruded dry fronts.
+c     # Clipping can add the bounded negative undershoot to the total mass, so
+c     # validation cases monitor the resulting mass drift.
 c
 c     # Copied here from b4step2 since need to do before saving to qc1d:
       forall(i=1:mitot, j=1:mjtot, q(1,i,j) < dry_tolerance)
@@ -329,105 +323,5 @@ c            write(*,545) i,j,(q(i,j,ivar),ivar=1,nvar)
 #ifdef WHERE_AM_I
       write(*,*) "     ending   stepgrid grid ",mptr
 #endif
-      return
-      end
-
-
-c     ================================================================
-      subroutine redistribute_negative_depth(q,mitot,mjtot,mbc,nvar,
-     &                                       dry_tolerance)
-c     ================================================================
-c
-c     Positivity repair for AVAC wet/dry fronts with directional local
-c     conservation.  Each negative depth is set to zero.  Its deficit is
-c     recovered only from face-sharing positive downstream states.
-c     A state is downstream when its post-update momentum points away
-c     from the undershot cell, identifying a local recipient of the
-c     excessive outgoing transport.  Thus a repair cannot draw material
-c     from an upstream reservoir, a deposit, or a distant patch state.
-c     All components of a recipient state are scaled together,
-c     preserving its velocity.  Any residual with no physical downstream
-c     state remains a bounded dry-state clipping error rather than
-c     changing a remote state.
-c
-      implicit none
-
-      integer mitot,mjtot,mbc,nvar
-      integer i,j,m,ilo,ihi,jlo,jhi
-      integer ni(4),nj(4),n
-      double precision q(nvar,mitot,mjtot),dry_tolerance
-      double precision available,take,factor,remaining,outflow_tolerance
-      double precision outflow
-      logical carries_outflow
-
-      ilo = mbc + 1
-      ihi = mitot - mbc
-      jlo = mbc + 1
-      jhi = mjtot - mbc
-      outflow_tolerance = 1.d-14
-
-      do j=jlo,jhi
-         do i=ilo,ihi
-            if (q(1,i,j) .ge. 0.d0) cycle
-
-            remaining = -q(1,i,j)
-            do m=1,nvar
-               q(m,i,j) = 0.d0
-            enddo
-
-c           # A correction donor is a face-sharing downstream recipient.
-c           # Its momentum must point from this undershot cell towards
-c           # itself.  That identifies material that received excess
-c           # outgoing transport and keeps the correction local.
-            ni(1) = i-1
-            nj(1) = j
-            ni(2) = i+1
-            nj(2) = j
-            ni(3) = i
-            nj(3) = j-1
-            ni(4) = i
-            nj(4) = j+1
-            available = 0.d0
-            do n=1,4
-               if (ni(n).ge.ilo .and. ni(n).le.ihi .and.
-     &             nj(n).ge.jlo .and. nj(n).le.jhi .and.
-     &             q(1,ni(n),nj(n)).gt.0.d0) then
-                  carries_outflow = .false.
-                  if (nvar.ge.3) then
-                     outflow = q(2,ni(n),nj(n))*dble(ni(n)-i)
-     &                        + q(3,ni(n),nj(n))*dble(nj(n)-j)
-                     carries_outflow = outflow .gt. outflow_tolerance
-     &                                * q(1,ni(n),nj(n))
-                  endif
-                  if (carries_outflow) then
-                     available = available + q(1,ni(n),nj(n))
-                  endif
-               endif
-            enddo
-            if (available .gt. 0.d0) then
-               take = min(remaining,available)
-               factor = max(0.d0,1.d0-take/available)
-               do n=1,4
-                  if (ni(n).ge.ilo .and. ni(n).le.ihi .and.
-     &                nj(n).ge.jlo .and. nj(n).le.jhi .and.
-     &                q(1,ni(n),nj(n)).gt.0.d0) then
-                     carries_outflow = .false.
-                     if (nvar.ge.3) then
-                        outflow = q(2,ni(n),nj(n))*dble(ni(n)-i)
-     &                           + q(3,ni(n),nj(n))*dble(nj(n)-j)
-                        carries_outflow = outflow .gt. outflow_tolerance
-     &                                   * q(1,ni(n),nj(n))
-                     endif
-                     if (carries_outflow) then
-                        do m=1,nvar
-                           q(m,ni(n),nj(n)) = factor*q(m,ni(n),nj(n))
-                        enddo
-                     endif
-                  endif
-               enddo
-            endif
-         enddo
-      enddo
-
       return
       end

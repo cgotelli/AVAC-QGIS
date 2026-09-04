@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
+import logging.config
 import os
 from pathlib import Path
 
@@ -9,6 +11,74 @@ import pytest
 
 
 RUNTIME = importlib.import_module("avac4qgis_validation.runtime")
+
+
+def test_clean_case_closes_only_file_handlers_inside_generated_folders(
+    tmp_path: Path,
+) -> None:
+    case = tmp_path / "case"
+    wave = case / "Wave"
+    wave.mkdir(parents=True)
+    inside_log = wave / "pyclaw.log"
+    outside_log = tmp_path / "application.log"
+    inside_logger = logging.getLogger(f"test.clean_case.inside.{id(tmp_path)}")
+    shared_logger = logging.getLogger(f"test.clean_case.shared.{id(tmp_path)}")
+    outside_logger = logging.getLogger(f"test.clean_case.outside.{id(tmp_path)}")
+    inside_handler = logging.FileHandler(inside_log)
+    outside_handler = logging.FileHandler(outside_log)
+    inside_logger.addHandler(inside_handler)
+    shared_logger.addHandler(inside_handler)
+    outside_logger.addHandler(outside_handler)
+    try:
+        RUNTIME.clean_case(case)
+
+        assert inside_handler not in inside_logger.handlers
+        assert inside_handler not in shared_logger.handlers
+        assert inside_handler.stream is None
+        assert (case / "Wave").is_dir()
+        assert not inside_log.exists()
+        assert outside_handler in outside_logger.handlers
+        assert outside_handler.stream is not None
+    finally:
+        inside_logger.removeHandler(inside_handler)
+        shared_logger.removeHandler(inside_handler)
+        outside_logger.removeHandler(outside_handler)
+        inside_handler.close()
+        outside_handler.close()
+
+
+def test_run_setrun_suppresses_pyclaw_import_file_logging(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    config = tmp_path / "pyclaw" / "log.config"
+    config.parent.mkdir()
+    config.write_text("unused\n", encoding="utf-8")
+    (source / "setrun.py").write_text(
+        "import logging.config\n"
+        "class RunData:\n"
+        "    def write(self):\n"
+        f"        logging.config.fileConfig({str(config)!r})\n"
+        "def setrun():\n"
+        "    return RunData()\n",
+        encoding="utf-8",
+    )
+    case = tmp_path / "case"
+    (case / "Wave").mkdir(parents=True)
+    calls: list[object] = []
+
+    def fake_file_config(path, *args, **kwargs):
+        calls.append(path)
+
+    monkeypatch.setattr(RUNTIME, "runtime", lambda kind: source)
+    monkeypatch.setattr(RUNTIME, "_activate_packaged_clawpack", lambda root: None)
+    monkeypatch.setattr(logging.config, "fileConfig", fake_file_config)
+
+    RUNTIME._run_setrun("wave", case, qinit=False)
+
+    assert calls == []
+    assert logging.config.fileConfig is fake_file_config
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Unix make invocation")
