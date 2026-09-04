@@ -278,8 +278,16 @@ def setrun(claw_pkg='geoclaw'):
     # --------------------
     # Boundary conditions:
     # --------------------
-    # Number of ghost cells (usually 2)
-    clawdata.num_ghost = 2
+    # Five cells close AVAC's second-order f-wave/static-yield stencil at
+    # same-level patch interfaces.  Water and multilevel AMR retain the
+    # established two-cell GeoClaw path because their relimiter is disabled.
+    # AMRClaw consequently requires both base-grid axes to contain at least
+    # ten cells for a single-level granular run.
+    uses_positivity_relimit = (
+        str(Rheol["model"]).strip() != "Water"
+        and int(Param["refinement"]) == 1
+    )
+    clawdata.num_ghost = 5 if uses_positivity_relimit else 2
 
     # Choice of BCs at xlower and xupper:
     #   0 => user specified (must modify bcN.f to use this option)

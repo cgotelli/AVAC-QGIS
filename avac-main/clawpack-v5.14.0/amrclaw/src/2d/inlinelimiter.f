@@ -4,6 +4,26 @@ c     =====================================================
       subroutine limiter(maxm,meqn,mwaves,mbc,mx,wave,s,mthlim)
 c     =====================================================
 c
+c     # Preserve the historical public entry point and its exact range.
+c     # GeoClaw's optional positivity path calls limiter_range directly to
+c     # populate the additional ghost-face halo it requires.
+c
+      implicit double precision (a-h,o-z)
+      dimension mthlim(mwaves)
+      dimension wave(meqn, mwaves, 1-mbc:maxm+mbc)
+      dimension    s(mwaves, 1-mbc:maxm+mbc)
+c
+      call limiter_range(maxm,meqn,mwaves,mbc,mx,wave,s,mthlim,
+     &                   0,mx+1)
+      return
+      end
+
+
+c     =====================================================
+      subroutine limiter_range(maxm,meqn,mwaves,mbc,mx,wave,s,
+     &                         mthlim,ilo,ihi)
+c     =====================================================
+c
 c     # Apply a limiter to the waves.  
 c
 c     # Version of December, 2002.
@@ -38,7 +58,7 @@ c
       do 200 mw=1,mwaves
          if (mthlim(mw) .eq. 0) go to 200
          dotr = 0.d0
-         do 190 i = 0, mx+1
+         do 190 i = ilo, ihi
             wnorm2 = 0.d0
             dotl = dotr
             dotr = 0.d0
@@ -46,7 +66,7 @@ c
                wnorm2 = wnorm2 + wave(m,mw,i)**2
                dotr = dotr + wave(m,mw,i)*wave(m,mw,i+1)
     5          continue
-            if (i.eq.0) go to 190
+            if (i.eq.ilo) go to 190
             if (wnorm2.eq.0.d0) go to 190
 c
             if (s(mw,i) .gt. 0.d0) then

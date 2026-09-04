@@ -60,6 +60,13 @@ module geoclaw_module
     ! speed_limit ensures that disabling a velocity cap cannot disable AMR.
     real(kind=8) :: refinement_energy_depth = -1.d0
 
+    ! AVAC can opt into an outgoing-flux limiter that prevents wet/dry
+    ! undershoots before the cell update.  This remains disabled by default
+    ! so ordinary GeoClaw and WAVE applications retain their established
+    ! numerical path.  AVAC enables it only for supported single-level,
+    ! granular-flow runs in setprob.
+    logical :: use_fwave_positivity_limiter = .false.
+
 contains
 
     ! ========================================================================

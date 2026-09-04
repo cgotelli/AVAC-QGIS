@@ -28,7 +28,8 @@ import numpy as np
 
 
 GRAVITY = 9.81
-AVAC_GHOST_CELLS = 2
+AVAC_GHOST_CELLS = 5
+GEOCLAW_GHOST_CELLS = 2
 VALIDATION_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = VALIDATION_ROOT.parent
 CLAWPACK_SOURCE = WORKSPACE / "avac-main" / "clawpack-v5.14.0"
@@ -336,7 +337,7 @@ def clean_case(case: Path) -> None:
 
 
 def _arc_ascii(path: Path, xmin: float, ymin: float, dx: float, values: np.ndarray) -> None:
-    """Write a north-up Arc ASCII grid, including one ghost cell on every edge."""
+    """Write the supplied north-up nodal values as an Arc ASCII grid."""
     values = np.asarray(values, dtype=float)
     nrows, ncols = values.shape
     lines = [
@@ -366,8 +367,9 @@ def write_topography(
 
     ``bed`` is evaluated at grid-cell centers.  ``ghost_cells`` halo cells
     are added on every side so boundary auxiliary cells remain inside a
-    registered topography grid.  Both AVAC and WAVE use GeoClaw's standard
-    two-cell halo.
+    registered topography grid.  Callers select five cells for the
+    single-level granular AVAC stencil and two for the legacy GeoClaw/WAVE
+    stencil.
     """
     nx = round((xupper - xlower) / dx)
     ny = round((yupper - ylower) / dx)
@@ -899,10 +901,11 @@ def prepare_avac_coulomb_case(
         raise ValueError(f"Unsupported AVAC boundary in {boundaries!r}")
     case = case.resolve()
     clean_case(case)
+    ghost_cells = AVAC_GHOST_CELLS if refinement == 1 else GEOCLAW_GHOST_CELLS
     bed = (lambda X, Y: np.zeros_like(X)) if bed is None else bed
     x, y, _ = write_topography(
         case, xlower, xupper, ylower, yupper, dx, bed,
-        ghost_cells=AVAC_GHOST_CELLS,
+        ghost_cells=ghost_cells,
     )
     write_depth_xyz(case / "AVAC" / "init.xyz", x, y, depth)
     config = {
@@ -977,13 +980,13 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
     clean_case(case)
     x, y, _ = write_topography(
         case, xlower, xupper, ylower, yupper, dx, bed,
-        ghost_cells=AVAC_GHOST_CELLS,
+        ghost_cells=GEOCLAW_GHOST_CELLS,
     )
     # Sample qinit independently at the finest longitudinal AMR spacing.  A
     # deliberately coarse far field must not degrade an analytical initial
     # profile before refinement is created.  The quasi-1D state is uniform in
     # y, so retaining the base-grid transverse sampling avoids a large file.
-    qinit_ghost_cells = AVAC_GHOST_CELLS
+    qinit_ghost_cells = GEOCLAW_GHOST_CELLS
     qinit_x = xlower + (
         np.arange(round(qinit_cells) + 2 * qinit_ghost_cells)
         - qinit_ghost_cells + 0.5
@@ -1055,7 +1058,7 @@ def prepare_avac_water_case(case: Path, *, xlower: float, xupper: float, ylower:
     # AMRClaw tests ``interior_cells + 2 * nghost > max1d`` when constructing
     # base patches.  ``None`` requests one long patch; an explicit value may
     # be used to create several same-level patches for OpenMP execution.
-    nghost = AVAC_GHOST_CELLS
+    nghost = GEOCLAW_GHOST_CELLS
     minimum_max1d = round((yupper - ylower) / dx) + 2 * nghost
     if max1d is None:
         patch_limit = round((xupper - xlower) / dx) + 2 * nghost
@@ -1113,7 +1116,7 @@ def prepare_avac_hydraulic_case(
     clean_case(case)
     x, y, _bed_values = write_topography(
         case, xlower, xupper, ylower, yupper, dx, bed,
-        ghost_cells=AVAC_GHOST_CELLS,
+        ghost_cells=GEOCLAW_GHOST_CELLS,
     )
     init_path = case / "AVAC" / "init.xyz"
     qinit_type = 1
@@ -1188,7 +1191,7 @@ def prepare_avac_hydraulic_case(
     _replace_data_value(work/"claw.data", "cfl_max", "0.5")
     _replace_data_value(work/"amr.data", "flag2refine", "F")
     _replace_data_value(work/"claw.data", "dt_initial", f"{min(0.01,0.05*dx):.12g}")
-    nghost = AVAC_GHOST_CELLS
+    nghost = GEOCLAW_GHOST_CELLS
     minimum_max1d = round((yupper-ylower)/dx)+2*nghost
     if max1d is None:
         patch_limit = round((xupper-xlower)/dx)+2*nghost

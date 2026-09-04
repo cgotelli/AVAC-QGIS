@@ -24,6 +24,8 @@ subroutine setprob
     use rheology_module
     use hydraulic_bc_module, only: setup_hydraulic_bc
     use geoclaw_module, only: conserve_depth_amr, refinement_energy_depth
+    use geoclaw_module, only: use_fwave_positivity_limiter
+    use amr_module, only: nghost, mxnest
 
     implicit none
 
@@ -125,6 +127,20 @@ subroutine setprob
     conserve_depth_amr = .true.
     refinement_energy_depth = velocity_depth_threshold_rh
 
+    ! The complete AVAC f-wave/yield stencil requires five ghost cells when
+    ! reconstructing the outgoing budget of a same-level neighbour.  The
+    ! coarse/fine reflux path needs separate validation, so multilevel runs
+    ! deliberately retain the legacy GeoClaw update for now.
+    use_fwave_positivity_limiter = imodel_rh >= 1 .and. mxnest == 1
+    if (use_fwave_positivity_limiter .and. nghost < 5) then
+        print *, 'ERROR: AVAC positivity limiter requires at least 5 ghost cells'
+        stop
+    end if
+    if (imodel_rh >= 1 .and. mxnest > 1) then
+        print *, 'WARNING: AVAC positivity limiter disabled for multilevel AMR'
+        print *, '         coarse/fine conservation has not been validated'
+    end if
+
     print *, 'rho (snow density) = ', rho
     !print *, 'C (cohesion, Pa)   = ', C
     print *, 'u_cr (legacy, unused) = ', u_cr
@@ -135,6 +151,7 @@ subroutine setprob
     print *, 'number of altitude zones = ', n_zones
     print *, 'conservative AVAC AMR depth transfer = ', conserve_depth_amr
     print *, 'AMR kinetic-energy reference depth = ', refinement_energy_depth
+    print *, 'AVAC f-wave positivity limiter = ', use_fwave_positivity_limiter
     do k = 1, n_zones - 1
         print *, '  z_break(', k, ') = ', z_breaks_rh(k), ' m'
     end do

@@ -15,14 +15,14 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
 !
 !     # modified again for GeoClaw
 !------------------step2_geo.f-----------------------
-!     This version of step2 relimits the fluxes in order to
-!     maintain positivity.
-!     to do so set relimit=.true.
-!     The only modification is the 101 loop
+!     The optional module-controlled path relimits outgoing correction
+!     fluxes before the update in order to maintain depth positivity.
+!     Its extended face stencil is enabled only by supported AVAC runs.
 !------------last modified 12/30/04--------------------------
 !
 
-    use geoclaw_module, only: dry_tolerance
+    use geoclaw_module, only: dry_tolerance, &
+        relimit => use_fwave_positivity_limiter
     use amr_module, only: mwaves, mcapa
 
     implicit none
@@ -64,18 +64,35 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
     
     ! Looping scalar storage
     integer :: i,j,m,thread_num
+    integer :: sweep_lo,sweep_pad,normal_lo,normal_pad,trans_lo,trans_pad
     real(kind=8) :: dtdx,dtdy,cfl1d,p,phi,cm,dtdxij,dtdyij
+    logical :: out_left,out_right,out_bottom,out_top
     
     ! Common block storage
     integer :: icom,jcom
 
-    ! Parameters
-    ! Relimit fluxes to maintain positivity
-    logical, parameter :: relimit = .false.
-
     cflgrid = 0.d0
     dtdx = dt/dx
     dtdy = dt/dy
+
+    sweep_lo = 0
+    sweep_pad = 1
+    normal_lo = 1
+    normal_pad = 1
+    trans_lo = 1
+    trans_pad = 1
+    if (relimit) then
+        if (mbc < 5) then
+            print *, 'ERROR: f-wave positivity limiter requires mbc >= 5'
+            stop
+        end if
+        sweep_lo = -1
+        sweep_pad = 2
+        normal_lo = 0
+        normal_pad = 2
+        trans_lo = 0
+        trans_pad = 1
+    end if
     
     fm = 0.d0
     fp = 0.d0
@@ -84,7 +101,7 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
 
     ! ==========================================================================
     ! Perform X-Sweeps
-    do j = 0,my+1
+    do j = sweep_lo,my+sweep_pad
 
         ! Copy old q into 1d slice
         q1d(:,1-mbc:mx+mbc) = qold(:,1-mbc:mx+mbc,j)
@@ -115,19 +132,29 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
         ! write(53,*) 'x-sweep: ',cfl1d,cflgrid
 
         ! Update fluxes
-        fm(:,1:mx+1,j) = fm(:,1:mx+1,j) + faddm(:,1:mx+1)
-        fp(:,1:mx+1,j) = fp(:,1:mx+1,j) + faddp(:,1:mx+1)
-        gm(:,1:mx+1,j) = gm(:,1:mx+1,j) + gaddm(:,1:mx+1,1)
-        gp(:,1:mx+1,j) = gp(:,1:mx+1,j) + gaddp(:,1:mx+1,1)
-        gm(:,1:mx+1,j+1) = gm(:,1:mx+1,j+1) + gaddm(:,1:mx+1,2)
-        gp(:,1:mx+1,j+1) = gp(:,1:mx+1,j+1) + gaddp(:,1:mx+1,2)
+        fm(:,normal_lo:mx+normal_pad,j) = &
+            fm(:,normal_lo:mx+normal_pad,j) + &
+            faddm(:,normal_lo:mx+normal_pad)
+        fp(:,normal_lo:mx+normal_pad,j) = &
+            fp(:,normal_lo:mx+normal_pad,j) + &
+            faddp(:,normal_lo:mx+normal_pad)
+        gm(:,trans_lo:mx+trans_pad,j) = gm(:,trans_lo:mx+trans_pad,j) + &
+            gaddm(:,trans_lo:mx+trans_pad,1)
+        gp(:,trans_lo:mx+trans_pad,j) = gp(:,trans_lo:mx+trans_pad,j) + &
+            gaddp(:,trans_lo:mx+trans_pad,1)
+        gm(:,trans_lo:mx+trans_pad,j+1) = &
+            gm(:,trans_lo:mx+trans_pad,j+1) + &
+            gaddm(:,trans_lo:mx+trans_pad,2)
+        gp(:,trans_lo:mx+trans_pad,j+1) = &
+            gp(:,trans_lo:mx+trans_pad,j+1) + &
+            gaddp(:,trans_lo:mx+trans_pad,2)
 
     enddo
 
     ! ============================================================================
     !  y-sweeps    
     !
-    do i = 0, mx+1
+    do i = sweep_lo, mx+sweep_pad
         
         ! Copy data along a slice into 1d arrays:
         q1d(:,1-mbc:my+mbc) = qold(:,i,1-mbc:my+mbc)
@@ -158,12 +185,22 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
         ! write(53,*) 'y-sweep: ',cfl1d,cflgrid
 
         ! Update fluxes
-        gm(:,i,1:my+1) = gm(:,i,1:my+1) + faddm(:,1:my+1)
-        gp(:,i,1:my+1) = gp(:,i,1:my+1) + faddp(:,1:my+1)
-        fm(:,i,1:my+1) = fm(:,i,1:my+1) + gaddm(:,1:my+1,1)
-        fp(:,i,1:my+1) = fp(:,i,1:my+1) + gaddp(:,1:my+1,1)
-        fm(:,i+1,1:my+1) = fm(:,i+1,1:my+1) + gaddm(:,1:my+1,2)
-        fp(:,i+1,1:my+1) = fp(:,i+1,1:my+1) + gaddp(:,1:my+1,2)
+        gm(:,i,normal_lo:my+normal_pad) = &
+            gm(:,i,normal_lo:my+normal_pad) + &
+            faddm(:,normal_lo:my+normal_pad)
+        gp(:,i,normal_lo:my+normal_pad) = &
+            gp(:,i,normal_lo:my+normal_pad) + &
+            faddp(:,normal_lo:my+normal_pad)
+        fm(:,i,trans_lo:my+trans_pad) = fm(:,i,trans_lo:my+trans_pad) + &
+            gaddm(:,trans_lo:my+trans_pad,1)
+        fp(:,i,trans_lo:my+trans_pad) = fp(:,i,trans_lo:my+trans_pad) + &
+            gaddp(:,trans_lo:my+trans_pad,1)
+        fm(:,i+1,trans_lo:my+trans_pad) = &
+            fm(:,i+1,trans_lo:my+trans_pad) + &
+            gaddm(:,trans_lo:my+trans_pad,2)
+        fp(:,i+1,trans_lo:my+trans_pad) = &
+            fp(:,i+1,trans_lo:my+trans_pad) + &
+            gaddp(:,trans_lo:my+trans_pad,2)
 
     end do
 
@@ -171,8 +208,8 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
     if (relimit) then
         dtdxij = dtdx
         dtdyij = dtdy
-        do i=1,mx
-            do j=1,my
+        do i=0,mx+1
+            do j=0,my+1
                 if (mcapa > 0) then
                     dtdxij = dtdx / aux(mcapa,i,j)
                     dtdyij = dtdy / aux(mcapa,i,j)
@@ -182,23 +219,30 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
                 phi = min(1.d0,abs(qold(1,i,j) / (p+dry_tolerance)))
 
                 if (phi < 1.d0) then
+                    ! Capture every direction before component 1 changes.
+                    ! Each face is owned by exactly one upwind mass donor;
+                    ! positive scaling preserves that ownership.
+                    out_left = fp(1,i,j) < 0.d0
+                    out_bottom = gp(1,i,j) < 0.d0
+                    out_right = fm(1,i+1,j) > 0.d0
+                    out_top = gm(1,i,j+1) > 0.d0
                     do m=1,meqn
-                        if (fp(1,i,j) < 0.d0) then
+                        if (out_left) then
                             cm = fp(m,i,j) - fm(m,i,j)
                             fm(m,i,j) = phi * fm(m,i,j)
                             fp(m,i,j) = fm(m,i,j) + cm
                         endif
-                        if (gp(1,i,j) < 0.d0) then
+                        if (out_bottom) then
                             cm = gp(m,i,j) - gm(m,i,j)
                             gm(m,i,j) = phi * gm(m,i,j)
                             gp(m,i,j) = gm(m,i,j) + cm
                         endif
-                        if (fm(1,i+1,j) > 0.d0) then
+                        if (out_right) then
                             cm = fp(m,i+1,j) - fm(m,i+1,j)
                             fp(m,i+1,j) = phi * fp(m,i+1,j)
                             fm(m,i+1,j) = fp(m,i+1,j) - cm
                         endif
-                        if (gm(1,i,j+1) > 0.d0) then
+                        if (out_top) then
                             cm = gp(m,i,j+1) - gm(m,i,j+1)
                             gp(m,i,j+1) = phi * gp(m,i,j+1)
                             gm(m,i,j+1) = gp(m,i,j+1) - cm

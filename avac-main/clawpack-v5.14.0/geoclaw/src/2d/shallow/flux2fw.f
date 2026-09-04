@@ -71,18 +71,16 @@ c
 c      #  modifications for GeoClaw
 
 c--------------------------flux2fw_geo.f--------------------------
-c     This version of flux2fw.f is modified slightly to be used with
-c     step2_geo.f  The only modification is for the first-order
-c     mass fluxes, faddm(i,j,1) and faddp(i,j,1), so that those terms are true
-c     interface fluxes.
-c
-c     The only change is in loop 40
-c     to revert to the original version, set relimit = .false.
+c     When use_fwave_positivity_limiter is enabled, first-order mass
+c     terms are retained as true interface fluxes and the second-order
+c     stencil is evaluated over the extra faces needed by step2.  The
+c     module flag is false by default, preserving the historical path.
 c---------------------last modified 1/04/05-----------------------------
 
       use amr_module, only: use_fwaves, mwaves, method
       use amr_module, only: mthlim
-      use geoclaw_module, only: coordinate_system, earth_radius, deg2rad
+      use geoclaw_module, only: coordinate_system, earth_radius,
+     &     deg2rad, relimit => use_fwave_positivity_limiter
 
       implicit double precision (a-h,o-z)
 
@@ -106,9 +104,15 @@ c
       dimension  amdq(meqn, 1-mbc:maxm+mbc)
       dimension  apdq(meqn, 1-mbc:maxm+mbc)
 c
-      logical limit, relimit
+      logical limit
+      integer ilo, ihi
 
-      relimit = .false.
+      ilo = 1
+      ihi = mx+1
+      if (relimit) then
+         ilo = 0
+         ihi = mx+2
+      endif
 c
       limit = .false.
       do 5 mw=1,mwaves
@@ -181,9 +185,16 @@ c     # modify F fluxes for second order q_{xx} correction terms:
 c     -----------------------------------------------------------
 c
 c     # apply limiter to fwaves:
-      if (limit) call limiter(maxm,meqn,mwaves,mbc,mx,fwave,s,mthlim)
+      if (limit) then
+         if (relimit) then
+            call limiter_range(maxm,meqn,mwaves,mbc,mx,fwave,s,
+     &                         mthlim,-1,mx+2)
+         else
+            call limiter(maxm,meqn,mwaves,mbc,mx,fwave,s,mthlim)
+         endif
+      endif
 c
-      do 120 i = 1, mx+1
+      do 120 i = ilo, ihi
 c
 c        # For correction terms below, need average of dtdx in cell
 c        # i-1 and i.  Compute these and overwrite dtdx1d:
@@ -210,7 +221,7 @@ c
 c
        if (method(2).gt.1 .and. method(3).eq.2) then
 c         # incorporate cqxx into amdq and apdq so that it is split also.
-          do 150 i = 1, mx+1
+          do 150 i = ilo, ihi
              do 150 m=1,meqn
                 amdq(m,i) = amdq(m,i) + cqxx(m,i)
                 apdq(m,i) = apdq(m,i) - cqxx(m,i)
@@ -228,7 +239,7 @@ c     # split the left-going flux difference into down-going and up-going:
      &          amdq,bmasdq,bpasdq)
 c
 c     # modify flux below and above by B^- A^- Delta q and  B^+ A^- Delta q:
-      do 160 i = 1, mx+1
+      do 160 i = ilo, ihi
          do 160 m=1,meqn
                gupdate = 0.5d0*dtdx1d(i-1) * bmasdq(m,i)
                gaddm(m,i-1,1) = gaddm(m,i-1,1) - gupdate
@@ -245,7 +256,7 @@ c     # split the right-going flux difference into down-going and up-going:
      &          apdq,bmasdq,bpasdq)
 c
 c     # modify flux below and above by B^- A^+ Delta q and  B^+ A^+ Delta q:
-      do 180 i = 1, mx+1
+      do 180 i = ilo, ihi
           do 180 m=1,meqn
                gupdate = 0.5d0*dtdx1d(i-1) * bmasdq(m,i)
                gaddm(m,i,1) = gaddm(m,i,1) - gupdate
