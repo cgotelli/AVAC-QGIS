@@ -110,11 +110,11 @@ contains
     real(kind=8) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
     real(kind=8) :: x, slope, curvature, initial_speed
 
-    ! This is a regression of AVAC's deliberately reduced Cartesian source,
-    ! not a claim about a terrain-following material path.  With gravity and
-    ! resistance disabled, repeated source calls on curved topography must
-    ! leave the stored map-plane momentum unchanged.  A cell-local tangent
-    ! rotation would compound at every split source call and fail this test.
+    ! The frozen constitutive law must not acquire changing-basis transport.
+    ! src2 now also completes the preceding conservative transport, so a
+    ! repeated source-only experiment must call cartesian_speed_after itself.
+    ! With no gravity or resistance that frozen law leaves momentum unchanged;
+    ! separate compiled src2 tests verify the coupled geometric operation.
     grav = 0.d0
     mu_zones_rh = 0.d0
     slope = -tan(30.d0*acos(-1.d0)/180.d0)
@@ -131,8 +131,8 @@ contains
       end do
     end do
     do step = 1, 100
-      call src2(meqn,mbc,mx,my,0.d0,0.d0,10.d0,10.d0,q,maux,aux, &
-                0.d0,0.01d0)
+      q(2,2,2) = cartesian_speed_after(q(2,2,2),0.01d0,1.d0,q(2,2,2),0.d0, &
+                 slope,0.d0,curvature,0.d0,0.d0,0.d0,0.d0,0.d0,300.d0,0.d0,1)
     end do
     hu_out = q(2,2,2)
     hv_out = q(3,2,2)
@@ -176,8 +176,8 @@ def test_src2_does_not_zero_a_moving_super_yield_state(tmp_path: Path):
     assert sub_speed == pytest.approx(0.0, abs=1.0e-14)
     assert sub_hu == pytest.approx(0.0, abs=1.0e-14)
     assert sub_hv == pytest.approx(0.0, abs=1.0e-14)
-    # This locks in the intentionally reduced Cartesian model: no untracked
-    # changing-basis rotation may be applied as a repeated cell-local source.
+    # Geometric transport belongs to the coupled step, not the frozen basal
+    # constitutive law: repeated calls of that law remain an exact identity.
     assert curved_hu == pytest.approx(
         8.0 * np.cos(np.deg2rad(30.0)), abs=1.0e-13
     )

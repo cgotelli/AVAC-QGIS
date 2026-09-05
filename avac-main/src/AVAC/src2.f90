@@ -16,8 +16,10 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     ! AVAC evolves vertical depth and horizontal map velocity.  The source
     ! applies the flow-parallel Cartesian steep-slope correction of Hergarten
     ! and Robl (2015) to gravity, normal stress, depth, and basal resistance.
-    ! It rescales existing map-plane momentum but does not rotate velocity
-    ! through a changing terrain tangent within this frozen cell-local step.
+    ! Before that frozen constitutive update, transport the post-flux velocity
+    ! between its material departure and arrival terrain tangent planes. This
+    ! separate geometric operation restores the changing-basis acceleration;
+    ! it does not change the physical curvature contribution to basal stress.
     ! On a flat bed this is exactly the previous AVAC Coulomb/Voellmy source.
     !
     ! Closed-form update of dv/dt = -a - b*v^2, with a static-yield-aware
@@ -53,7 +55,33 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     real(kind=8) :: coeff, gamma
     logical :: at_rest, patch_nonplanar
 
+    ! Geometry is kinematic, not a friction option.  Water retains GeoClaw's
+    ! original horizontal shallow-water equations. All granular constitutive
+    ! laws receive the same terrain transport, including frictionless runs.
+    if (imodel_rh >= 1 .and. dt > 0.d0) then
+        call terrain_momentum_transport(meqn,mbc,mx,my,maux,dx,dy,q,aux,dry_tolerance,dt)
+    end if
+
     if (friction_forcing) then
+        ! Geometry is sampled before the source update.  Test only stencils
+        ! wholly inside the patch, since physical-boundary ghost closure is
+        ! not evidence that an otherwise affine analytical bed is curved.
+        patch_nonplanar = .false.
+        if (imodel_rh >= 1 .and. mx >= 3 .and. my >= 3) then
+            do j = 2, my-1
+                do i = 2, mx-1
+                    if (locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
+                                              aux(1,i+1,j), aux(1,i,j-1), &
+                                              aux(1,i,j+1), aux(1,i-1,j-1), &
+                                              aux(1,i+1,j-1), aux(1,i-1,j+1), &
+                                              aux(1,i+1,j+1))) then
+                        patch_nonplanar = .true.
+                        exit
+                    end if
+                end do
+                if (patch_nonplanar) exit
+            end do
+        end if
         do j = 1, my
             do i = 1, mx
                 h = q(1,i,j)
@@ -177,23 +205,6 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
             ! topography at a physical or AMR boundary is a boundary closure,
             ! not evidence of terrain curvature; using it for this decision
             ! can spuriously modify an otherwise affine analytical bed.
-            patch_nonplanar = .false.
-            if (mx >= 3 .and. my >= 3) then
-                do j = 2, my-1
-                    do i = 2, mx-1
-                        if (locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
-                                                  aux(1,i+1,j), aux(1,i,j-1), &
-                                                  aux(1,i,j+1), aux(1,i-1,j-1), &
-                                                  aux(1,i+1,j-1), aux(1,i-1,j+1), &
-                                                  aux(1,i+1,j+1))) then
-                            patch_nonplanar = .true.
-                            exit
-                        end if
-                    end do
-                    if (patch_nonplanar) exit
-                end do
-            end if
-
             if (patch_nonplanar) then
                 ! Use an explicit physical depth rather than coupling this
                 ! state-changing update to output diagnostics or grid size.
@@ -253,3 +264,88 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     end if
 
 end subroutine src2
+
+! Complete horizontal conservative flux transport on a resolved terrain graph.
+! For z=B(x,y), constrained motion has connection acceleration
+!   a_geo = -grad(B) * (u^T Hess(B) u) / (1 + |grad(B)|^2).
+! A finite minimal rotation of the tangent velocity has this differential
+! limit without the pole of a frozen quadratic acceleration update.  Its
+! departure gradient uses a first-order material backtrace over the accepted
+! Godunov time step; rejected preflight trials never reach this routine.
+!
+! Only interior topography is evidence of geometry: extrapolated ghost beds
+! at physical/AMR patch boundaries must not turn an affine bed into curvature.
+! Extend the nearest interior quadratic gradient to the one-cell patch rim.
+! A one-cell direction is an unresolved extruded direction; two cells resolve
+! a constant slope; three or more cells also resolve that direction's curvature.
+subroutine terrain_momentum_transport(meqn,mbc,mx,my,maux,dx,dy,q,aux,h_dry,dt)
+    use rheology_module, only: terrain_tangent_transport
+    implicit none
+    integer, intent(in) :: meqn,mbc,mx,my,maux
+    real(kind=8), intent(in) :: dx,dy,h_dry,dt
+    real(kind=8), intent(inout) :: q(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
+    real(kind=8), intent(in) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
+    integer :: i,j,ii,jj,iw,ie,js,jn
+    real(kind=8) :: bx,by,bxx,bxy,byy,bc,bed_scale,relief,tolerance,residual
+    real(kind=8) :: u,v,un,vn,h,departure_bx,departure_by,offset_x,offset_y
+
+    if (dt <= 0.d0 .or. dx <= 0.d0 .or. dy <= 0.d0) return
+    if (mx < 3 .and. my < 3) return
+    do j=1,my
+        jj=j
+        if (my >= 3) jj=max(2,min(my-1,j))
+        js=max(1,jj-1)
+        jn=min(my,jj+1)
+        do i=1,mx
+            h=q(1,i,j)
+            if (h <= h_dry) cycle
+            if (q(2,i,j) == 0.d0 .and. q(3,i,j) == 0.d0) cycle
+            ii=i
+            if (mx >= 3) ii=max(2,min(mx-1,i))
+            iw=max(1,ii-1)
+            ie=min(mx,ii+1)
+            bc=aux(1,ii,jj)
+            bed_scale=max(1.d0,maxval(abs(aux(1,iw:ie,js:jn))))
+            relief=maxval(abs(aux(1,iw:ie,js:jn)-bc))
+            tolerance=max(1.d-12*max(1.d0,relief),64.d0*epsilon(1.d0)*bed_scale)
+            bx=0.d0
+            by=0.d0
+            bxx=0.d0
+            bxy=0.d0
+            byy=0.d0
+            residual=0.d0
+            if (mx >= 2) bx=(aux(1,ie,jj)-aux(1,iw,jj))/(real(ie-iw,8)*dx)
+            if (my >= 2) by=(aux(1,ii,jn)-aux(1,ii,js))/(real(jn-js,8)*dy)
+            if (mx >= 3) then
+                bxx=(aux(1,ie,jj)-bc)+(aux(1,iw,jj)-bc)
+                residual=max(residual,abs(bxx))
+                bxx=bxx/dx**2
+            end if
+            if (my >= 3) then
+                byy=(aux(1,ii,jn)-bc)+(aux(1,ii,js)-bc)
+                residual=max(residual,abs(byy))
+                byy=byy/dy**2
+            end if
+            if (mx >= 3 .and. my >= 3) then
+                bxy=((aux(1,ie,jn)-bc)-(aux(1,iw,jn)-bc))- &
+                    ((aux(1,ie,js)-bc)-(aux(1,iw,js)-bc))
+                residual=max(residual,abs(bxy))
+                bxy=bxy/(4.d0*dx*dy)
+            end if
+            ! Exact identity for affine terrain, including arithmetic noise
+            ! from large stored elevations: do not even reconstruct momentum.
+            if (residual <= tolerance) cycle
+            offset_x=real(i-ii,8)*dx
+            offset_y=real(j-jj,8)*dy
+            bx=bx+bxx*offset_x+bxy*offset_y
+            by=by+bxy*offset_x+byy*offset_y
+            u=q(2,i,j)/h
+            v=q(3,i,j)/h
+            departure_bx=bx-dt*(bxx*u+bxy*v)
+            departure_by=by-dt*(bxy*u+byy*v)
+            call terrain_tangent_transport(u,v,departure_bx,departure_by,bx,by,un,vn)
+            q(2,i,j)=h*un
+            q(3,i,j)=h*vn
+        end do
+    end do
+end subroutine terrain_momentum_transport

@@ -22,9 +22,10 @@ module rheology_module
     ! normal depth and terrain-tangent speed used by the basal law.  The
     ! moving-state source therefore applies the flow-parallel Cartesian
     ! correction of Hergarten and Robl (2015) to gravity, normal stress,
-    ! depth, and basal resistance.  It does not rotate horizontal velocity
-    ! through a changing terrain tangent within a frozen cell-local source
-    ! step.  It reduces exactly to the established AVAC source on a flat bed.
+    ! depth, and basal resistance.  That frozen constitutive update remains
+    ! separate from the terrain-tangent velocity transport called by src2
+    ! after the conservative flux step. Both retain the established AVAC
+    ! source exactly on a flat or affine bed.
     !
     ! Altitude-zoned rheology (set by setprob.f90, used by src2.f90):
     !   n_zones_rh   : number of altitude zones (>= 1)
@@ -73,6 +74,68 @@ module rheology_module
     real(kind=8), save, allocatable :: C_zones_rh(:)   ! (n_zones) cohesion values (Pa)
 
 contains
+
+    ! ------------------------------------------------------------------
+    ! Parallel-transport a terrain-tangent velocity between two bed normals.
+    !
+    ! The caller supplies the departure and arrival geometry associated with
+    ! conservative transport over one step.  Lift the provisional horizontal
+    ! velocity to the departure tangent plane, rotate that vector by the
+    ! smallest rotation taking the departure normal to the arrival normal,
+    ! and retain its horizontal components.  The rotation preserves tangent
+    ! kinetic energy and changes no depth or mass.  It is exactly the identity
+    ! on every affine bed, including an oblique constant slope.
+    !
+    ! This is geometry transport, not an extra curvature contribution to basal
+    ! friction.  For infinitesimal displacement u*dt its horizontal limit is
+    !
+    !   du/dt = -grad(B) * (u^T Hess(B) u) / (1 + |grad(B)|^2),
+    !
+    ! the connection acceleration for motion constrained to z=B(x,y).
+    ! Keeping finite departure/arrival normals avoids the unbounded Riccati
+    ! acceleration obtained by freezing that connection at a single cell.
+    !
+    ! Two orthogonal reflections implement the minimal Rodrigues rotation:
+    ! first about the departure normal, then about the normals' bisector.
+    ! This form avoids cancellation in 1 + dot(n_departure,n_arrival).
+    ! Both graph normals have positive vertical components, so their sum is
+    ! nonzero even for nearly opposed, very steep finite slopes.
+    ! ------------------------------------------------------------------
+    pure subroutine terrain_tangent_transport(u, v, departure_bx, departure_by, &
+                                              arrival_bx, arrival_by, u_new, v_new)
+        implicit none
+        real(kind=8), intent(in) :: u, v, departure_bx, departure_by
+        real(kind=8), intent(in) :: arrival_bx, arrival_by
+        real(kind=8), intent(out) :: u_new, v_new
+        real(kind=8) :: normal_departure(3), normal_arrival(3), bisector(3)
+        real(kind=8) :: velocity(3), vector_scale
+
+        u_new = u
+        v_new = v
+        if (departure_bx == arrival_bx .and. departure_by == arrival_by) return
+        if (u == 0.d0 .and. v == 0.d0) return
+
+        vector_scale = max(1.d0, abs(departure_bx), abs(departure_by))
+        normal_departure = [-departure_bx/vector_scale, &
+                            -departure_by/vector_scale, 1.d0/vector_scale]
+        normal_departure = normal_departure / sqrt(sum(normal_departure**2))
+        vector_scale = max(1.d0, abs(arrival_bx), abs(arrival_by))
+        normal_arrival = [-arrival_bx/vector_scale, -arrival_by/vector_scale, &
+                          1.d0/vector_scale]
+        normal_arrival = normal_arrival / sqrt(sum(normal_arrival**2))
+
+        bisector = normal_departure + normal_arrival
+        vector_scale = maxval(abs(bisector))
+        bisector = bisector / vector_scale
+        bisector = bisector / sqrt(sum(bisector**2))
+
+        velocity = [u, v, departure_bx*u + departure_by*v]
+        velocity = velocity - 2.d0*dot_product(normal_departure, velocity)*normal_departure
+        velocity = velocity - 2.d0*dot_product(bisector, velocity)*bisector
+        u_new = velocity(1)
+        v_new = velocity(2)
+
+    end subroutine terrain_tangent_transport
 
     ! ------------------------------------------------------------------
     ! Kurganov--Petrova desingularization of velocity near a wet/dry front.
