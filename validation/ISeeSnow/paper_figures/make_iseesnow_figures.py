@@ -20,8 +20,14 @@ import yaml
 
 
 REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "validation"))
 
+from avac_qgis.core.runtime import (  # noqa: E402
+    RuntimeValidationError,
+    runtime_manifest_sha256,
+    validate_runtime,
+)
 from avac4qgis_validation.plot_style import (  # noqa: E402
     MODEL_COLORS,
     PAPER_COLORS,
@@ -102,6 +108,8 @@ EXPECTED_PEER_COUNTS = {
     "CoulombOnly": 11,
 }
 THALWEG_REQUIRED_SUFFIXES = {".shp", ".shx", ".dbf"}
+CURRENT_SOURCE_MODE = "current_source"
+PACKAGED_RUNTIME_MODE = "explicit_solver_source_snapshot"
 
 
 def sha256(path: Path) -> str:
@@ -223,9 +231,10 @@ def _verify_configuration_record(
     ):
         raise RuntimeError(f"{case} has an invalid AVAC configuration record")
     values = _record_values(text)
+    execution_mode = str(summary.get("execution_mode", ""))
     expected_strings = {
         "case": case,
-        "execution_mode": "current_source",
+        "execution_mode": execution_mode,
         "solver_sha256": str(summary["solver_sha256"]),
         "setrun_backend_sha256": str(summary["setrun_backend_sha256"]),
         "submission_pft_sha256": str(summary["submission_pft_sha256"]),
@@ -239,6 +248,27 @@ def _verify_configuration_record(
                 f"{case} configuration record has {key}={values.get(key)!r}; "
                 f"expected {expected!r}"
             )
+    if execution_mode == PACKAGED_RUNTIME_MODE:
+        solver = _recorded_external_file(summary, "solver", case)
+        setrun_backend = _recorded_external_file(
+            summary, "setrun_backend", case
+        )
+        expected_paths = {
+            "solver_source": setrun_backend.parent,
+            "solver": solver,
+            "setrun_backend": setrun_backend,
+        }
+        for key, expected in expected_paths.items():
+            raw_path = values.get(key)
+            if not raw_path or not Path(raw_path).expanduser().is_absolute():
+                raise RuntimeError(
+                    f"{case} configuration record is missing absolute path {key!r}"
+                )
+            if Path(raw_path).expanduser().resolve() != expected:
+                raise RuntimeError(
+                    f"{case} configuration record has {key}={raw_path!r}; "
+                    f"expected {str(expected)!r}"
+                )
     numeric_expected = {
         "mu": protocol["mu"],
         "xi": protocol["xi"],
@@ -432,11 +462,174 @@ def _verify_case_artifacts(
     }
 
 
-def validate_current_source_results(root: Path) -> dict[str, dict[str, object]]:
-    """Require one clean, same-source publication run for every article row."""
+def _recorded_external_file(
+    summary: dict[str, object], key: str, case: str,
+) -> Path:
+    raw_path = summary.get(key)
+    if not isinstance(raw_path, str) or not raw_path:
+        raise RuntimeError(f"{case} is missing {key!r} provenance")
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        raise RuntimeError(f"{case} records a non-absolute {key!r} path")
+    path = candidate.resolve()
+    if not path.is_file():
+        raise RuntimeError(f"{case} recorded {key!r} file is missing: {path}")
+    return path
+
+
+def _canonical_sha256(value: object, description: str) -> str:
+    digest = value.lower() if isinstance(value, str) else ""
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise RuntimeError(f"{description} is not a SHA-256 digest")
+    return digest
+
+
+def _manifest_record_path(
+    runtime_root: Path, record: object, description: str,
+) -> Path:
+    if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+        raise RuntimeError(f"Validated runtime manifest has no {description} path")
+    relative = record["path"].replace("\\", "/")
+    return runtime_root.joinpath(*relative.split("/")).resolve()
+
+
+def _runtime_root_for_files(solver: Path, setrun_backend: Path) -> Path:
+    common_ancestors = set(solver.parents).intersection(setrun_backend.parents)
+    candidates = sorted(
+        (
+            path
+            for path in common_ancestors
+            if (path / "runtime-manifest.json").is_file()
+        ),
+        key=lambda path: str(path),
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "Packaged solver and setrun backend must resolve to exactly one "
+            "common runtime-manifest.json root"
+        )
+    return candidates[0].resolve()
+
+
+def _validate_packaged_runtime(
+    summaries: dict[str, dict[str, object]],
+    expected_manifest_sha256: str,
+) -> dict[str, object]:
+    expected_digest = _canonical_sha256(
+        expected_manifest_sha256,
+        "Expected runtime manifest SHA-256",
+    )
+    solver_paths: set[Path] = set()
+    setrun_paths: set[Path] = set()
+    runtime_roots: set[Path] = set()
+    solver_hashes: set[str] = set()
+    setrun_hashes: set[str] = set()
+    for case, summary in summaries.items():
+        solver = _recorded_external_file(summary, "solver", case)
+        setrun_backend = _recorded_external_file(
+            summary, "setrun_backend", case
+        )
+        solver_paths.add(solver)
+        setrun_paths.add(setrun_backend)
+        runtime_roots.add(_runtime_root_for_files(solver, setrun_backend))
+        solver_hashes.add(
+            _canonical_sha256(
+                summary.get("solver_sha256"), f"{case} solver SHA-256"
+            )
+        )
+        setrun_hashes.add(
+            _canonical_sha256(
+                summary.get("setrun_backend_sha256"),
+                f"{case} setrun backend SHA-256",
+            )
+        )
+    if len(solver_paths) != 1 or len(setrun_paths) != 1:
+        raise RuntimeError(
+            "Packaged article runs must record one exact solver and setrun path"
+        )
+    if len(runtime_roots) != 1:
+        raise RuntimeError(
+            "Packaged article runs must resolve to one exact managed runtime root"
+        )
+    if len(solver_hashes) != 1 or len(setrun_hashes) != 1:
+        raise RuntimeError(
+            "Packaged article runs must record one solver and setrun hash"
+        )
+
+    runtime_root = next(iter(runtime_roots))
+    try:
+        manifest = validate_runtime(
+            runtime_root,
+            expected_manifest_sha256=expected_digest,
+        )
+    except RuntimeValidationError as exc:
+        raise RuntimeError(f"Packaged runtime validation failed: {exc}") from exc
+
+    solver_path = next(iter(solver_paths))
+    setrun_path = next(iter(setrun_paths))
+    solver_record = manifest.get("solver")
+    if _manifest_record_path(
+        runtime_root, solver_record, "solver"
+    ) != solver_path:
+        raise RuntimeError(
+            "Recorded solver path does not match the runtime manifest selection"
+        )
+    backend = manifest.get("backend")
+    if not isinstance(backend, list):
+        raise RuntimeError("Validated runtime manifest has no backend records")
+    matching_backend = [
+        record
+        for record in backend
+        if _manifest_record_path(runtime_root, record, "backend") == setrun_path
+    ]
+    if len(matching_backend) != 1:
+        raise RuntimeError(
+            "Recorded setrun path does not uniquely match a runtime manifest backend"
+        )
+
+    solver_hash = next(iter(solver_hashes))
+    setrun_hash = next(iter(setrun_hashes))
+    if _canonical_sha256(
+        solver_record.get("sha256") if isinstance(solver_record, dict) else None,
+        "Runtime manifest solver SHA-256",
+    ) != solver_hash:
+        raise RuntimeError(
+            "Recorded solver hash does not match the runtime manifest"
+        )
+    if _canonical_sha256(
+        matching_backend[0].get("sha256"),
+        "Runtime manifest setrun backend SHA-256",
+    ) != setrun_hash:
+        raise RuntimeError(
+            "Recorded setrun hash does not match the runtime manifest"
+        )
+
+    manifest_path = runtime_root / "runtime-manifest.json"
+    return {
+        "validation_timing": "article_figure_generation",
+        "runtime_root": str(runtime_root),
+        "runtime_manifest": str(manifest_path),
+        "runtime_manifest_sha256": runtime_manifest_sha256(manifest),
+        "expected_runtime_manifest_sha256": expected_digest,
+        "runtime_version": manifest.get("runtime_version"),
+        "platform": manifest.get("platform"),
+        "architecture": manifest.get("architecture"),
+        "solver": {"path": str(solver_path), "sha256": solver_hash},
+        "setrun_backend": {"path": str(setrun_path), "sha256": setrun_hash},
+    }
+
+
+def validate_current_source_results(
+    root: Path,
+    expected_runtime_manifest_sha256: str | None = None,
+) -> dict[str, dict[str, object]]:
+    """Require one clean, consistently attested run for every article row."""
     summaries: dict[str, dict[str, object]] = {}
     solver_hashes: set[str] = set()
     setrun_hashes: set[str] = set()
+    execution_modes: set[str] = set()
     for case, _label in CASES:
         summary_path = root / case / "run_summary.json"
         if not summary_path.is_file():
@@ -446,11 +639,12 @@ def validate_current_source_results(root: Path) -> dict[str, dict[str, object]]:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         if summary.get("case") != case:
             raise RuntimeError(f"Mismatched case provenance in {summary_path}")
-        if summary.get("execution_mode") != "current_source":
+        execution_mode = summary.get("execution_mode")
+        if execution_mode not in {CURRENT_SOURCE_MODE, PACKAGED_RUNTIME_MODE}:
             raise RuntimeError(
-                f"{case} is not a current-source run: "
-                f"{summary.get('execution_mode')!r}"
+                f"{case} has unsupported execution mode: {execution_mode!r}"
             )
+        execution_modes.add(str(execution_mode))
         violation_count = summary.get("accepted_cfl_violation_count")
         maximum_cfl = summary.get("maximum_courant_number")
         cfl_max = summary.get("cfl_max")
@@ -516,6 +710,27 @@ def validate_current_source_results(root: Path) -> dict[str, dict[str, object]]:
         raise RuntimeError(
             "Article figure requires all three cases to use one solver and setrun build"
         )
+    if len(execution_modes) != 1:
+        raise RuntimeError(
+            "Article figure requires all three cases to use one execution mode"
+        )
+    execution_mode = next(iter(execution_modes))
+    if execution_mode == CURRENT_SOURCE_MODE:
+        if expected_runtime_manifest_sha256 is not None:
+            raise RuntimeError(
+                "A runtime manifest digest may only attest packaged-runtime runs"
+            )
+    else:
+        if expected_runtime_manifest_sha256 is None:
+            raise RuntimeError(
+                "Packaged-runtime article runs require "
+                "--expected-runtime-manifest-sha256"
+            )
+        attestation = _validate_packaged_runtime(
+            summaries, expected_runtime_manifest_sha256
+        )
+        for summary in summaries.values():
+            summary["_article_runtime_attestation"] = attestation
     return summaries
 
 
@@ -829,10 +1044,13 @@ def main(
     results_root: Path,
     comparison_root: Path | None = None,
     comparison_label: str = "Previous configuration",
+    expected_runtime_manifest_sha256: str | None = None,
 ) -> None:
     apply_paper_style()
     root = results_root.expanduser().resolve()
-    summaries = validate_current_source_results(root)
+    summaries = validate_current_source_results(
+        root, expected_runtime_manifest_sha256
+    )
     selected_fields = validated_submission_fields(root, summaries)
     selected_thalwegs = {
         case: validated_thalweg(case) for case, _label in CASES
@@ -844,6 +1062,36 @@ def main(
 
     fig, axes = plt.subplots(3, 3, figsize=figure_size(2, aspect=0.88), squeeze=False)
     rng = np.random.default_rng(4127)
+    first_summary = summaries[CASES[0][0]]
+    publication_gate: dict[str, object] = {
+        "execution_mode": first_summary["execution_mode"],
+        "solver_sha256": first_summary["solver_sha256"],
+        "setrun_backend_sha256": first_summary["setrun_backend_sha256"],
+        "accepted_cfl_violation_count": 0,
+        "selected_protocol": {
+            "common": PUBLICATION_PROTOCOL,
+            "cases": CASE_PROTOCOL,
+        },
+        "cases": {
+            case: {
+                "maximum_courant_number": summaries[case]["maximum_courant_number"],
+                "cfl_max": summaries[case]["cfl_max"],
+                "pft": field_provenance(selected_fields[case]["pft"]),
+                "pfv": field_provenance(selected_fields[case]["pfv"]),
+                "thalweg": {
+                    "artifacts": selected_thalwegs[case]["artifacts"],
+                },
+                "artifacts": summaries[case][
+                    "_article_verified_artifacts"
+                ],
+            }
+            for case, _label in CASES
+        },
+    }
+    runtime_attestation = first_summary.get("_article_runtime_attestation")
+    if runtime_attestation is not None:
+        publication_gate["runtime_attestation"] = runtime_attestation
+
     provenance: dict[str, object] = {
         "avac_field_source": "hash-validated PFT/PFV submission rasters",
         "peer_scalar_source": str(table_c1_path),
@@ -851,31 +1099,7 @@ def main(
         "peer_group": "ISeeSnow Table C1 core group",
         "runout_definition": "furthest thalweg coordinate with PFT > 0.5 m",
         "off_scale_notes": [],
-        "publication_gate": {
-            "execution_mode": "current_source",
-            "solver_sha256": summaries[CASES[0][0]]["solver_sha256"],
-            "setrun_backend_sha256": summaries[CASES[0][0]]["setrun_backend_sha256"],
-            "accepted_cfl_violation_count": 0,
-            "selected_protocol": {
-                "common": PUBLICATION_PROTOCOL,
-                "cases": CASE_PROTOCOL,
-            },
-            "cases": {
-                case: {
-                    "maximum_courant_number": summaries[case]["maximum_courant_number"],
-                    "cfl_max": summaries[case]["cfl_max"],
-                    "pft": field_provenance(selected_fields[case]["pft"]),
-                    "pfv": field_provenance(selected_fields[case]["pfv"]),
-                    "thalweg": {
-                        "artifacts": selected_thalwegs[case]["artifacts"],
-                    },
-                    "artifacts": summaries[case][
-                        "_article_verified_artifacts"
-                    ],
-                }
-                for case, _label in CASES
-            },
-        },
+        "publication_gate": publication_gate,
         "cases": {},
     }
 
@@ -936,7 +1160,7 @@ def main(
                 ax.scatter([1.0], [comparison_value], color=PAPER_COLORS["green"], marker="o", s=42,
                            edgecolor="white", linewidth=0.7, zorder=4)
                 ax.set_xlim(-0.45, 2.45)
-                ax.set_xticks([0, 1, 2], ["Peers", "Previous", "Selected"])
+                ax.set_xticks([0, 1, 2], ["Peers", "Prior", "Current"])
             else:
                 ax.set_xlim(-0.40, 1.40)
                 ax.set_xticks([0, 1], ["Peers", "AVAC"])
@@ -1039,6 +1263,13 @@ if __name__ == "__main__":
         default="Previous configuration",
         help="Legend label for values read from --comparison-root.",
     )
+    parser.add_argument(
+        "--expected-runtime-manifest-sha256",
+        help=(
+            "Trusted canonical runtime-manifest digest required when the "
+            "selected summaries use explicit_solver_source_snapshot."
+        ),
+    )
     arguments = parser.parse_args()
     main(
         arguments.output,
@@ -1047,4 +1278,5 @@ if __name__ == "__main__":
         arguments.results_root,
         arguments.comparison_root,
         arguments.comparison_label,
+        arguments.expected_runtime_manifest_sha256,
     )

@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(VALIDATION))
 
 from avac_qgis.core.preprocessing import QINIT_BINARY_HEADER, QINIT_BINARY_MAGIC
+import avac_qgis.core.runtime as runtime_module
 from avac4qgis_validation.notebook import validation_case
 
 SPEC = importlib.util.spec_from_file_location(
@@ -360,10 +361,96 @@ def _write_ascii_field(path: Path, values: np.ndarray) -> None:
         np.savetxt(stream, values, fmt="%.9g")
 
 
+def _write_article_runtime(root: Path) -> dict[str, object]:
+    files = {
+        "bin/xgeoclaw.exe": b"article solver",
+        "lib/native-library.dll": b"article native library",
+        "backend/AVAC/setrun.py": b"article setrun backend",
+        "clawpack/clawpack/__init__.py": b"article clawpack package",
+        "clawpack/clawpack/data.py": b"article clawpack data",
+    }
+    hashes: dict[str, str] = {}
+    for relative, content in files.items():
+        path = root.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        hashes[relative] = FIGURE.sha256(path)
+    manifest = {
+        "format": runtime_module.RUNTIME_FORMAT,
+        "platform": runtime_module.platform_key(),
+        "architecture": runtime_module.runtime_architecture(),
+        "runtime_version": "article-test-runtime",
+        "solver": {
+            "path": "bin/xgeoclaw.exe",
+            "sha256": hashes["bin/xgeoclaw.exe"],
+        },
+        "native_libraries": [
+            {
+                "path": "lib/native-library.dll",
+                "sha256": hashes["lib/native-library.dll"],
+            }
+        ],
+        "backend": [
+            {
+                "path": "backend/AVAC/setrun.py",
+                "sha256": hashes["backend/AVAC/setrun.py"],
+            }
+        ],
+        "clawpack": {
+            "root": "clawpack",
+            "source_sha256": hashes["clawpack/clawpack/__init__.py"],
+            "files": [
+                {"path": relative, "sha256": hashes[relative]}
+                for relative in sorted(hashes)
+                if relative.startswith("clawpack/")
+            ],
+        },
+    }
+    (root / "runtime-manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    return {
+        "root": root.resolve(),
+        "solver": (root / "bin" / "xgeoclaw.exe").resolve(),
+        "solver_sha256": hashes["bin/xgeoclaw.exe"],
+        "setrun_backend": (root / "backend" / "AVAC" / "setrun.py").resolve(),
+        "setrun_backend_sha256": hashes["backend/AVAC/setrun.py"],
+        "manifest_sha256": runtime_module.runtime_manifest_sha256(manifest),
+    }
+
+
+def _set_configuration_record_value(path: Path, key: str, value: object) -> None:
+    prefix = f"{key} = "
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[index] = f"{prefix}{value}"
+            break
+    else:
+        lines.append(f"{prefix}{value}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _write_clean_article_provenance(
     root: Path,
+    packaged_runtime: dict[str, object] | None = None,
 ) -> dict[str, dict[str, float]]:
     expected: dict[str, dict[str, float]] = {}
+    execution_mode = (
+        FIGURE.PACKAGED_RUNTIME_MODE
+        if packaged_runtime is not None
+        else FIGURE.CURRENT_SOURCE_MODE
+    )
+    solver_sha256 = (
+        str(packaged_runtime["solver_sha256"])
+        if packaged_runtime is not None
+        else "same-solver"
+    )
+    setrun_backend_sha256 = (
+        str(packaged_runtime["setrun_backend_sha256"])
+        if packaged_runtime is not None
+        else "same-setrun"
+    )
     for index, (case, _label) in enumerate(FIGURE.CASES):
         case_root = root / case
         submission = case_root / "Submission"
@@ -446,12 +533,21 @@ def _write_clean_article_provenance(
             encoding="utf-8",
         )
         configuration = submission / f"{case}_AVAC4QGIS.txt"
+        packaged_paths = ""
+        if packaged_runtime is not None:
+            setrun_backend = Path(packaged_runtime["setrun_backend"])
+            packaged_paths = (
+                f"solver_source = {setrun_backend.parent}\n"
+                f"solver = {packaged_runtime['solver']}\n"
+                f"setrun_backend = {setrun_backend}\n"
+            )
         configuration.write_text(
             "AVAC4QGIS ISeeSnow benchmark configuration\n"
             f"case = {case}\n"
-            "execution_mode = current_source\n"
-            "solver_sha256 = same-solver\n"
-            "setrun_backend_sha256 = same-setrun\n"
+            f"execution_mode = {execution_mode}\n"
+            f"{packaged_paths}"
+            f"solver_sha256 = {solver_sha256}\n"
+            f"setrun_backend_sha256 = {setrun_backend_sha256}\n"
             f"submission_pft_sha256 = {FIGURE.sha256(pft)}\n"
             f"submission_pfv_sha256 = {FIGURE.sha256(pfv)}\n"
             f"rheology = {case_protocol['model']}\n"
@@ -475,7 +571,7 @@ def _write_clean_article_provenance(
         )
         summary = {
             "case": case,
-            "execution_mode": "current_source",
+            "execution_mode": execution_mode,
             **FIGURE.PUBLICATION_PROTOCOL,
             "limiter": case_protocol["limiter"],
             "cfl_target": case_protocol["cfl_target"],
@@ -487,14 +583,21 @@ def _write_clean_article_provenance(
             ],
             "accepted_cfl_violation_count": 0,
             "maximum_courant_number": 0.75,
-            "solver_sha256": "same-solver",
-            "setrun_backend_sha256": "same-setrun",
+            "solver_sha256": solver_sha256,
+            "setrun_backend_sha256": setrun_backend_sha256,
             "submission_pft_sha256": FIGURE.sha256(pft),
             "submission_pfv_sha256": FIGURE.sha256(pfv),
             "official_input_manifest": official_input_manifest,
             "configuration": str(configuration.resolve()),
             "plugin_case": str(plugin_case.resolve()),
         }
+        if packaged_runtime is not None:
+            summary.update(
+                {
+                    "solver": str(packaged_runtime["solver"]),
+                    "setrun_backend": str(packaged_runtime["setrun_backend"]),
+                }
+            )
         (root / case / "run_summary.json").write_text(
             json.dumps(summary), encoding="utf-8",
         )
@@ -520,6 +623,150 @@ def test_article_figure_requires_clean_same_source_cfl_provenance(
     bad_summary.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(RuntimeError, match="accepted CFL violations"):
         FIGURE.validate_current_source_results(tmp_path)
+
+
+def test_article_figure_accepts_exact_attested_packaged_runtime(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+
+    summaries = FIGURE.validate_current_source_results(
+        results, str(runtime["manifest_sha256"])
+    )
+
+    attestation = summaries["IdealizedTopo"]["_article_runtime_attestation"]
+    assert attestation["runtime_root"] == str(runtime["root"])
+    assert attestation["runtime_manifest_sha256"] == runtime["manifest_sha256"]
+    assert attestation["expected_runtime_manifest_sha256"] == runtime[
+        "manifest_sha256"
+    ]
+    assert attestation["solver"] == {
+        "path": str(runtime["solver"]),
+        "sha256": runtime["solver_sha256"],
+    }
+    assert attestation["setrun_backend"] == {
+        "path": str(runtime["setrun_backend"]),
+        "sha256": runtime["setrun_backend_sha256"],
+    }
+
+
+def test_article_figure_requires_trusted_digest_for_packaged_runtime(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+
+    with pytest.raises(
+        RuntimeError, match="require --expected-runtime-manifest-sha256"
+    ):
+        FIGURE.validate_current_source_results(results)
+    with pytest.raises(RuntimeError, match="Packaged runtime validation failed"):
+        FIGURE.validate_current_source_results(results, "0" * 64)
+
+
+def test_article_figure_rejects_tampered_packaged_runtime_component(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+    (Path(runtime["root"]) / "lib" / "native-library.dll").write_bytes(
+        b"tampered"
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Packaged runtime validation failed.*hash mismatch"
+    ):
+        FIGURE.validate_current_source_results(
+            results, str(runtime["manifest_sha256"])
+        )
+
+
+def test_article_figure_rejects_solver_not_selected_by_runtime_manifest(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+    alternate_solver = Path(runtime["root"]) / "bin" / "alternate.exe"
+    alternate_solver.write_bytes(Path(runtime["solver"]).read_bytes())
+    for case, _label in FIGURE.CASES:
+        summary_path = results / case / "run_summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["solver"] = str(alternate_solver.resolve())
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        _set_configuration_record_value(
+            Path(summary["configuration"]), "solver", alternate_solver.resolve()
+        )
+
+    with pytest.raises(RuntimeError, match="solver path.*runtime manifest"):
+        FIGURE.validate_current_source_results(
+            results, str(runtime["manifest_sha256"])
+        )
+
+
+def test_article_figure_rejects_mixed_packaged_paths_and_execution_modes(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+    alternate_solver = Path(runtime["root"]) / "bin" / "alternate.exe"
+    alternate_solver.write_bytes(Path(runtime["solver"]).read_bytes())
+    summary_path = results / "RealTopo" / "run_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["solver"] = str(alternate_solver.resolve())
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    _set_configuration_record_value(
+        Path(summary["configuration"]), "solver", alternate_solver.resolve()
+    )
+
+    with pytest.raises(RuntimeError, match="one exact solver and setrun path"):
+        FIGURE.validate_current_source_results(
+            results, str(runtime["manifest_sha256"])
+        )
+
+    summary["solver"] = str(runtime["solver"])
+    summary["execution_mode"] = FIGURE.CURRENT_SOURCE_MODE
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    _set_configuration_record_value(
+        Path(summary["configuration"]), "solver", runtime["solver"]
+    )
+    _set_configuration_record_value(
+        Path(summary["configuration"]),
+        "execution_mode",
+        FIGURE.CURRENT_SOURCE_MODE,
+    )
+    with pytest.raises(RuntimeError, match="one execution mode"):
+        FIGURE.validate_current_source_results(
+            results, str(runtime["manifest_sha256"])
+        )
+
+
+def test_article_figure_rejects_packaged_configuration_path_mismatch(
+    tmp_path: Path,
+) -> None:
+    runtime = _write_article_runtime(tmp_path / "runtime")
+    results = tmp_path / "results"
+    _write_clean_article_provenance(results, runtime)
+    summary = json.loads(
+        (results / "CoulombOnly" / "run_summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _set_configuration_record_value(
+        Path(summary["configuration"]),
+        "setrun_backend",
+        runtime["solver"],
+    )
+
+    with pytest.raises(RuntimeError, match="configuration record.*setrun_backend"):
+        FIGURE.validate_current_source_results(
+            results, str(runtime["manifest_sha256"])
+        )
 
 
 @pytest.mark.parametrize(
