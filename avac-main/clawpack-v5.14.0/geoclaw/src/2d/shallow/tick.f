@@ -151,7 +151,6 @@ c           write(*,*)" new possk is ", possk(1)
             possk(i) = possk(i-1) / kratio(i-1)
             enddo
          if (nout .gt. 0) then
-            nextout = nextout + 1
             dumpout = .true.
             endif
       endif
@@ -162,8 +161,7 @@ c        ## adjust time step  to hit chktime exactly, and do checkpointing
          possk(1) = chktime - time
          do 13 i = 2, mxnest
  13         possk(i) = possk(i-1) / kratio(i-1)
-         nextchk = nextchk + 1
-        dumpchk = .true.
+         dumpchk = .true.
       else
         dumpchk = .false.
       endif
@@ -284,6 +282,37 @@ c integrate all grids at level 'level'.
 c
  90       continue
 
+c         Probe the whole level before any physical-step side effects.  If a
+c         trial exceeds cfl_max, select_cfl_timestep reduces the shared level
+c         timestep (and fine-level subcycle count) and repeats the probe.
+          call prepare_advanc(level,nvar,naux)
+          call select_cfl_timestep(level,nvar,naux,ntogo,tlevel,vtime)
+
+c         Output/checkpoint schedules were tentatively selected before the
+c         AMR recursion.  Commit them only after the level-1 timestep passes
+c         the CFL preflight; a rejected trial may no longer reach the event.
+          if (level .eq. 1) then
+              timenew = tlevel(1) + possk(1)
+              if (dumpout) then
+                  event_tol = 100.d0*epsilon(1.d0)*
+     &                        dmax1(1.d0,dabs(timenew),dabs(outtime))
+                  if (dabs(timenew-outtime) .le. event_tol) then
+                      nextout = nextout + 1
+                  else
+                      dumpout = .false.
+                  endif
+              endif
+              if (dumpchk) then
+                  event_tol = 100.d0*epsilon(1.d0)*
+     &                        dmax1(1.d0,dabs(timenew),dabs(chktime))
+                  if (dabs(timenew-chktime) .le. event_tol) then
+                      nextchk = nextchk + 1
+                  else
+                      dumpchk = .false.
+                  endif
+              endif
+          endif
+
           ! Only compute the mininum of fg%levelmax if necessary,
           ! and only once per time step on each level, not on each patch:
           do ifg=1,FG_num_fgrids
@@ -320,7 +349,7 @@ c         ! time after step:
               enddo
 
 
-          call advanc(level,nvar,dtlevnew,vtime,naux)
+          call advanc_prepared(level,nvar,dtlevnew,vtime,naux)
 
 
 c Output time info
@@ -605,4 +634,153 @@ c
 
       write(6,*) "Done integrating to time ",time
       return
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine select_cfl_timestep(level,nvar,naux,ntogo,tlevel,
+     &                               vtime)
+c
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+      use amr_module
+      use refinement_module, only: varRefTime
+
+      implicit double precision (a-h,o-z)
+
+      integer ntogo(maxlv)
+      double precision tlevel(maxlv)
+      logical vtime
+      integer retries,new_ntogo,i,cfl_invalid
+      double precision cfl_trial,target_cfl,old_dt,new_dt
+      double precision remaining,steps_required
+
+      retries = 0
+
+ 700  continue
+      old_dt = possk(level)
+      if ((.not. ieee_is_finite(old_dt)) .or. old_dt .le. 0.d0) then
+          call cfl_retry_abort('non-positive or non-finite timestep',
+     &                         level,0.d0,cflv1,old_dt,tlevel(level))
+      endif
+      if ((.not. ieee_is_finite(cflv1)) .or. cflv1 .le. 0.d0) then
+          call cfl_retry_abort('non-positive or non-finite cfl_max',
+     &                         level,0.d0,cflv1,old_dt,tlevel(level))
+      endif
+
+c     Aim at the configured desired CFL, while retaining a margin if a legacy
+c     input specifies cfl_desired at or above cfl_max.  Validate it even when
+c     the first trial is accepted so malformed inputs cannot pass silently.
+      target_cfl = dmin1(cfl,0.9d0*cflv1)
+      if ((.not. ieee_is_finite(cfl)) .or. cfl .le. 0.d0 .or.
+     &    (.not. ieee_is_finite(target_cfl)) .or.
+     &    target_cfl .le. 0.d0) then
+          call cfl_retry_abort('non-positive or non-finite cfl_desired',
+     &                         level,0.d0,cflv1,old_dt,tlevel(level))
+      endif
+
+      call cfl_preflight(level,nvar,naux,cfl_trial,cfl_invalid)
+      if (cfl_invalid .ne. 0 .or.
+     &    (.not. ieee_is_finite(cfl_trial)) .or.
+     &    cfl_trial .lt. 0.d0) then
+          call cfl_retry_abort('non-finite CFL returned by preflight',
+     &                         level,cfl_trial,cflv1,old_dt,
+     &                         tlevel(level))
+      endif
+      if (cfl_trial .le. cflv1) return
+
+      if (.not. vtime) then
+          call cfl_retry_abort('fixed timestep exceeds cfl_max',
+     &                         level,cfl_trial,cflv1,old_dt,
+     &                         tlevel(level))
+      endif
+      if (retries .ge. 20) then
+          call cfl_retry_abort('more than 20 rejected CFL trials',
+     &                         level,cfl_trial,cflv1,old_dt,
+     &                         tlevel(level))
+      endif
+
+      new_dt = old_dt*target_cfl/cfl_trial
+
+      if (level .gt. 1) then
+c         A fine level must still land exactly on its parent time.  Increase
+c         the number of remaining substeps and divide the remaining interval
+c         evenly rather than taking one isolated short step.
+          remaining = tlevel(level-1) - tlevel(level)
+          if ((.not. ieee_is_finite(remaining)) .or.
+     &        remaining .le. 0.d0) then
+              call cfl_retry_abort('invalid fine-level time interval',
+     &                             level,cfl_trial,cflv1,old_dt,
+     &                             tlevel(level))
+          endif
+          steps_required = remaining/new_dt
+          if ((.not. ieee_is_finite(steps_required)) .or.
+     &        steps_required .gt. 100.d0) then
+              call cfl_retry_abort('more than 100 fine-level substeps',
+     &                             level,cfl_trial,cflv1,old_dt,
+     &                             tlevel(level))
+          endif
+          new_ntogo = ceiling(steps_required)
+          new_ntogo = max(new_ntogo,ntogo(level)+1)
+          if (new_ntogo .gt. 100) then
+              call cfl_retry_abort('more than 100 fine-level substeps',
+     &                             level,cfl_trial,cflv1,old_dt,
+     &                             tlevel(level))
+          endif
+          ntogo(level) = new_ntogo
+          new_dt = remaining/dble(new_ntogo)
+      endif
+
+      if ((.not. ieee_is_finite(new_dt)) .or. new_dt .le. 0.d0 .or.
+     &    new_dt .ge. old_dt .or.
+     &    tlevel(level)+new_dt .le. tlevel(level)) then
+          call cfl_retry_abort(
+     &        'CFL retry cannot reduce timestep safely',
+     &        level,cfl_trial,cflv1,old_dt,tlevel(level))
+      endif
+
+      retries = retries + 1
+ 710  format(' AMRCLAW: rejected CFL trial level ',i3,
+     &       ' CFL = ',d25.17,' cfl_max = ',d25.17,
+     &       ' dt = ',d25.17,' retry dt = ',d25.17,
+     &       ' t = ',d25.17)
+      write(*,710) level,cfl_trial,cflv1,old_dt,new_dt,tlevel(level)
+      write(outunit,710) level,cfl_trial,cflv1,old_dt,new_dt,
+     &                   tlevel(level)
+
+      possk(level) = new_dt
+      if (level .eq. 1) then
+          do i = 2,mxnest
+              possk(i) = possk(i-1)/kratio(i-1)
+          enddo
+      else if (varRefTime) then
+          kratio(level-1) = ceiling(possk(level-1)/possk(level))
+      endif
+      go to 700
+
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine cfl_retry_abort(reason,level,cfl_trial,cfl_limit,
+     &                           trial_dt,trial_time)
+
+      use amr_module, only: outunit
+
+      implicit none
+
+      character*(*) reason
+      integer level
+      double precision cfl_trial,cfl_limit,trial_dt,trial_time
+
+ 800  format(' AMRCLAW CFL retry error: ',a,
+     &       ' level = ',i3,' CFL = ',d16.8,
+     &       ' cfl_max = ',d16.8,' dt = ',d16.8,
+     &       ' t = ',d16.8)
+      write(*,800) reason,level,cfl_trial,cfl_limit,trial_dt,trial_time
+      write(outunit,800) reason,level,cfl_trial,cfl_limit,trial_dt,
+     &                   trial_time
+      write(*,*) '**** Stopping calculation   ****'
+      write(outunit,*) '**** Stopping calculation   ****'
+      stop 1
+
       end

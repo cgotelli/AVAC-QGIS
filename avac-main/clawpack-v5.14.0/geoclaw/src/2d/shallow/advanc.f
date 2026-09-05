@@ -3,57 +3,44 @@ c --------------------------------------------------------------
 c
       subroutine advanc (level,nvar,dtlevnew,vtime,naux)
 c
+      implicit double precision (a-h,o-z)
+
+      logical vtime
+
+c     Compatibility entry point used by initialization/Richardson code.
+c     Normal tick integration prepares once, probes as often as necessary,
+c     and calls advanc_prepared directly after its timestep is accepted.
+      call prepare_advanc(level,nvar,naux)
+      call advanc_prepared(level,nvar,dtlevnew,vtime,naux)
+
+      return
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine prepare_advanc(level,nvar,naux)
+c
       use amr_module
-c     use fgout_module, only: ?
       use topo_module, only: topo_finalized
 
       implicit double precision (a-h,o-z)
 
-
-      logical vtime
-      integer omp_get_thread_num, omp_get_max_threads
-      integer mythread/0/, maxthreads/1/
-      integer listgrids(numgrids(level))
       integer(kind=8) :: clock_start, clock_finish, clock_rate
-      integer(kind=8) :: clock_startStepgrid, clock_startBound,
-     &                   clock_finishBound
+      integer(kind=8) :: clock_startBound,clock_finishBound
       real(kind=8) cpu_start, cpu_finish
       real(kind=8) cpu_startBound,cpu_finishBound
-      real(kind=8) cpu_startStepgrid, cpu_finishStepgrid
 
-c     maxgr is maximum number of grids  many things are
-c     dimensioned at, so this is overall. only 1d array
-c     though so should suffice. problem is
-c     not being able to dimension at maxthreads
-
-
-c
-c  ::::::::::::::; ADVANC :::::::::::::::::::::::::::::::::::::::::::
-c  integrate all grids at the input  'level' by one step of its delta(t)
-c  this includes:  setting the ghost cells
-c                  advancing the solution on the grid
-c                  adjusting fluxes for flux conservation step later
-c :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-c
+c  Prepare a level exactly once in the legacy order: fill ghost cells, save
+c  coarse values needed by fine-grid wave fixup, then update moving
+c  topography.  None of these operations depends on the trial timestep.
       call system_clock(clock_start,clock_rate)
       call cpu_time(cpu_start)
-      hx   = hxposs(level)
-      hy   = hyposs(level)
-      delt = possk(level)
-c     this is linear alg.
-c      call prepgrids(listgrids,numgrids(level),level)
-c
-c get start time for more detailed timing by level
-       call system_clock(clock_startBound,clock_rate)
-       call cpu_time(cpu_startBound)
-
-c     maxthreads initialized to 1 above in case no openmp
-!$    maxthreads = omp_get_max_threads()
+      call system_clock(clock_startBound,clock_rate)
+      call cpu_time(cpu_startBound)
 
 c Fill AMR ghost cells in deterministic grid order.  The recursive AMR
 c interpolation used by bound() shares hierarchy work arrays and is not
-c thread-safe.  Keep the substantially more expensive patch advances below
-c parallel, but do not call bound() concurrently for sibling patches.
+c thread-safe, so do not call bound() concurrently for sibling patches.
       do  j = 1, numgrids(level)
           levSt  = listStart(level)
           mptr   = listOfGrids(levSt+j-1)
@@ -68,7 +55,7 @@ c
           call bound(time,nvar,nghost,alloc(locnew),mitot,mjtot,mptr,
      1               alloc(locaux),naux)
 
-        end do
+      end do
       call system_clock(clock_finishBound,clock_rate)
       call cpu_time(cpu_finishBound)
       timeBound = timeBound + clock_finishBound - clock_startBound
@@ -83,14 +70,44 @@ c save coarse level values if there is a finer level for wave fixup
       endif
 c
       time = rnode(timemult,lstart(level))
-c      call fgrid_advance(time,delt)
-
-      dtlevnew = rinfinity
-      cfl_level = 0.d0    !# to keep track of max cfl seen on each level
-
       if (.not. topo_finalized) then
          call topo_update(time)
-         endif
+      endif
+
+      call system_clock(clock_finish,clock_rate)
+      call cpu_time(cpu_finish)
+      tvoll(level) = tvoll(level) + clock_finish - clock_start
+      tvollCPU(level) = tvollCPU(level) + cpu_finish - cpu_start
+
+      return
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine advanc_prepared(level,nvar,dtlevnew,vtime,naux)
+c
+      use amr_module
+
+      implicit double precision (a-h,o-z)
+
+      logical vtime
+      integer mythread/0/
+      integer(kind=8) :: clock_start, clock_finish, clock_rate
+      integer(kind=8) :: clock_startStepgrid
+      real(kind=8) cpu_start, cpu_finish
+      real(kind=8) cpu_startStepgrid
+
+c  Integrate a level whose boundary/fixup/topography preparation has already
+c  been committed.  tick calls this only after the whole-level CFL preflight
+c  accepts the shared timestep.
+      call system_clock(clock_start,clock_rate)
+      call cpu_time(cpu_start)
+      hx   = hxposs(level)
+      hy   = hyposs(level)
+      delt = possk(level)
+
+      dtlevnew = rinfinity
+      cfl_level = 0.d0
 c
       call system_clock(clock_startStepgrid,clock_rate)
       call cpu_time(cpu_startStepgrid)
@@ -133,6 +150,117 @@ c
       timeStepgridCPU=timeStepgridCPU+cpu_finish-cpu_startStepgrid
 
 c
+      return
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine cfl_preflight(level,nvar,naux,cfl_trial,cfl_invalid)
+c
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+      use amr_module
+
+      implicit double precision (a-h,o-z)
+
+      double precision cfl_trial,cfl_patch
+      integer cfl_invalid
+
+c  Compute the maximum CFL for one prepared AMR level without committing a
+c  physical step.  Each patch is copied to private scratch storage; b4step2
+c  and step2 may alter only those copies and temporary fluxes.
+c
+c  In particular, this deliberately does not touch gauges, fixed-grid
+c  observations, flux registers, patch clocks, cflmax, cfl_level, or the
+c  accepted solution.  tick can therefore reduce the common level timestep
+c  and repeat this trial safely before calling advanc_prepared exactly once.
+
+      cfl_trial = 0.d0
+      cfl_invalid = 0
+!$OMP PARALLEL DO
+!$OMP& PRIVATE(j,levSt,mptr,nx,ny,mitot,mjtot,cfl_patch)
+!$OMP& REDUCTION(MAX:cfl_trial)
+!$OMP& SCHEDULE(DYNAMIC,1)
+      do j = 1, numgrids(level)
+          levSt  = listStart(level)
+          mptr   = listOfGrids(levSt+j-1)
+          nx     = node(ndihi,mptr) - node(ndilo,mptr) + 1
+          ny     = node(ndjhi,mptr) - node(ndjlo,mptr) + 1
+          mitot  = nx + 2*nghost
+          mjtot  = ny + 2*nghost
+          call par_cfl_preflight(mptr,mitot,mjtot,nvar,naux,
+     &                           cfl_patch)
+          if ((.not. ieee_is_finite(cfl_patch)) .or.
+     &        cfl_patch .lt. 0.d0) then
+              cfl_patch = huge(1.d0)
+          endif
+          cfl_trial = dmax1(cfl_trial,cfl_patch)
+      end do
+!$OMP END PARALLEL DO
+      if (cfl_trial .eq. huge(1.d0)) cfl_invalid = 1
+
+      return
+      end
+c
+c --------------------------------------------------------------
+c
+      subroutine par_cfl_preflight(mptr,mitot,mjtot,nvar,naux,
+     &                             cfl_patch)
+c
+      use amr_module
+
+      implicit double precision (a-h,o-z)
+
+      external rpn2,rpt2
+      double precision cfl_patch
+      double precision, allocatable :: qwork(:,:,:),auxwork(:,:,:)
+      double precision, allocatable :: fm(:,:,:),fp(:,:,:)
+      double precision, allocatable :: gm(:,:,:),gp(:,:,:)
+
+      level = node(nestlevel,mptr)
+      hx    = hxposs(level)
+      hy    = hyposs(level)
+      delt  = possk(level)
+      nx    = node(ndihi,mptr) - node(ndilo,mptr) + 1
+      ny    = node(ndjhi,mptr) - node(ndjlo,mptr) + 1
+      time  = rnode(timemult,mptr)
+      locnew = node(store1,mptr)
+      locaux = node(storeaux,mptr)
+      maxm = max(nx,ny)
+
+c     Keep the additional trial storage on the heap.  Large AVAC patches and
+c     several OpenMP workers otherwise exceed the small default Windows
+c     thread stack.
+      allocate(qwork(nvar,mitot,mjtot))
+      allocate(auxwork(max(1,naux),mitot,mjtot))
+      allocate(fm(nvar,mitot,mjtot),fp(nvar,mitot,mjtot))
+      allocate(gm(nvar,mitot,mjtot),gp(nvar,mitot,mjtot))
+
+      auxwork = 0.d0
+      do jj = 1,mjtot
+          do ii = 1,mitot
+              do m = 1,nvar
+                  idx = m + nvar*((ii-1)+mitot*(jj-1))
+                  qwork(m,ii,jj) = alloc(locnew+idx-1)
+              enddo
+              do m = 1,naux
+                  idx = m + naux*((ii-1)+mitot*(jj-1))
+                  auxwork(m,ii,jj) = alloc(locaux+idx-1)
+              enddo
+          enddo
+      enddo
+
+c     Use actualstep=.true. on private copies so transient topography, storm,
+c     dry-state, speed, and AVAC static-yield preparation exactly match the
+c     subsequently accepted call.
+      call b4step2(nghost,nx,ny,nvar,qwork,
+     &             rnode(cornxlo,mptr),rnode(cornylo,mptr),hx,hy,
+     &             time,delt,naux,auxwork,.true.)
+
+      call step2(maxm,nvar,naux,nghost,nx,ny,
+     &           qwork,auxwork,hx,hy,delt,cfl_patch,
+     &           fm,fp,gm,gp,rpn2,rpt2)
+
+      deallocate(qwork,auxwork,fm,fp,gm,gp)
       return
       end
 c

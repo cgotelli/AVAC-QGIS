@@ -9,12 +9,15 @@ import platform
 import shutil
 import tarfile
 import tempfile
-from pathlib import Path
+import time
+import uuid
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
 RUNTIME_FORMAT = 1
 RUNTIME_APP_DIRECTORY = "AVAC-QGIS"
+STALE_INSTALL_PATH_AGE_SECONDS = 24 * 60 * 60
 
 
 class RuntimeValidationError(ValueError):
@@ -80,14 +83,86 @@ def runtime_manifest_sha256(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _runtime_path(root: Path, relative: str) -> Path:
+    """Resolve one manifest path while confining it to the runtime root."""
+    if not relative or "\x00" in relative:
+        raise RuntimeValidationError("Runtime manifest contains an invalid empty path.")
+    portable = PurePosixPath(relative.replace("\\", "/"))
+    host_path = Path(relative)
+    if portable.is_absolute() or ".." in portable.parts or host_path.is_absolute() or host_path.drive:
+        raise RuntimeValidationError(f"Runtime manifest path escapes its root: {relative}")
+    path = (root / Path(*portable.parts)).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeValidationError(
+            f"Runtime manifest path escapes its root: {relative}"
+        ) from exc
+    return path
+
+
 def _checked_file(root: Path, relative: str, expected_hash: str) -> Path:
-    path = root / relative
+    path = _runtime_path(root, relative)
     if not path.is_file():
         raise RuntimeValidationError(f"Runtime required file is missing: {relative}")
-    actual = _sha256(path)
+    try:
+        actual = _sha256(path)
+    except OSError as exc:
+        raise RuntimeValidationError(
+            f"Runtime required file cannot be read: {relative}"
+        ) from exc
     if actual != expected_hash:
         raise RuntimeValidationError(f"Runtime file hash mismatch: {relative}")
     return path
+
+
+def _replace_path(source: Path, destination: Path) -> None:
+    """Atomically rename a runtime directory, tolerating short-lived locks.
+
+    Windows antivirus and indexing processes can briefly open a freshly
+    extracted file without delete sharing.  ``os.replace`` then reports
+    ``WinError 5`` even though the same atomic rename succeeds moments later.
+    Keep the operation atomic and bounded instead of falling back to a
+    partially visible copy.
+    """
+    delays = (0.05, 0.10, 0.20, 0.40, 0.80, 1.00, 1.00)
+    for attempt in range(len(delays) + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt == len(delays):
+                raise
+            time.sleep(delays[attempt])
+
+
+def _cleanup_stale_install_paths(target: Path) -> None:
+    """Best-effort cleanup of abandoned staging and quarantine directories."""
+    now = time.time()
+    cutoff = now - STALE_INSTALL_PATH_AGE_SECONDS
+    for candidate in target.parent.glob(".avac-runtime-stage-*"):
+        try:
+            if not candidate.is_dir() or candidate.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        # Recent directories may belong to a live concurrent install; old
+        # stages are safe to retry after a scanner lock has cleared.
+        shutil.rmtree(candidate, ignore_errors=True)
+
+    quarantine_prefix = f"{target.name}.corrupt-"
+    for candidate in target.parent.glob(quarantine_prefix + "*"):
+        # A directory rename preserves the source mtime, so quarantine age is
+        # encoded in its unique name.  UUID-only names from older releases are
+        # deliberately left alone because their creation time is unknowable.
+        timestamp = candidate.name[len(quarantine_prefix):].split("-", 1)[0]
+        try:
+            created = int(timestamp) / 1_000_000_000
+            stale = candidate.is_dir() and created <= cutoff
+        except (OSError, ValueError):
+            continue
+        if stale:
+            shutil.rmtree(candidate, ignore_errors=True)
 
 
 def validate_runtime(
@@ -138,6 +213,26 @@ def validate_runtime(
     if not isinstance(clawpack, dict) or not isinstance(clawpack.get("root"), str) or not isinstance(clawpack.get("source_sha256"), str):
         raise RuntimeValidationError("Runtime manifest has no valid Clawpack record.")
     _checked_file(root, f"{clawpack['root']}/clawpack/__init__.py", clawpack["source_sha256"])
+    clawpack_files = clawpack.get("files")
+    if clawpack_files is not None:
+        if not isinstance(clawpack_files, list) or not clawpack_files:
+            raise RuntimeValidationError("Runtime manifest has no Clawpack file records.")
+        clawpack_root = _runtime_path(root, clawpack["root"])
+        seen: set[str] = set()
+        for entry in clawpack_files:
+            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not isinstance(entry.get("sha256"), str):
+                raise RuntimeValidationError("Runtime manifest contains an invalid Clawpack file record.")
+            relative = entry["path"]
+            if relative in seen:
+                raise RuntimeValidationError(f"Runtime manifest repeats a Clawpack path: {relative}")
+            seen.add(relative)
+            checked = _checked_file(root, relative, entry["sha256"])
+            try:
+                checked.relative_to(clawpack_root)
+            except ValueError as exc:
+                raise RuntimeValidationError(
+                    f"Runtime Clawpack file is outside its declared root: {relative}"
+                ) from exc
     return manifest
 
 
@@ -181,6 +276,8 @@ def install_runtime_archive(
     destination = Path(destination_root).expanduser().resolve() if destination_root else runtime_install_root()
     target_platform = platform_key()
     target = destination / version / target_platform
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_install_paths(target)
     if target.exists():
         try:
             validate_runtime(
@@ -193,7 +290,6 @@ def install_runtime_archive(
             # A corrupt prior install is replaced only after a new staged copy
             # has been completely extracted and validated.
             pass
-    target.parent.mkdir(parents=True, exist_ok=True)
     staging_parent = Path(tempfile.mkdtemp(prefix=".avac-runtime-stage-", dir=target.parent))
     try:
         with tarfile.open(archive, "r:gz") as bundle:
@@ -206,18 +302,87 @@ def install_runtime_archive(
         # their full platform target as the top-level member.
         if not staged.is_dir() and target_platform == "macos-arm64":
             staged = staging_parent / "arm64"
-        validate_runtime(
+        if staged.is_symlink():
+            raise RuntimeValidationError(
+                "Runtime archive platform root must be a real directory."
+            )
+        staged_manifest = validate_runtime(
             staged,
             expected_version=version,
             expected_manifest_sha256=expected_manifest_sha256,
         )
+        # If another QGIS process wins a simultaneous first-use install, only
+        # converge on the exact runtime that this call just validated.  When
+        # callers omit an expected identity, deriving it here prevents a
+        # merely same-version (but different) artifact from being accepted.
+        winner_identity = (
+            expected_manifest_sha256
+            or runtime_manifest_sha256(staged_manifest)
+        )
+
+        def exact_concurrent_winner() -> bool:
+            try:
+                validate_runtime(
+                    target,
+                    expected_version=version,
+                    expected_manifest_sha256=winner_identity,
+                )
+            except (RuntimeValidationError, OSError):
+                return False
+            return True
+
+        corrupt: Path | None = None
         if target.exists():
-            corrupt = target.with_name(target.name + ".corrupt")
-            if corrupt.exists():
-                shutil.rmtree(corrupt)
-            os.replace(target, corrupt)
-            shutil.rmtree(corrupt)
-        os.replace(staged, target)
+            # The target may have changed since the initial check while this
+            # process extracted the archive.  Do not quarantine an identical
+            # runtime that another process has already finished publishing.
+            if exact_concurrent_winner():
+                return target
+            corrupt = target.with_name(
+                target.name + f".corrupt-{time.time_ns()}-{uuid.uuid4().hex}"
+            )
+            try:
+                _replace_path(target, corrupt)
+            except OSError:
+                # A concurrent installer may have replaced or temporarily
+                # removed the target after our initial validation.  Accept an
+                # exact winner, or continue if the target is currently absent
+                # and let the atomic promotion below settle the race.
+                if exact_concurrent_winner():
+                    return target
+                if target.exists():
+                    raise
+                corrupt = None
+        try:
+            _replace_path(staged, target)
+        except OSError:
+            # Directory replacement on Windows fails when another process has
+            # just published the same non-empty target.  That is success only
+            # when every file and the complete manifest identity match.
+            if exact_concurrent_winner():
+                if corrupt is not None:
+                    shutil.rmtree(corrupt, ignore_errors=True)
+                return target
+            # The prior installation was already invalid, but restore it when
+            # possible so a failed repair does not leave a surprising gap.
+            if corrupt is not None and corrupt.exists() and not target.exists():
+                try:
+                    _replace_path(corrupt, target)
+                except OSError:
+                    pass
+            # The winner may have appeared between the first validation and
+            # the rollback check above.  Re-evaluate once before surfacing the
+            # original promotion failure.
+            if exact_concurrent_winner():
+                if corrupt is not None:
+                    shutil.rmtree(corrupt, ignore_errors=True)
+                return target
+            raise
+        if corrupt is not None:
+            # Publishing the validated target is the transaction boundary.
+            # A scanner may still hold the quarantined copy briefly; leaving
+            # it for a later cleanup is safer than failing a successful install.
+            shutil.rmtree(corrupt, ignore_errors=True)
         return target
     finally:
         shutil.rmtree(staging_parent, ignore_errors=True)

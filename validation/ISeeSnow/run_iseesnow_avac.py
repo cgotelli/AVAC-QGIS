@@ -184,6 +184,17 @@ _CFL_OVER_LIMIT_MARKER = re.compile(
     r"Courant\s+number[\s\S]{0,192}?is\s+larger\s+than\s+input\s+cfl_max",
     re.IGNORECASE,
 )
+_CFL_REJECTED_TRIAL = re.compile(
+    rf"AMRCLAW:\s*rejected\s+CFL\s+trial\s+level\s+(\d+)\s+"
+    rf"CFL\s*=\s*({_FORTRAN_FLOAT})\s+cfl_max\s*=\s*({_FORTRAN_FLOAT})\s+"
+    rf"dt\s*=\s*({_FORTRAN_FLOAT})\s+retry\s+dt\s*=\s*({_FORTRAN_FLOAT})\s+"
+    rf"t\s*=\s*({_FORTRAN_FLOAT})",
+    re.IGNORECASE,
+)
+_CFL_REJECTED_TRIAL_MARKER = re.compile(
+    r"AMRCLAW:\s*rejected\s+CFL\s+trial",
+    re.IGNORECASE,
+)
 _MAXIMUM_CFL = re.compile(
     rf"maximum Courant number seen\s*=\s*({_FORTRAN_FLOAT})",
     re.IGNORECASE,
@@ -640,7 +651,7 @@ def _fortran_float(value: str) -> float:
 
 
 def solver_cfl_diagnostics(log_text: str, fort_amr_text: str) -> dict[str, Any]:
-    """Parse the legacy AMR CFL audit and fail closed on warning variants."""
+    """Parse accepted CFL limits and auditable transactional retry trials."""
     # GeoClaw can echo the same warning to both standard output and fort.amr.
     # Normalize and de-duplicate those copies so the diagnostic count still
     # represents accepted solver steps, while either source remains enough to
@@ -668,6 +679,33 @@ def solver_cfl_diagnostics(log_text: str, fort_amr_text: str) -> dict[str, Any]:
             )
             warnings_by_step.setdefault(key, item)
     warnings = list(warnings_by_step.values())
+    rejected_counts = Counter(
+        " ".join(match.group(0).split())
+        for match in _CFL_REJECTED_TRIAL_MARKER.finditer(log_text)
+    ) | Counter(
+        " ".join(match.group(0).split())
+        for match in _CFL_REJECTED_TRIAL_MARKER.finditer(fort_amr_text)
+    )
+    rejected_markers = list(rejected_counts.elements())
+    rejected_by_trial: dict[
+        tuple[int, float, float, float, float, float], dict[str, Any]
+    ] = {}
+    for text in (log_text, fort_amr_text):
+        for match in _CFL_REJECTED_TRIAL.finditer(text):
+            item = {
+                "level": int(match.group(1)),
+                "courant_number": _fortran_float(match.group(2)),
+                "cfl_max": _fortran_float(match.group(3)),
+                "dt_s": _fortran_float(match.group(4)),
+                "retry_dt_s": _fortran_float(match.group(5)),
+                "time_s": _fortran_float(match.group(6)),
+            }
+            key = (
+                item["level"], item["courant_number"], item["cfl_max"],
+                item["dt_s"], item["retry_dt_s"], item["time_s"],
+            )
+            rejected_by_trial.setdefault(key, item)
+    rejected = list(rejected_by_trial.values())
     maxima = [
         _fortran_float(match.group(1))
         for match in _MAXIMUM_CFL.finditer(fort_amr_text)
@@ -684,6 +722,18 @@ def solver_cfl_diagnostics(log_text: str, fort_amr_text: str) -> dict[str, Any]:
             if warnings else (
                 {"raw_marker": raw_warning_markers[0]}
                 if raw_warning_markers else None
+            )
+        ),
+        "rejected_cfl_trial_count": len(rejected_markers),
+        "maximum_rejected_courant_number": (
+            max(item["courant_number"] for item in rejected)
+            if rejected else None
+        ),
+        "first_rejected_cfl_trial": (
+            rejected[0]
+            if rejected else (
+                {"raw_marker": rejected_markers[0]}
+                if rejected_markers else None
             )
         ),
     }
@@ -1264,6 +1314,9 @@ def write_configuration_record(
         f"cfl_max = {CFL_MAX}",
         f"maximum_courant_number = {cfl_diagnostics['maximum_courant_number']}",
         "accepted_cfl_violation_count = 0",
+        f"rejected_cfl_trial_count = {cfl_diagnostics['rejected_cfl_trial_count']}",
+        "maximum_rejected_courant_number = "
+        f"{cfl_diagnostics['maximum_rejected_courant_number']}",
         f"rest_speed_threshold_mps = {VELOCITY_FLOW_THRESHOLD_MPS}",
         "rest_speed_definition = native terrain-tangent speed reconstructed from horizontal momentum and saved bed slopes",
         f"native_dry_tolerance_m = {NATIVE_DRY_TOLERANCE_M}",

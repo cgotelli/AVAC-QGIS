@@ -95,6 +95,11 @@ def main() -> None:
                 "version": match.group(1) if match else "5.14.0",
                 "root": "clawpack",
                 "source_sha256": sha256(claw_dir / "clawpack" / "__init__.py"),
+                "files": [
+                    file_record(root, path)
+                    for path in sorted(claw_dir.rglob("*"))
+                    if path.is_file()
+                ],
             },
         }
         (root / "runtime-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

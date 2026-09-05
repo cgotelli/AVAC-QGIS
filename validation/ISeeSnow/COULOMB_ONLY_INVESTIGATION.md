@@ -57,26 +57,42 @@ the effective value used by the earlier stable ISeeSnow runs on the supplied
 5 m grid without changing the curvature normal-stress formulation. Unlike the
 historical expression, neither control varies with mesh spacing.
 
-The ISeeSnow publication runner treats every legacy GeoClaw
-`Courant number ... larger than input cfl_max` warning as a failed run. In the
-vendored AMR integrator that warning is emitted after the update has already
-been applied, and the reduced timestep is used only for a later step. A true
-same-step retry is numerically desirable but must reject and repeat an entire
-AMR level transactionally; retrying an individual patch would desynchronize
-sibling grids and observation/flux bookkeeping. No result containing an
-accepted CFL violation is eligible for comparison or publication.
-The retry must be compiled into the plugin's managed AVAC runtime and covered
-by the normal package workflow; users must not need to install a compiler,
-Python package, or any other dependency manually.
+The vendored AMR integrator now accepts or rejects a common timestep before
+advancing any patch on the level. It first prepares the level once in the
+legacy `bound`--`saveqc`--`topo_update` order. A scratch-state preflight then
+evaluates the CFL on every sibling patch without committing source updates,
+observations, flux-register changes, or patch time. An over-limit result
+repartitions the remaining level interval and repeats the whole-level
+preflight; after acceptance, the physical advance and its bookkeeping execute
+exactly once. This is pre-step acceptance, not post-step rollback or an
+individual-patch retry. The supported bundled configurations disable
+Richardson flagging, which is outside this validated preflight contract.
+
+The forced two-level acceptance regression rejected CFL
+`1.2995227220576577`, selected retry `dt = 0.00048094580371044085`, and kept
+the maximum accepted CFL at `0.50`. One- and four-thread executions and a
+direct replay produced bitwise-identical final solution and observation
+artifacts. With safe `dt = 2e-4`, the pre-change and current solvers were also
+bitwise identical, showing that preflight does not perturb an already
+acceptable static case. No result containing a legacy accepted-step CFL
+warning is eligible for comparison or publication.
+
+Coulomb and Voellmy remain distinct numerical policies: Coulomb uses target
+CFL 0.25 and its Minmod default, while the two Voellmy ISeeSnow protocols keep
+target CFL 0.5 and their validated van Leer limiter. The Windows plugin's
+managed runtime includes the compiled AVAC and WAVE solvers and required
+runtime dependencies and installs them automatically; users do not install a
+compiler, Python package, or solver dependency manually.
 
 A flat Kerswell AMR diagnostic also showed why reducing only `dt_initial` is
 not a general substitute. Changing its initial-step factor from 0.20 to 0.15
 removed the premise of an oversized first step, but later level-three patch
 creation still produced over-limit CFL values (including 0.8202 at 1.0476 s
 and 2.579 at 4.6948 s for a limit of 0.5). The diagnostic was stopped and was
-not used as a verification result. This localizes the remaining integrator
-work to level-wide AMR acceptance/retry rather than either constitutive law or
-the curved-terrain normal-stress term.
+not used as a verification result. This historical diagnostic localized the
+required correction to level-wide AMR acceptance rather than either
+constitutive law or the curved-terrain normal-stress term; that acceptance
+path is now implemented and regression-tested as described above.
 
 ## PFT limiter selection
 

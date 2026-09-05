@@ -57,12 +57,28 @@ are retained under the repository's `Archive/validation-development` folder
 and are not required by the public notebooks. See the
 [validation suite index](../README.md) for links, run order, and requirements.
 
-Publication runs reject any legacy GeoClaw message reporting a Courant number
-above `cfl_max`, even when the Fortran executable exits with status zero. The
-legacy AMR integrator reduces only the following timestep; it does not roll
-back an already-updated multi-patch level. A correct retry therefore requires
-a separate transactional, level-wide integrator change. Until that change is
-validated, zero accepted CFL violations is a hard publication requirement.
+The managed solver now applies CFL acceptance to an entire AMR level before
+the physical update. It prepares the level once in the legacy
+`bound`--`saveqc`--`topo_update` order, evaluates every sibling patch on
+scratch state, and either accepts the common timestep or repartitions the
+remaining level interval and repeats the preflight. The accepted physical
+advance and its observations, flux registers, and output bookkeeping run
+exactly once. This is a pre-step acceptance procedure, not a post-step
+rollback. Coulomb retains its selected target CFL 0.25 and Voellmy its target
+CFL 0.5; the supported bundled configurations disable Richardson flagging.
+
+A forced two-level regression rejected CFL `1.2995227220576577`, retried with
+`dt = 0.00048094580371044085`, and kept the maximum accepted CFL at `0.50`.
+One- and four-thread runs and direct replay produced bitwise-identical output
+artifacts. A safe `dt = 2e-4` control was also bitwise identical between the
+pre-change and current solvers. Publication runs still reject any legacy
+accepted-step CFL warning.
+
+The Windows plugin package includes the compiled AVAC and WAVE solvers and
+their runtime dependencies. The plugin installs its managed runtime
+automatically, so users do not need to install a compiler, Python package, or
+solver dependency manually.
+
 On Windows, keep `--results-root` short: the runner rejects a generated
 topography path longer than the vendored GeoClaw `character(150)` field before
 Fortran can silently truncate it.

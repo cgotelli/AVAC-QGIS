@@ -1,14 +1,13 @@
 """Exercise bundled Clawpack data generation inside the QGIS Python process.
 
 Run with QGIS' ``--code`` option and set these explicit test-only variables:
-``AVAC_QGIS_RUNTIME_ROOT`` (the extracted arm64 runtime) and
+``AVAC_QGIS_RUNTIME_ROOT`` (the extracted managed runtime) and
 ``AVAC_QGIS_RUNTIME_AVAC_DIR`` (a prepared run's AVAC directory).
 """
 
 from __future__ import annotations
 
 import os
-import runpy
 import sys
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from qgis.core import QgsApplication
 
 RUNTIME = Path(os.environ["AVAC_QGIS_RUNTIME_ROOT"]).resolve()
 AVAC = Path(os.environ["AVAC_QGIS_RUNTIME_AVAC_DIR"]).resolve()
-CLAW_SOURCE = RUNTIME / "python" / "clawpack-src"
 REQUIRED_DATA = (
     "claw.data", "amr.data", "geoclaw.data", "refinement.data", "topo.data",
     "qinit.data", "fgmax_grids.data", "fgout_grids.data", "gauges.data",
@@ -28,14 +26,17 @@ def verify() -> None:
     try:
         workspace = Path(os.environ["AVAC_QGIS_WORKSPACE"]).resolve()
         sys.path.insert(0, str(workspace))
+        from avac_qgis.core.runtime import validate_runtime  # noqa: PLC0415
         from avac_qgis.core.runtime_execution import prepare_runtime_execution  # noqa: PLC0415
         if not (RUNTIME / "runtime-manifest.json").is_file():
             raise RuntimeError(f"Runtime manifest missing: {RUNTIME}")
-        if not (CLAW_SOURCE / "clawpack" / "__init__.py").is_file():
-            raise RuntimeError(f"Bundled Clawpack source missing: {CLAW_SOURCE}")
-        if not (AVAC / "setrun.py").is_file() or not (AVAC / "AVAC_configuration.yaml").is_file():
+        manifest = validate_runtime(RUNTIME)
+        claw_source = RUNTIME / str(manifest["clawpack"]["root"])
+        if not (claw_source / "clawpack" / "__init__.py").is_file():
+            raise RuntimeError(f"Bundled Clawpack source missing: {claw_source}")
+        if not (AVAC / "AVAC_configuration.yaml").is_file():
             raise RuntimeError(f"Prepared AVAC inputs missing: {AVAC}")
-        sys.path.insert(0, str(CLAW_SOURCE))
+        sys.path.insert(0, str(claw_source))
         import numpy  # noqa: PLC0415
         import yaml  # noqa: PLC0415
         import clawpack  # noqa: PLC0415
@@ -51,10 +52,13 @@ def verify() -> None:
         print(
             "QGIS_RUNTIME_CLAWPACK=PASS "
             f"python={sys.executable} numpy={numpy.__version__} yaml={yaml.__version__} "
-            f"clawpack={clawpack.__version__} source={CLAW_SOURCE} "
+            f"clawpack={clawpack.__version__} source={claw_source} "
             f"data_count={len(list(AVAC.glob('*.data')))} newly_created={','.join(created) or 'none'}",
             flush=True,
         )
+        result = os.environ.get("AVAC_QGIS_RUNTIME_RESULT")
+        if result:
+            Path(result).write_text("PASS\n", encoding="utf-8")
     except Exception as exc:
         print(f"QGIS_RUNTIME_CLAWPACK=FAIL {type(exc).__name__}: {exc}", flush=True)
         result = os.environ.get("AVAC_QGIS_RUNTIME_RESULT")

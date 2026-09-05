@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from qgis.PyQt.QtCore import QTimer
-from qgis.core import QgsApplication, QgsCoordinateReferenceSystem, QgsProject, QgsRasterLayer, QgsVectorLayer
+from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsVectorLayer
 
 
 WORKSPACE = Path(os.environ["AVAC_QGIS_WORKSPACE"]).resolve()
@@ -17,9 +17,39 @@ WORKSPACE_ROOT = Path(os.environ["AVAC_QGIS_WORKSPACE_ROOT"]).resolve()
 RESULT = Path(os.environ["AVAC_QGIS_RESULT"]).resolve()
 sys.path.insert(0, str(WORKSPACE))
 
+runtime_install_override = os.environ.get("AVAC_QGIS_TEST_RUNTIME_INSTALL_ROOT")
+if runtime_install_override:
+    # Keep the product's normal QStandardPaths behavior untouched while
+    # allowing this clean-profile test to prove a genuinely fresh first-use
+    # install, even on Windows where Qt resolves a Known Folder directly.
+    import avac_qgis.core.runtime as runtime_module  # noqa: E402
+    import avac_qgis.core.runtime_assets as runtime_assets_module  # noqa: E402
+    import avac_qgis.core.workspace as workspace_module  # noqa: E402
+
+    isolated_runtime_root = Path(runtime_install_override).resolve()
+    if isolated_runtime_root.exists():
+        raise RuntimeError(
+            "AVAC_QGIS_TEST_RUNTIME_INSTALL_ROOT must not exist before the test: "
+            f"{isolated_runtime_root}"
+        )
+
+    def isolated_runtime_install_root() -> Path:
+        return isolated_runtime_root
+
+    # Patch both the defining module and modules that import the function by
+    # name.  A QGIS profile may have already imported one of them before this
+    # --code script starts, even when third-party plugins are disabled.
+    runtime_module.runtime_install_root = isolated_runtime_install_root
+    runtime_assets_module.runtime_install_root = isolated_runtime_install_root
+    workspace_module.runtime_install_root = isolated_runtime_install_root
+
 from avac_qgis.gui.dock import AvacDockWidget  # noqa: E402
-from avac_qgis.core.runtime import platform_key  # noqa: E402
-from avac_qgis.core.runtime_assets import RUNTIME_VERSION, runtime_install_root  # noqa: E402
+from avac_qgis.core.runtime import platform_key, validate_runtime  # noqa: E402
+from avac_qgis.core.runtime_assets import (  # noqa: E402
+    RUNTIME_VERSION,
+    ensure_bundled_wave_runtime,
+    runtime_install_root,
+)
 from avac_qgis.core.run_project import read_run_metadata  # noqa: E402
 
 
@@ -50,9 +80,30 @@ def after_run(code: int, normal: bool) -> None:
         installed = runtime_install_root() / RUNTIME_VERSION / platform_key()
         if not (installed / "runtime-manifest.json").is_file():
             raise RuntimeError(f"runtime was not installed automatically: {installed}")
+        avac_manifest = validate_runtime(installed, expected_version=RUNTIME_VERSION)
+        import clawpack  # noqa: PLC0415
+
+        clawpack_file = Path(clawpack.__file__).resolve()
+        clawpack_root = (installed / avac_manifest["clawpack"]["root"]).resolve()
+        try:
+            clawpack_file.relative_to(clawpack_root)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"workflow imported Clawpack outside the managed runtime: {clawpack_file}"
+            ) from exc
+        wave_note = ""
+        if os.environ.get("AVAC_QGIS_TEST_INSTALL_WAVE") == "1":
+            wave_runtime = ensure_bundled_wave_runtime()
+            wave_manifest = validate_runtime(wave_runtime)
+            if not (wave_runtime / "backend" / "WAVE" / "setrun.py").is_file():
+                raise RuntimeError("automatic Wave runtime install has no WAVE backend")
+            if wave_manifest["solver"]["path"] != "bin/xgeoclaw.exe":
+                raise RuntimeError("automatic Wave runtime installed an unexpected solver")
+            wave_note = f" wave_runtime={wave_runtime}"
         print(
             f"QGIS_RUNTIME_NORMAL=PASS runtime={installed} output={output} "
-            f"fort={len(list(output.glob('fort.t*')))} fgout={len(list(output.glob('fgout0001.t*')))}",
+            f"fort={len(list(output.glob('fort.t*')))} "
+            f"fgout={len(list(output.glob('fgout0001.t*')))}{wave_note}",
             flush=True,
         )
         RESULT.write_text("PASS\n", encoding="utf-8")
@@ -79,12 +130,16 @@ def start() -> None:
         release = QgsVectorLayer(str(RELEASE), "canonical release", "ogr")
         if not dem.isValid() or not release.isValid():
             raise RuntimeError("test input layers could not be loaded")
-        # The source ESRI ASCII grid does not encode CRS.  This is the same
-        # explicit user/project assignment made in the normal QGIS workflow.
-        dem.setCrs(QgsCoordinateReferenceSystem("EPSG:2154"))
+        if not dem.crs().isValid() or not release.crs().isValid():
+            raise RuntimeError("test inputs must declare valid coordinate reference systems")
+        if dem.crs() != release.crs():
+            raise RuntimeError("test DEM and release polygons must use the same CRS")
         QgsProject.instance().addMapLayer(dem); QgsProject.instance().addMapLayer(release)
         dock = AvacDockWidget()
         dock.dem_layer.setLayer(dem); dock.release_layer.setLayer(release); dock.workspace_root.setText(str(WORKSPACE_ROOT))
+        # Package smoke fixtures use the native one-metre tutorial grid (or a
+        # deterministic crop of it), avoiding any silent domain adjustment.
+        dock.parameter_controls["computation.cell_size"].setValue(1)
         dock.parameter_controls["computation.t_max"].setValue(7)
         dock.parameter_controls["computation.nb_simul"].setValue(3)
         dock.parameter_controls["animation.n_out"].setValue(4)
@@ -97,4 +152,10 @@ def start() -> None:
         fail(f"{type(exc).__name__}: {exc}")
 
 
+def watchdog() -> None:
+    if not RESULT.exists():
+        fail("clean-profile runtime workflow exceeded five minutes")
+
+
 QTimer.singleShot(0, start)
+QTimer.singleShot(5 * 60 * 1000, watchdog)

@@ -292,6 +292,40 @@ def test_iseesnow_parses_clean_cfl_audit() -> None:
         "maximum_courant_number": pytest.approx(0.631),
         "maximum_violating_courant_number": None,
         "first_accepted_cfl_violation": None,
+        "rejected_cfl_trial_count": 0,
+        "maximum_rejected_courant_number": None,
+        "first_rejected_cfl_trial": None,
+    }
+
+
+def test_iseesnow_audits_rejected_trial_without_calling_it_accepted() -> None:
+    rejected = (
+        "AMRCLAW: rejected CFL trial level   1 "
+        "CFL =   0.12995227220576577D+01 "
+        "cfl_max =   0.50000000000000000D+00 "
+        "dt =   0.25000000000000001D-02 "
+        "retry dt =   0.48094580371044085D-03 "
+        "t =   0.00000000000000000D+00\n"
+    )
+
+    diagnostics = DRIVER.solver_cfl_diagnostics(
+        rejected,
+        rejected + "maximum Courant number seen = 0.499D+00\n",
+    )
+
+    assert diagnostics["accepted_cfl_violation_count"] == 0
+    assert diagnostics["maximum_courant_number"] == pytest.approx(0.499)
+    assert diagnostics["rejected_cfl_trial_count"] == 1
+    assert diagnostics["maximum_rejected_courant_number"] == pytest.approx(
+        1.2995227220576577
+    )
+    assert diagnostics["first_rejected_cfl_trial"] == {
+        "level": 1,
+        "courant_number": pytest.approx(1.2995227220576577),
+        "cfl_max": pytest.approx(0.5),
+        "dt_s": pytest.approx(0.0025),
+        "retry_dt_s": pytest.approx(0.00048094580371044085),
+        "time_s": pytest.approx(0.0),
     }
 
 

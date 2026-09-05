@@ -449,6 +449,12 @@ def main(
                     "accepted_cfl_violation_count": summary.get(
                         "accepted_cfl_violation_count", "not recorded (legacy)"
                     ),
+                    "rejected_cfl_trial_count": summary.get(
+                        "rejected_cfl_trial_count", "not recorded (legacy)"
+                    ),
+                    "maximum_rejected_courant_number": summary.get(
+                        "maximum_rejected_courant_number", ""
+                    ),
                     "speed_limit_mps": summary.get("speed_limit_mps", ""),
                     "plugin_version": summary.get("plugin_version", ""),
                     "solver_sha256": summary.get("solver_sha256", ""),
@@ -548,6 +554,7 @@ def main(
         "simulation_ceiling_s", "spatial_order", "limiter",
         "state_regularization_depth_m", "cfl_target", "cfl_max",
         "maximum_courant_number", "accepted_cfl_violation_count",
+        "rejected_cfl_trial_count", "maximum_rejected_courant_number",
         "speed_limit_mps",
         "plugin_version", "solver_sha256",
     ]))

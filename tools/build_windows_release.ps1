@@ -32,6 +32,15 @@ foreach ($name in $required) {
     }
 }
 
+# The selected toolchain directory is also the source of the DLLs packaged
+# for end users.  Put that exact directory first for this build so an explicit
+# -MingwBin value cannot silently compile with a different MinGW installation
+# (and so it works even when MinGW is not already on the caller's PATH).
+$pathEntries = @($env:PATH -split [System.IO.Path]::PathSeparator)
+$env:PATH = (@($MingwBin) + @(
+    $pathEntries | Where-Object { $_ -and $_ -ne $MingwBin }
+)) -join [System.IO.Path]::PathSeparator
+
 $version = (& $Python -c "from pathlib import Path; fields = dict(line.split('=', 1) for line in (Path('avac_qgis/metadata.txt').read_text(encoding='utf-8').splitlines()) if '=' in line); print(fields['version'].strip())").Trim()
 if (-not $version) {
     throw "Could not read the plugin version from avac_qgis/metadata.txt"
@@ -42,7 +51,12 @@ if (-not $Dist) {
 $Dist = [System.IO.Path]::GetFullPath($Dist)
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
-$solverArgs = @("-u", "tools/build_windows_solvers.py", "--python", $Python)
+$solverArgs = @(
+    "-u", "tools/build_windows_solvers.py",
+    "--python", $Python,
+    "--make", (Join-Path $MingwBin "mingw32-make.exe"),
+    "--fc", (Join-Path $MingwBin "gfortran.exe")
+)
 & $Python @solverArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
