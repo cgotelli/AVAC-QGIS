@@ -20,3 +20,10 @@ launches AVAC; plots can therefore be revised without repeating a simulation.
 
 See the [validation suite index](../README.md) for notebook links and system
 requirements.
+
+Prepared AVAC run directories must be regenerated after the per-model state
+regularization controls were introduced: the current binary reads an extra
+Voellmy value from the sequential `setprob.data` file.  Do not launch the new
+binary with an older prepared `setprob.data`.  Existing YAML configurations
+remain compatible because omitted Coulomb and Voellmy values receive their
+respective 0.05 m and 0.10 m defaults.

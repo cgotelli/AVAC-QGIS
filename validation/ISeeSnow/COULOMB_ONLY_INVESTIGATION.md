@@ -44,6 +44,33 @@ The investigation separated four effects:
    correction to Coulomb normal load. Both were checked separately before any
    source-term change was considered.
 
+## Model-specific regularization and CFL acceptance
+
+The curved-terrain state regularization is now explicitly separated by
+constitutive equation. Coulomb retains the selected fixed 0.05 m scale.
+Voellmy and cohesive Voellmy use a separate fixed 0.10 m scale, which restores
+the effective value used by the earlier stable ISeeSnow runs on the supplied
+5 m grid without changing the curvature normal-stress formulation. Unlike the
+historical expression, neither control varies with mesh spacing.
+
+The ISeeSnow publication runner treats every legacy GeoClaw
+`Courant number ... larger than input cfl_max` warning as a failed run. In the
+vendored AMR integrator that warning is emitted after the update has already
+been applied, and the reduced timestep is used only for a later step. A true
+same-step retry is numerically desirable but must reject and repeat an entire
+AMR level transactionally; retrying an individual patch would desynchronize
+sibling grids and observation/flux bookkeeping. No result containing an
+accepted CFL violation is eligible for comparison or publication.
+
+A flat Kerswell AMR diagnostic also showed why reducing only `dt_initial` is
+not a general substitute. Changing its initial-step factor from 0.20 to 0.15
+removed the premise of an oversized first step, but later level-three patch
+creation still produced over-limit CFL values (including 0.8202 at 1.0476 s
+and 2.579 at 4.6948 s for a limit of 0.5). The diagnostic was stopped and was
+not used as a verification result. This localizes the remaining integrator
+work to level-wide AMR acceptance/retry rather than either constitutive law or
+the curved-terrain normal-stress term.
+
 ## PFT limiter selection
 
 All candidates used the same 1200 s ceiling, 5 m grid, second-order update,

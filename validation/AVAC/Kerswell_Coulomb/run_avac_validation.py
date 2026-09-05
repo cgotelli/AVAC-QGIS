@@ -313,6 +313,10 @@ def main() -> None:
     global TRANSVERSE_CELLS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dx", type=float, default=0.01, help="base-grid spacing in m")
+    parser.add_argument(
+        "--initial-dt-factor", type=float, default=0.2,
+        help="factor in dt_initial = factor * dx / sqrt(g)",
+    )
     parser.add_argument("--t-final", type=float, default=DEFAULT_T_FINAL_S)
     parser.add_argument("--nout", type=int, default=DEFAULT_OUTPUT_COUNT)
     parser.add_argument("--cores", type=int, default=8)
@@ -341,6 +345,8 @@ def main() -> None:
     args = parser.parse_args()
     if (args.solver is None) != (args.solver_source is None):
         raise SystemExit("--solver and --solver-source must be supplied together")
+    if not np.isfinite(args.initial_dt_factor) or args.initial_dt_factor <= 0.0:
+        raise ValueError("initial-dt-factor must be finite and positive")
     if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
             or args.ny < 1
             or args.amr_levels < 2 or args.amr_ratio < 2 or args.speed_tolerance <= 0):
@@ -392,6 +398,7 @@ def main() -> None:
             refinement=args.amr_levels,
             source_override=solver_source,
             analytical_validation_ghost_cells=2,
+            initial_dt_factor=args.initial_dt_factor,
         )
         compatibility = configure_analytical_coulomb_amr_compatibility(work)
         corridor_interval = 0.05
@@ -419,6 +426,10 @@ def main() -> None:
             "requested_t_final_s": float(args.t_final),
             "outputs": int(args.nout),
             "width_base_cells": TRANSVERSE_CELLS,
+            "initial_dt_factor": float(args.initial_dt_factor),
+            "initial_dt_s": float(
+                args.initial_dt_factor * args.dx / np.sqrt(GRAVITY)
+            ),
         }
         (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
         if sha256(setrun_backend) != setrun_backend_sha256:

@@ -442,6 +442,13 @@ def main(
                         "state_momentum_regularization_depth_m", ""
                     ),
                     "cfl_target": summary.get("cfl_target", ""),
+                    "cfl_max": summary.get("cfl_max", ""),
+                    "maximum_courant_number": summary.get(
+                        "maximum_courant_number", ""
+                    ),
+                    "accepted_cfl_violation_count": summary.get(
+                        "accepted_cfl_violation_count", "not recorded (legacy)"
+                    ),
                     "speed_limit_mps": summary.get("speed_limit_mps", ""),
                     "plugin_version": summary.get("plugin_version", ""),
                     "solver_sha256": summary.get("solver_sha256", ""),
@@ -539,7 +546,9 @@ def main(
         "case", "initial_volume_m3", "final_volume_m3", "relative_volume_change",
         "rest_sustained_from_s", "rest_confirmed_s", "legacy_three_frame_rest_s",
         "simulation_ceiling_s", "spatial_order", "limiter",
-        "state_regularization_depth_m", "cfl_target", "speed_limit_mps",
+        "state_regularization_depth_m", "cfl_target", "cfl_max",
+        "maximum_courant_number", "accepted_cfl_violation_count",
+        "speed_limit_mps",
         "plugin_version", "solver_sha256",
     ]))
     report.append("")

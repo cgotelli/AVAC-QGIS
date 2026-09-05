@@ -2046,6 +2046,19 @@ class AvacDockWidget(QDockWidget):
                 state_regularization,
             ),
         )
+        voellmy_state_regularization = QDoubleSpinBox()
+        voellmy_state_regularization.setDecimals(6)
+        voellmy_state_regularization.setRange(0.0, 10.0)
+        voellmy_state_regularization.setSingleStep(.01)
+        voellmy_state_regularization.setValue(.10)
+        voellmy_state_regularization.setSuffix(" m")
+        form.addRow(
+            "Voellmy state regularization depth",
+            self._parameter_control(
+                "computation.voellmy_state_momentum_regularization_depth",
+                voellmy_state_regularization,
+            ),
+        )
         limiter = QComboBox(); limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); limiter.setCurrentText("superbee")
         form.addRow("Limiter", self._parameter_control("computation.limiter", limiter))
         page.setLayout(form); return page
@@ -2135,6 +2148,18 @@ class AvacDockWidget(QDockWidget):
         # explicit rather than silently dropping a loaded configuration.
         self.parameter_controls["rheology.xi"].setEnabled(model in {"Voellmy", "cohesive_Voellmy"})
         self.parameter_controls["rheology.C"].setEnabled(model == "cohesive_Voellmy")
+        coulomb_regularization = self.parameter_controls.get(
+            "computation.state_momentum_regularization_depth"
+        )
+        voellmy_regularization = self.parameter_controls.get(
+            "computation.voellmy_state_momentum_regularization_depth"
+        )
+        if coulomb_regularization is not None:
+            coulomb_regularization.setEnabled(model == "Coulomb")
+        if voellmy_regularization is not None:
+            voellmy_regularization.setEnabled(
+                model in {"Voellmy", "cohesive_Voellmy"}
+            )
 
     def _parse_rheology_zones(self) -> list[tuple[float, float, float, float | None]]:
         """Read compact, ordered altitude-zone rows without a new file format."""

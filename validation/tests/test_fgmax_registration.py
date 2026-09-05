@@ -217,3 +217,14 @@ def test_setrun_rejects_nonfinite_state_regularization_in_hand_authored_yaml(
 
     with pytest.raises(ValueError, match="non-negative finite"):
         module.setrun()
+
+
+def test_setrun_rejects_nonfinite_voellmy_state_regularization_in_hand_authored_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_setrun(monkeypatch)
+    _configure(module)
+    module.Param["voellmy_state_momentum_regularization_depth"] = float("inf")
+
+    with pytest.raises(ValueError, match="non-negative finite"):
+        module.setrun()

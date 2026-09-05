@@ -20,6 +20,7 @@ PARAMETER_PATHS = (
     "computation.t_max", "computation.nb_simul", "computation.cfl_target", "computation.cfl_max",
     "computation.refinement", "computation.cell_size", "computation.boundary", "computation.limiter",
     "computation.state_momentum_regularization_depth",
+    "computation.voellmy_state_momentum_regularization_depth",
     "output.output_format", "output.delta_t", "output.verbosity",
     "animation.variable", "animation.n_out",
 )
@@ -29,6 +30,7 @@ PARAMETER_PATHS = (
 # controls were previously implicit solver defaults.
 OPTIONAL_CONTROL_DEFAULTS: dict[str, Any] = {
     "computation.state_momentum_regularization_depth": 0.05,
+    "computation.voellmy_state_momentum_regularization_depth": 0.10,
 }
 
 
@@ -192,7 +194,14 @@ def validate_controlled_values(values: dict[str, Any]) -> list[str]:
         state_depth = float(values["computation.state_momentum_regularization_depth"])
         if not np.isfinite(state_depth) or state_depth < 0:
             issues.append(
-                "State momentum regularization depth must be a non-negative finite number."
+                "Coulomb state momentum regularization depth must be a non-negative finite number."
+            )
+        voellmy_state_depth = float(
+            values["computation.voellmy_state_momentum_regularization_depth"]
+        )
+        if not np.isfinite(voellmy_state_depth) or voellmy_state_depth < 0:
+            issues.append(
+                "Voellmy state momentum regularization depth must be a non-negative finite number."
             )
         if int(values["computation.nb_simul"]) < 1 or int(values["animation.n_out"]) < 1:
             issues.append("Solver and temporal output counts must each be at least one.")

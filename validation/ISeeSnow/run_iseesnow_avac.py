@@ -9,10 +9,12 @@ translation required by the two model conventions.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import csv
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -104,6 +106,11 @@ VELOCITY_FLOW_THRESHOLD_MPS = 0.01
 VELOCITY_DEPTH_THRESHOLD_M = 0.05
 NATIVE_DRY_TOLERANCE_M = 1.0e-4
 STATE_MOMENTUM_REGULARIZATION_DEPTH_M = 0.05
+VOELLMY_STATE_MOMENTUM_REGULARIZATION_DEPTH_M = 0.10
+CFL_MAX = 1.0
+# The vendored GeoClaw topography module stores filenames in character(150).
+# Reject an overlong absolute path before Fortran silently truncates it.
+FORTRAN_TOPOGRAPHY_PATH_LIMIT = 150
 REST_CONSECUTIVE_OUTPUTS = 3
 # A strict pointwise velocity criterion is not useful at a dry front: a tiny
 # residual cell can retain an unrepresentative speed long after the avalanche
@@ -140,6 +147,19 @@ def selected_cfl_target(case_name: str, cfl_target: float | None = None) -> floa
     return float(CASE_SPECIFICATIONS[case_name]["default_cfl_target"])
 
 
+def require_supported_topography_path(run_root: Path) -> Path:
+    """Fail early when GeoClaw's fixed-width topography path would truncate."""
+    topography_path = (run_root / "Topo" / "topography.asc").resolve()
+    if len(str(topography_path)) > FORTRAN_TOPOGRAPHY_PATH_LIMIT:
+        raise ValueError(
+            "ISeeSnow results path is too long for the vendored GeoClaw "
+            f"topography reader ({len(str(topography_path))} > "
+            f"{FORTRAN_TOPOGRAPHY_PATH_LIMIT} characters): {topography_path}. "
+            "Choose a shorter --results-root."
+        )
+    return topography_path
+
+
 # GeoClaw's historical default was 50 m/s.  It rescales momentum in b4step2,
 # changing the solution.  Use a finite value that is safely beyond any
 # representable physical avalanche speed instead of relying on that limiter.
@@ -150,6 +170,23 @@ SOLVER_FATAL_MARKERS = (
     "Too many dt reductions",
     "Stopping calculation",
     "set_fgout: ERROR",
+)
+_FORTRAN_FLOAT = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][+-]?\d+)?"
+_CFL_WARNING = re.compile(
+    rf"Courant number\s*=\s*({_FORTRAN_FLOAT})\s+is larger than input "
+    rf"cfl_max\s*=\s*({_FORTRAN_FLOAT})\s+on grid\s+(\d+)\s+level\s+(\d+)",
+    re.IGNORECASE,
+)
+# Treat the warning text itself as authoritative even when a compiler changes
+# line wrapping or replaces an overflowing numeric field with asterisks.  The
+# detailed expression above is only for extracting optional diagnostics.
+_CFL_OVER_LIMIT_MARKER = re.compile(
+    r"Courant\s+number[\s\S]{0,192}?is\s+larger\s+than\s+input\s+cfl_max",
+    re.IGNORECASE,
+)
+_MAXIMUM_CFL = re.compile(
+    rf"maximum Courant number seen\s*=\s*({_FORTRAN_FLOAT})",
+    re.IGNORECASE,
 )
 # IdealizedTopo and CoulombOnly are supplied in a Cartesian metric grid without
 # an EPSG authority. This valid QGIS local CRS is deliberately non-geographic.
@@ -491,6 +528,7 @@ def configure_template(
     diagnostic_gauge: tuple[float, float] | None = None,
     refinement_levels: int = 1,
     state_momentum_regularization_depth_m: float = STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
+    voellmy_state_momentum_regularization_depth_m: float = VOELLMY_STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
 ) -> Path:
     specification = CASE_SPECIFICATIONS[case_name]
     limiter = selected_limiter(case_name, limiter)
@@ -498,7 +536,12 @@ def configure_template(
     state_depth = float(state_momentum_regularization_depth_m)
     if not np.isfinite(state_depth) or state_depth < 0.0:
         raise ValueError(
-            "State momentum regularization depth must be non-negative and finite."
+            "Coulomb state momentum regularization depth must be non-negative and finite."
+        )
+    voellmy_state_depth = float(voellmy_state_momentum_regularization_depth_m)
+    if not np.isfinite(voellmy_state_depth) or voellmy_state_depth < 0.0:
+        raise ValueError(
+            "Voellmy state momentum regularization depth must be non-negative and finite."
         )
     output_intervals = output_interval_count(simulation_end_s, output_interval_s)
     template = yaml.safe_load((PLUGIN_ROOT / "resources" / "AVAC_configuration100.yaml").read_text(encoding="utf-8"))
@@ -509,6 +552,8 @@ def configure_template(
         "dry_limit": NATIVE_DRY_TOLERANCE_M,
         "velocity_depth_threshold": VELOCITY_DEPTH_THRESHOLD_M,
         "state_momentum_regularization_depth": state_depth,
+        "voellmy_state_momentum_regularization_depth": voellmy_state_depth,
+        "cfl_max": CFL_MAX,
     })
     # FGout counts both t=0 and t=end; native output counts intervals after
     # its initial frame.  The +1 keeps both products on the requested cadence.
@@ -590,8 +635,64 @@ def solver_environment(workers: int) -> dict[str, str]:
     return environment
 
 
-def launch_solver(solver: Path, output_dir: Path, log_path: Path, workers: int) -> tuple[float, float]:
-    """Run the validated executable and return wall and child CPU seconds."""
+def _fortran_float(value: str) -> float:
+    return float(value.replace("D", "E").replace("d", "e"))
+
+
+def solver_cfl_diagnostics(log_text: str, fort_amr_text: str) -> dict[str, Any]:
+    """Parse the legacy AMR CFL audit and fail closed on warning variants."""
+    # GeoClaw can echo the same warning to both standard output and fort.amr.
+    # Normalize and de-duplicate those copies so the diagnostic count still
+    # represents accepted solver steps, while either source remains enough to
+    # fail the run closed.
+    warning_counts = Counter(
+        " ".join(match.group(0).split())
+        for match in _CFL_OVER_LIMIT_MARKER.finditer(log_text)
+    ) | Counter(
+        " ".join(match.group(0).split())
+        for match in _CFL_OVER_LIMIT_MARKER.finditer(fort_amr_text)
+    )
+    raw_warning_markers = list(warning_counts.elements())
+    warnings_by_step: dict[tuple[float, float, int, int], dict[str, Any]] = {}
+    for text in (log_text, fort_amr_text):
+        for match in _CFL_WARNING.finditer(text):
+            item = {
+                "courant_number": _fortran_float(match.group(1)),
+                "cfl_max": _fortran_float(match.group(2)),
+                "grid": int(match.group(3)),
+                "level": int(match.group(4)),
+            }
+            key = (
+                item["courant_number"], item["cfl_max"],
+                item["grid"], item["level"],
+            )
+            warnings_by_step.setdefault(key, item)
+    warnings = list(warnings_by_step.values())
+    maxima = [
+        _fortran_float(match.group(1))
+        for match in _MAXIMUM_CFL.finditer(fort_amr_text)
+    ]
+    return {
+        "accepted_cfl_violation_count": len(raw_warning_markers),
+        "maximum_courant_number": max(maxima) if maxima else None,
+        "maximum_violating_courant_number": (
+            max(item["courant_number"] for item in warnings)
+            if warnings else None
+        ),
+        "first_accepted_cfl_violation": (
+            warnings[0]
+            if warnings else (
+                {"raw_marker": raw_warning_markers[0]}
+                if raw_warning_markers else None
+            )
+        ),
+    }
+
+
+def launch_solver(
+    solver: Path, output_dir: Path, log_path: Path, workers: int,
+) -> tuple[float, float, dict[str, Any]]:
+    """Run the executable and return timing plus its fail-closed CFL audit."""
     before = resource.getrusage(resource.RUSAGE_CHILDREN) if resource else None
     start = time.perf_counter()
     with log_path.open("w", encoding="utf-8") as log:
@@ -605,15 +706,37 @@ def launch_solver(solver: Path, output_dir: Path, log_path: Path, workers: int) 
         # stable with a wall-clock estimate instead of failing before a run.
         cpu_seconds = wall_seconds
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    fort_amr = output_dir / "fort.amr"
+    fort_amr_text = (
+        fort_amr.read_text(encoding="utf-8", errors="replace")
+        if fort_amr.is_file() else ""
+    )
+    cfl_diagnostics = solver_cfl_diagnostics(log_text, fort_amr_text)
     fatal_markers = [marker for marker in SOLVER_FATAL_MARKERS if marker in log_text]
-    if result.returncode != 0 or fatal_markers:
+    if (result.returncode != 0 or fatal_markers
+            or cfl_diagnostics["accepted_cfl_violation_count"]):
         reason = (
             f"exit code {result.returncode}"
             if result.returncode != 0
-            else "fatal marker(s): " + ", ".join(fatal_markers)
+            else (
+                "fatal marker(s): " + ", ".join(fatal_markers)
+                if fatal_markers else
+                "accepted CFL violation(s): "
+                f"{cfl_diagnostics['accepted_cfl_violation_count']} warning(s)"
+                + (
+                    ", maximum "
+                    f"{cfl_diagnostics['maximum_violating_courant_number']:.12g}"
+                    if cfl_diagnostics["maximum_violating_courant_number"] is not None
+                    else ", numeric value unavailable"
+                )
+            )
         )
         raise RuntimeError(f"xgeoclaw failed with {reason}; inspect {log_path}")
-    return wall_seconds, cpu_seconds
+    if cfl_diagnostics["maximum_courant_number"] is None:
+        raise RuntimeError(
+            f"xgeoclaw did not report its maximum Courant number; inspect {fort_amr}"
+        )
+    return wall_seconds, cpu_seconds, cfl_diagnostics
 
 
 def require_solver_unchanged(solver: Path, expected_sha256: str) -> None:
@@ -1082,12 +1205,17 @@ def write_configuration_record(
     refinement_levels: int,
     refinement_ratio: int,
     state_momentum_regularization_depth_m: float,
+    voellmy_state_momentum_regularization_depth_m: float,
+    cfl_diagnostics: dict[str, Any],
 ) -> None:
     specification = CASE_SPECIFICATIONS[case_name]
     input_hashes = {
         record["name"]: record["sha256"] for record in official_input_manifest
     }
     if specification["model"] == "Coulomb":
+        active_state_regularization_depth_m = (
+            state_momentum_regularization_depth_m
+        )
         state_regularization_description = (
             "Kurganov-Petrova momentum projection below the configured "
             "vertical-depth scale on locally non-planar terrain only; flat "
@@ -1095,9 +1223,13 @@ def write_configuration_record(
             "CFL sensitivity is audited separately"
         )
     else:
+        active_state_regularization_depth_m = (
+            voellmy_state_momentum_regularization_depth_m
+        )
         state_regularization_description = (
-            "not applied; the configured depth is Coulomb-only and Voellmy "
-            "retains its established state update"
+            "Kurganov-Petrova momentum projection below the separate Voellmy "
+            "vertical-depth scale on locally non-planar terrain only; flat "
+            "and affine beds are excluded"
         )
     lines = [
         "AVAC4QGIS ISeeSnow benchmark configuration",
@@ -1129,13 +1261,19 @@ def write_configuration_record(
         f"fixed_grid_output_frame_count = {output_interval_count(simulation_end_s, output_interval_s) + 1}",
         f"limiter = {limiter}",
         f"cfl_target = {cfl_target}",
+        f"cfl_max = {CFL_MAX}",
+        f"maximum_courant_number = {cfl_diagnostics['maximum_courant_number']}",
+        "accepted_cfl_violation_count = 0",
         f"rest_speed_threshold_mps = {VELOCITY_FLOW_THRESHOLD_MPS}",
         "rest_speed_definition = native terrain-tangent speed reconstructed from horizontal momentum and saved bed slopes",
         f"native_dry_tolerance_m = {NATIVE_DRY_TOLERANCE_M}",
         f"reported_velocity_depth_threshold_m = {VELOCITY_DEPTH_THRESHOLD_M}",
         "practical_rest_minimum_depth_m = reported_velocity_depth_threshold_m",
         "subthreshold_motion_audit = raw terrain-tangent momentum/depth speed is reported separately from practical rest for dry_tolerance < h < reported_velocity_depth_threshold",
-        f"state_momentum_regularization_depth_m = {state_momentum_regularization_depth_m}",
+        f"state_momentum_regularization_depth_m = {active_state_regularization_depth_m}",
+        f"active_state_momentum_regularization_depth_m = {active_state_regularization_depth_m}",
+        f"coulomb_state_momentum_regularization_depth_m = {state_momentum_regularization_depth_m}",
+        f"voellmy_state_momentum_regularization_depth_m = {voellmy_state_momentum_regularization_depth_m}",
         f"rest_moving_volume_fraction = {REST_MOVING_VOLUME_FRACTION}",
         f"rest_consecutive_output_frames = {REST_CONSECUTIVE_OUTPUTS}",
         "rest_requires_no_later_violation_before_ceiling = true",
@@ -1217,6 +1355,7 @@ def run_case(
     solver_override: Path | None = None,
     solver_source_override: Path | None = None,
     state_momentum_regularization_depth_m: float = STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
+    voellmy_state_momentum_regularization_depth_m: float = VOELLMY_STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
 ) -> dict[str, Any]:
     if (solver_override is None) != (solver_source_override is None):
         raise ValueError(
@@ -1225,6 +1364,7 @@ def run_case(
     limiter = selected_limiter(case_name, limiter)
     cfl_target = selected_cfl_target(case_name, cfl_target)
     case_root = (RESULTS_ROOT / case_name).expanduser().resolve()
+    require_supported_topography_path(case_root / "Run")
     (
         run_root,
         pft_path,
@@ -1241,9 +1381,20 @@ def run_case(
     raster = benchmark_raster(dem, crs_authid=crs)
     rings = read_polygon_rings(inputs["release"])
     template = configure_template(
-        case_name, case_root, simulation_end_s, output_interval_s, limiter,
-        cfl_target, diagnostic_gauge, refinement_levels,
-        state_momentum_regularization_depth_m,
+        case_name,
+        case_root,
+        simulation_end_s=simulation_end_s,
+        output_interval_s=output_interval_s,
+        limiter=limiter,
+        cfl_target=cfl_target,
+        diagnostic_gauge=diagnostic_gauge,
+        refinement_levels=refinement_levels,
+        state_momentum_regularization_depth_m=(
+            state_momentum_regularization_depth_m
+        ),
+        voellmy_state_momentum_regularization_depth_m=(
+            voellmy_state_momentum_regularization_depth_m
+        ),
     )
     plugin_case = write_plugin_case_configuration(case_name, case_root, inputs, template)
     if solver_override is None:
@@ -1296,7 +1447,26 @@ def run_case(
         output_dir, refinement_levels, refinement_ratio,
     )
     solver_sha256 = sha256(solver)
-    wall_s, cpu_s = launch_solver(solver, output_dir, case_root / "solver.log", workers)
+    solver_log = case_root / "solver.log"
+    update_run_status(
+        prepared.avac_dir,
+        "running",
+        solver=str(solver),
+        solver_sha256=solver_sha256,
+        solver_log=str(solver_log),
+    )
+    try:
+        wall_s, cpu_s, cfl_diagnostics = launch_solver(
+            solver, output_dir, solver_log, workers,
+        )
+    except Exception as exc:
+        update_run_status(
+            prepared.avac_dir,
+            "failed",
+            failure_reason=str(exc),
+            solver_log=str(solver_log),
+        )
+        raise
     require_solver_unchanged(solver, solver_sha256)
     require_file_unchanged(setrun_backend, setrun_backend_sha256, "AVAC setrun backend")
 
@@ -1331,6 +1501,7 @@ def run_case(
         submission_pfv_sha256, simulation_end_s,
         output_interval_s, limiter, cfl_target, refinement_levels,
         refinement_ratio, state_momentum_regularization_depth_m,
+        voellmy_state_momentum_regularization_depth_m, cfl_diagnostics,
     )
     for pending, destination in (
         (pending_pft, pft_path),
@@ -1339,6 +1510,11 @@ def run_case(
         (pending_mass_history, mass_history_path),
     ):
         os.replace(pending, destination)
+    active_state_regularization_depth_m = (
+        state_momentum_regularization_depth_m
+        if CASE_SPECIFICATIONS[case_name]["model"] == "Coulomb"
+        else voellmy_state_momentum_regularization_depth_m
+    )
     record = {
         "case": case_name, "cpu_seconds": cpu_s, "wall_seconds": wall_s,
         "simulation_end_ceiling_seconds": simulation_end_s,
@@ -1359,8 +1535,13 @@ def run_case(
         "limiter": limiter,
         "native_dry_tolerance_m": NATIVE_DRY_TOLERANCE_M,
         "practical_rest_minimum_depth_m": VELOCITY_DEPTH_THRESHOLD_M,
-        "state_momentum_regularization_depth_m": state_momentum_regularization_depth_m,
+        "state_momentum_regularization_depth_m": active_state_regularization_depth_m,
+        "active_state_momentum_regularization_depth_m": active_state_regularization_depth_m,
+        "coulomb_state_momentum_regularization_depth_m": state_momentum_regularization_depth_m,
+        "voellmy_state_momentum_regularization_depth_m": voellmy_state_momentum_regularization_depth_m,
         "cfl_target": cfl_target,
+        "cfl_max": CFL_MAX,
+        **cfl_diagnostics,
         "diagnostic_gauge": diagnostic_gauge,
         "refinement_levels": refinement_levels,
         "refinement_ratio": refinement_ratio,
@@ -1449,7 +1630,14 @@ def main() -> None:
     parser.add_argument(
         "--state-regularization-depth", type=float,
         default=STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
-        help="Physical shallow-state momentum regularization depth in metres (default: 0.05).",
+        help=("Coulomb shallow-state momentum regularization depth in metres "
+              "(default: 0.05)."),
+    )
+    parser.add_argument(
+        "--voellmy-state-regularization-depth", type=float,
+        default=VOELLMY_STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
+        help=("Voellmy/cohesive-Voellmy shallow-state momentum "
+              "regularization depth in metres (default: 0.10)."),
     )
     parser.add_argument(
         "--cfl-target", type=float,
@@ -1503,7 +1691,14 @@ def main() -> None:
     if args.refinement_ratio < 2:
         raise SystemExit("--refinement-ratio must be at least two")
     if not np.isfinite(args.state_regularization_depth) or args.state_regularization_depth < 0:
-        raise SystemExit("--state-regularization-depth must be a non-negative finite value")
+        raise SystemExit(
+            "--state-regularization-depth must be a non-negative finite value"
+        )
+    if (not np.isfinite(args.voellmy_state_regularization_depth)
+            or args.voellmy_state_regularization_depth < 0):
+        raise SystemExit(
+            "--voellmy-state-regularization-depth must be a non-negative finite value"
+        )
     if (args.solver is None) != (args.solver_source is None):
         raise SystemExit("--solver and --solver-source must be supplied together")
     cases = list(CASE_SPECIFICATIONS) if args.case == "all" else [args.case]
@@ -1517,6 +1712,7 @@ def main() -> None:
             selected_cfl_target(case_name, args.cfl_target), diagnostic_gauge,
             args.refinement_levels, args.refinement_ratio, args.solver,
             args.solver_source, args.state_regularization_depth,
+            args.voellmy_state_regularization_depth,
         )
         for case_name in cases
     ]

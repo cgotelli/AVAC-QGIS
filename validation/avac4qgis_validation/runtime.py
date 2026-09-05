@@ -919,6 +919,7 @@ def prepare_avac_coulomb_case(
     rho: float = 1000.0, xi: float = 1.0e12,
     source_override: str | Path | None = None,
     analytical_validation_ghost_cells: int | None = None,
+    initial_dt_factor: float = 0.2,
 ) -> Path:
     """Prepare a Coulomb-family case with the packaged AVAC runtime.
 
@@ -927,6 +928,9 @@ def prepare_avac_coulomb_case(
     boundary names permits compact two-dimensional property tests without
     introducing a second solver configuration or a validation-only equation.
     """
+    initial_dt_factor = float(initial_dt_factor)
+    if not np.isfinite(initial_dt_factor) or initial_dt_factor <= 0.0:
+        raise ValueError("initial_dt_factor must be finite and positive")
     if refinement < 1:
         raise ValueError("refinement must be at least 1")
     if model not in {"Coulomb", "Voellmy", "cohesive_Voellmy"}:
@@ -991,7 +995,7 @@ def prepare_avac_coulomb_case(
     _replace_data_value(work / "claw.data", "cfl_desired", "0.25")
     _replace_data_value(work / "claw.data", "cfl_max", "0.5")
     _replace_data_value(work / "claw.data", "limiter", "2 2 2")
-    initial_dt = 0.2 * dx / np.sqrt(GRAVITY)
+    initial_dt = initial_dt_factor * dx / np.sqrt(GRAVITY)
     _replace_data_value(work / "claw.data", "dt_initial", f"{initial_dt:.12g}")
     _replace_data_value(work / "claw.data", "verbosity", "0")
     return work

@@ -42,6 +42,7 @@ def main() -> None:
     template = load_complete_configuration(TEMPLATE)
     values = controlled_values(template)
     assert values["computation.state_momentum_regularization_depth"] == 0.05
+    assert values["computation.voellmy_state_momentum_regularization_depth"] == 0.10
     assert values["computation.t_max"] == 150 and values["computation.nb_simul"] == 150 and values["animation.n_out"] == 151
     assert values["rheology.z_breaks"] == []
     assert not validate_grid_contract(template, 1.0)
@@ -57,13 +58,20 @@ def main() -> None:
     assert payload["gauges"] == template["gauges"] and payload["refinement"] == template["refinement"] and payload["file_names"] == template["file_names"]
     assert validate_controlled_values({**changed, "computation.cfl_target": 1.0, "computation.cfl_max": 0.5})
     assert validate_controlled_values({**changed, "computation.state_momentum_regularization_depth": -0.01})
+    assert validate_controlled_values({
+        **changed,
+        "computation.voellmy_state_momentum_regularization_depth": float("nan"),
+    })
     legacy = yaml.safe_load(yaml.safe_dump(template))
     legacy["computation"].pop("state_momentum_regularization_depth")
+    legacy["computation"].pop("voellmy_state_momentum_regularization_depth")
     legacy_values = controlled_values(legacy)
     assert legacy_values["computation.state_momentum_regularization_depth"] == 0.05
+    assert legacy_values["computation.voellmy_state_momentum_regularization_depth"] == 0.10
     restored = restore_controlled_values(legacy, {"computation.t_max": 12})
     assert restored["computation.t_max"] == 12
     assert restored["computation.state_momentum_regularization_depth"] == 0.05
+    assert restored["computation.voellmy_state_momentum_regularization_depth"] == 0.10
     zoned = {**changed, "rheology.model": "cohesive_Voellmy", "rheology.mu": [.30, .225],
              "rheology.xi": [600, 1200], "rheology.C": [100, 0], "rheology.z_breaks": [1680]}
     assert not validate_controlled_values(zoned)

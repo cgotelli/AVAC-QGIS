@@ -15,11 +15,12 @@ Each notebook:
 4. compares AVAC with grid-compatible submitted peer fields without shifting,
    clipping, padding, or resampling them.
 
-For Coulomb, the validation driver exposes the shallow-state momentum
-regularization as a physical depth (`--state-regularization-depth`, default
-0.05 m) independently of the 0.05 m PFV reporting threshold. Voellmy retains
-its established state update and ignores this Coulomb-only control. The native
-mass history reports moving
+The validation driver treats the constitutive equations separately. Coulomb
+uses `--state-regularization-depth` (default 0.05 m), while Voellmy and
+cohesive Voellmy use `--voellmy-state-regularization-depth` (default 0.10 m).
+Both are explicit physical shallow-state momentum scales, independent of the
+0.05 m PFV reporting threshold, and apply only on locally non-planar terrain.
+The native mass history reports moving
 volume in five AVAC vertical-depth bands and uses terrain-tangent speed
 reconstructed from saved bed slopes. The first band audits raw motion from the
 native dry tolerance to 0.05 m; it is not counted in the practical-rest test.
@@ -55,3 +56,13 @@ are intentionally not committed. Historical formulation and wet--dry audits
 are retained under the repository's `Archive/validation-development` folder
 and are not required by the public notebooks. See the
 [validation suite index](../README.md) for links, run order, and requirements.
+
+Publication runs reject any legacy GeoClaw message reporting a Courant number
+above `cfl_max`, even when the Fortran executable exits with status zero. The
+legacy AMR integrator reduces only the following timestep; it does not roll
+back an already-updated multi-patch level. A correct retry therefore requires
+a separate transactional, level-wide integrator change. Until that change is
+validated, zero accepted CFL violations is a hard publication requirement.
+On Windows, keep `--results-root` short: the runner rejects a generated
+topography path longer than the vendored GeoClaw `character(150)` field before
+Fortran can silently truncate it.

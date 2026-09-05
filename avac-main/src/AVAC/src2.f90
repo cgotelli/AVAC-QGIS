@@ -166,12 +166,13 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
         ! in a very shallow cell.  On non-planar terrain that unresolved seed
         ! may subsequently be transported into resolved flow and appear as a
         ! spurious peak velocity.  Apply the standard Kurganov--Petrova
-        ! desingularization only in Coulomb mode, below an explicit physical
-        ! shallow-depth scale, and only where the local bed is not affine.
+        ! desingularization in granular modes, below an explicit
+        ! model-specific physical shallow-depth scale, and only where the
+        ! local bed is not affine.
         ! Depth and momentum direction are preserved.  In particular, flat
-        ! and constant-slope analytical Coulomb cells receive no
+        ! and constant-slope analytical granular-flow cells receive no
         ! regularization update.
-        if (imodel_rh == 1) then
+        if (imodel_rh >= 1) then
             ! First classify the patch from stencils wholly inside it.  Ghost
             ! topography at a physical or AMR boundary is a boundary closure,
             ! not evidence of terrain curvature; using it for this decision
@@ -197,8 +198,13 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                 ! Use an explicit physical depth rather than coupling this
                 ! state-changing update to output diagnostics or grid size.
                 ! Constant-slope and flat beds never enter this branch.
-                h_eps = max(dry_tolerance, &
-                            state_momentum_regularization_depth_rh)
+                if (imodel_rh == 1) then
+                    h_eps = max(dry_tolerance, &
+                                state_momentum_regularization_depth_rh)
+                else
+                    h_eps = max(dry_tolerance, &
+                                voellmy_state_momentum_regularization_depth_rh)
+                end if
                 do j = 1, my
                     do i = 1, mx
                         h = q(1,i,j)

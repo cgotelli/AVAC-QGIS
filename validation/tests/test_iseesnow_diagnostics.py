@@ -7,7 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
+import shapefile
 import yaml
 
 
@@ -26,6 +28,14 @@ assert SPEC is not None and SPEC.loader is not None
 DRIVER = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = DRIVER
 SPEC.loader.exec_module(DRIVER)
+
+FIGURE_SPEC = importlib.util.spec_from_file_location(
+    "make_iseesnow_figures",
+    VALIDATION / "ISeeSnow" / "paper_figures" / "make_iseesnow_figures.py",
+)
+assert FIGURE_SPEC is not None and FIGURE_SPEC.loader is not None
+FIGURE = importlib.util.module_from_spec(FIGURE_SPEC)
+FIGURE_SPEC.loader.exec_module(FIGURE)
 
 
 def test_benchmark_domain_edges_and_results_share_supplied_cell_centres(tmp_path: Path) -> None:
@@ -215,6 +225,464 @@ def test_iseesnow_rejects_zero_exit_solver_fatal_marker(
         DRIVER.launch_solver(solver, output, log, 1)
 
 
+def test_iseesnow_rejects_zero_exit_accepted_cfl_violation(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    solver = tmp_path / "xgeoclaw.exe"
+    solver.write_bytes(b"fixture")
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "fort.amr").write_text(
+        "maximum Courant number seen = 0.75\n", encoding="utf-8",
+    )
+    log = tmp_path / "solver.log"
+
+    def fake_run(command, *, cwd, env, stdout, stderr):
+        stdout.write(
+            "*** WARNING *** Courant number  =  0.2185D+02  is larger "
+            "than input cfl_max =   0.1000D+01  on grid 180 level   1\n"
+        )
+        stdout.flush()
+        return DRIVER.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(DRIVER.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match=r"accepted CFL violation.*21\.85"):
+        DRIVER.launch_solver(solver, output, log, 1)
+
+
+@pytest.mark.parametrize(
+    "warning",
+    (
+        "Courant number = 1.25 is larger than input cfl_max = 1.0\n",
+        "Courant number = ******** is larger\nthan input cfl_max = 1.0\n",
+    ),
+)
+def test_iseesnow_rejects_any_cfl_warning_variant_in_fort_amr(
+    tmp_path: Path, monkeypatch, warning: str,
+) -> None:
+    solver = tmp_path / "xgeoclaw.exe"
+    solver.write_bytes(b"fixture")
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "fort.amr").write_text(
+        warning + "maximum Courant number seen = 1.00\n", encoding="utf-8",
+    )
+    log = tmp_path / "solver.log"
+
+    def fake_run(command, *, cwd, env, stdout, stderr):
+        stdout.write("normal completion\n")
+        stdout.flush()
+        return DRIVER.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(DRIVER.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="numeric value unavailable"):
+        DRIVER.launch_solver(solver, output, log, 1)
+
+
+def test_iseesnow_parses_clean_cfl_audit() -> None:
+    diagnostics = DRIVER.solver_cfl_diagnostics(
+        "normal completion\n",
+        "maximum Courant number seen = 0.631D+00\n",
+    )
+
+    assert diagnostics == {
+        "accepted_cfl_violation_count": 0,
+        "maximum_courant_number": pytest.approx(0.631),
+        "maximum_violating_courant_number": None,
+        "first_accepted_cfl_violation": None,
+    }
+
+
+def test_iseesnow_deduplicates_same_cfl_warning_across_solver_logs() -> None:
+    warning = (
+        "*** WARNING *** Courant number  =  0.2185D+02  is larger "
+        "than input cfl_max =   0.1000D+01  on grid 180 level   1\n"
+    )
+
+    diagnostics = DRIVER.solver_cfl_diagnostics(
+        warning,
+        warning + "maximum Courant number seen = 0.2185D+02\n",
+    )
+
+    assert diagnostics["accepted_cfl_violation_count"] == 1
+    assert diagnostics["maximum_violating_courant_number"] == pytest.approx(21.85)
+    assert diagnostics["maximum_courant_number"] == pytest.approx(21.85)
+
+
+def _write_ascii_field(path: Path, values: np.ndarray) -> None:
+    rows, columns = values.shape
+    header = (
+        f"ncols {columns}\n"
+        f"nrows {rows}\n"
+        "xllcenter 0\n"
+        "yllcenter 0\n"
+        "cellsize 5\n"
+        "nodata_value -9999\n"
+    )
+    with path.open("w", encoding="utf-8") as stream:
+        stream.write(header)
+        np.savetxt(stream, values, fmt="%.9g")
+
+
+def _write_clean_article_provenance(
+    root: Path,
+) -> dict[str, dict[str, float]]:
+    expected: dict[str, dict[str, float]] = {}
+    for index, (case, _label) in enumerate(FIGURE.CASES):
+        case_root = root / case
+        submission = case_root / "Submission"
+        submission.mkdir(parents=True)
+        pft = submission / f"{case}_AVAC4QGIS_pft.asc"
+        pfv = submission / f"{case}_AVAC4QGIS_pfv.asc"
+        pft_values = np.asarray([[0.0, 1.0 + index], [2.5 + index, 0.0]])
+        pfv_values = np.asarray([[0.0, 10.0 + index], [20.5 + index, 0.0]])
+        _write_ascii_field(pft, pft_values)
+        _write_ascii_field(pfv, pfv_values)
+        expected[case] = {
+            "pft": float(np.max(pft_values)),
+            "pfv": float(np.max(pfv_values)),
+        }
+        case_protocol = FIGURE.CASE_PROTOCOL[case]
+        inputs = case_root / "Inputs"
+        inputs.mkdir()
+        dem = inputs / f"DEM_{case}.asc"
+        release = inputs / "release.shp"
+        dem.write_bytes(f"{case} dem".encode())
+        release.write_bytes(f"{case} release".encode())
+        official_input_manifest = [
+            {
+                "name": path.name,
+                "path": str(path.resolve()),
+                "sha256": FIGURE.sha256(path),
+            }
+            for path in (dem, release)
+        ]
+        template = case_root / "avac_iseesnow_template.yaml"
+        template_payload = {
+            "computation": {
+                "t_max": 1200.0,
+                "nb_simul": 120,
+                "cfl_max": 1.0,
+                "refinement": 1,
+                "cell_size": 5.0,
+                "state_momentum_regularization_depth": 0.05,
+                "voellmy_state_momentum_regularization_depth": 0.10,
+                "limiter": case_protocol["limiter"],
+                "cfl_target": case_protocol["cfl_target"],
+            },
+            "output": {"delta_t": 10.0},
+            "animation": {"n_out": 121},
+            "rheology": {
+                "model": case_protocol["model"],
+                "mu": case_protocol["mu"],
+                "xi": case_protocol["xi"],
+            },
+        }
+        template.write_text(
+            yaml.safe_dump(template_payload, sort_keys=False), encoding="utf-8"
+        )
+        plugin_case = case_root / f"AVAC4QGIS_ISeeSnow_{case}_Case.yaml"
+        plugin_parameters = {
+            **FIGURE.PLUGIN_COMMON_PROTOCOL,
+            "computation.limiter": case_protocol["limiter"],
+            "computation.cfl_target": case_protocol["cfl_target"],
+            "rheology.model": case_protocol["model"],
+            "rheology.mu": case_protocol["mu"],
+            "rheology.xi": case_protocol["xi"],
+        }
+        plugin_case.write_text(
+            yaml.safe_dump(
+                {
+                    "format": "AVAC4QGIS plugin configuration",
+                    "version": 1,
+                    "working_directory": str(case_root.resolve()),
+                    "avac": {
+                        "configuration_template": str(template.resolve()),
+                        "parameters": plugin_parameters,
+                        "inputs": {
+                            "dem": {"source": str(dem.resolve())},
+                            "release": {"source": str(release.resolve())},
+                        },
+                    },
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        configuration = submission / f"{case}_AVAC4QGIS.txt"
+        configuration.write_text(
+            "AVAC4QGIS ISeeSnow benchmark configuration\n"
+            f"case = {case}\n"
+            "execution_mode = current_source\n"
+            "solver_sha256 = same-solver\n"
+            "setrun_backend_sha256 = same-setrun\n"
+            f"submission_pft_sha256 = {FIGURE.sha256(pft)}\n"
+            f"submission_pfv_sha256 = {FIGURE.sha256(pfv)}\n"
+            f"rheology = {case_protocol['model']}\n"
+            f"mu = {case_protocol['mu']}\n"
+            f"xi = {case_protocol['xi']}\n"
+            "cell_size_m = 5\n"
+            "refinement_levels = 1\n"
+            "finest_effective_cell_size_m = 5\n"
+            "simulation_end_ceiling_s = 1200\n"
+            "native_state_output_interval_s = 10\n"
+            "fixed_grid_output_interval_s = 10\n"
+            "fixed_grid_output_frame_count = 121\n"
+            f"limiter = {case_protocol['limiter']}\n"
+            f"cfl_target = {case_protocol['cfl_target']}\n"
+            "cfl_max = 1\n"
+            "coulomb_state_momentum_regularization_depth_m = 0.05\n"
+            "voellmy_state_momentum_regularization_depth_m = 0.10\n"
+            "active_state_momentum_regularization_depth_m = "
+            f"{case_protocol['active_state_momentum_regularization_depth_m']}\n",
+            encoding="utf-8",
+        )
+        summary = {
+            "case": case,
+            "execution_mode": "current_source",
+            **FIGURE.PUBLICATION_PROTOCOL,
+            "limiter": case_protocol["limiter"],
+            "cfl_target": case_protocol["cfl_target"],
+            "active_state_momentum_regularization_depth_m": case_protocol[
+                "active_state_momentum_regularization_depth_m"
+            ],
+            "state_momentum_regularization_depth_m": case_protocol[
+                "active_state_momentum_regularization_depth_m"
+            ],
+            "accepted_cfl_violation_count": 0,
+            "maximum_courant_number": 0.75,
+            "solver_sha256": "same-solver",
+            "setrun_backend_sha256": "same-setrun",
+            "submission_pft_sha256": FIGURE.sha256(pft),
+            "submission_pfv_sha256": FIGURE.sha256(pfv),
+            "official_input_manifest": official_input_manifest,
+            "configuration": str(configuration.resolve()),
+            "plugin_case": str(plugin_case.resolve()),
+        }
+        (root / case / "run_summary.json").write_text(
+            json.dumps(summary), encoding="utf-8",
+        )
+    return expected
+
+
+def test_article_figure_requires_clean_same_source_cfl_provenance(
+    tmp_path: Path,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+
+    summaries = FIGURE.validate_current_source_results(tmp_path)
+
+    assert set(summaries) == {case for case, _label in FIGURE.CASES}
+    artifacts = summaries["IdealizedTopo"]["_article_verified_artifacts"]
+    assert artifacts["plugin_case"]["sha256"] == FIGURE.sha256(
+        Path(artifacts["plugin_case"]["path"])
+    )
+    assert len(artifacts["official_inputs"]) == 2
+    bad_summary = tmp_path / "RealTopo" / "run_summary.json"
+    payload = json.loads(bad_summary.read_text(encoding="utf-8"))
+    payload["accepted_cfl_violation_count"] = 1
+    bad_summary.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="accepted CFL violations"):
+        FIGURE.validate_current_source_results(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("case", "field", "replacement"),
+    (
+        ("IdealizedTopo", "simulation_end_ceiling_seconds", 20.0),
+        ("CoulombOnly", "limiter", "vanleer"),
+        (
+            "RealTopo",
+            "active_state_momentum_regularization_depth_m",
+            0.05,
+        ),
+    ),
+)
+def test_article_figure_rejects_a_nonselected_protocol(
+    tmp_path: Path, case: str, field: str, replacement: object,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+    summary_path = tmp_path / case / "run_summary.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    payload[field] = replacement
+    summary_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="selected publication protocol"):
+        FIGURE.validate_current_source_results(tmp_path)
+
+
+def test_article_figure_verifies_rheology_from_contained_plugin_case(
+    tmp_path: Path,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+    summary = json.loads(
+        (tmp_path / "IdealizedTopo" / "run_summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    plugin_path = Path(summary["plugin_case"])
+    plugin = yaml.safe_load(plugin_path.read_text(encoding="utf-8"))
+    plugin["avac"]["parameters"]["rheology.model"] = "Coulomb"
+    plugin_path.write_text(
+        yaml.safe_dump(plugin, sort_keys=False), encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="contained plugin-case YAML.*model"):
+        FIGURE.validate_current_source_results(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("maximum_cfl", "cfl_max"),
+    ((float("nan"), 1.0), (float("inf"), 1.0), (-0.1, 1.0), (0.5, 0.0)),
+)
+def test_article_figure_rejects_nonphysical_cfl_audit_values(
+    tmp_path: Path, maximum_cfl: float, cfl_max: float,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+    summary_path = tmp_path / "IdealizedTopo" / "run_summary.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    payload["maximum_courant_number"] = maximum_cfl
+    payload["cfl_max"] = cfl_max
+    summary_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="invalid CFL audit"):
+        FIGURE.validate_current_source_results(tmp_path)
+
+
+def test_article_figure_reads_selected_peaks_from_validated_rasters_not_csv(
+    tmp_path: Path,
+) -> None:
+    expected = _write_clean_article_provenance(tmp_path)
+    # This derived report is deliberately stale. Selected article values must
+    # never be read from it.
+    (tmp_path / "field_summary.csv").write_text(
+        "case,model,variable,peak\n"
+        "IdealizedTopo,AVAC4QGIS,pft,999999\n"
+        "IdealizedTopo,AVAC4QGIS,pfv,999999\n",
+        encoding="utf-8",
+    )
+    summaries = FIGURE.validate_current_source_results(tmp_path)
+
+    fields = FIGURE.validated_submission_fields(tmp_path, summaries)
+
+    for case, values in expected.items():
+        assert fields[case]["pft"]["peak"] == pytest.approx(values["pft"])
+        assert fields[case]["pfv"]["peak"] == pytest.approx(values["pfv"])
+
+
+def test_article_figure_rejects_duplicate_selected_submission_raster(
+    tmp_path: Path,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+    duplicate = (
+        tmp_path / "CoulombOnly" / "Submission"
+        / "duplicate_AVAC4QGIS_pft.asc"
+    )
+    duplicate.write_text("duplicate\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="Expected one CoulombOnly PFT.*found 2"):
+        FIGURE.validate_current_source_results(tmp_path)
+
+
+def test_article_peer_table_rejects_missing_and_duplicate_rows(
+    tmp_path: Path,
+) -> None:
+    source = (
+        VALIDATION / "ISeeSnow" / "paper_figures"
+        / "iseesnow_table_c1_core.csv"
+    )
+    table = pd.read_csv(source)
+    missing = tmp_path / "missing.csv"
+    table.drop(table[table["case"] == "CoulombOnly"].index[0]).to_csv(
+        missing, index=False
+    )
+    with pytest.raises(RuntimeError, match="requires 11 CoulombOnly rows"):
+        FIGURE.validated_peer_table(missing)
+
+    duplicate = tmp_path / "duplicate.csv"
+    pd.concat([table, table.iloc[[0]]], ignore_index=True).to_csv(
+        duplicate, index=False
+    )
+    with pytest.raises(RuntimeError, match="duplicate case/model rows"):
+        FIGURE.validated_peer_table(duplicate)
+
+
+def test_coulomb_pfv_offscale_marker_keeps_all_peer_statistics() -> None:
+    table_path = (
+        VALIDATION / "ISeeSnow" / "paper_figures"
+        / "iseesnow_table_c1_core.csv"
+    )
+    table, artifact = FIGURE.validated_peer_table(table_path)
+    peers = table[table["case"] == "CoulombOnly"]
+    values = peers["pfv_peak_mps"].to_numpy(float)
+
+    statistics = FIGURE.peer_statistics(values)
+    off_scale = FIGURE.coulomb_pfv_offscale_metadata(
+        peers["model"].to_numpy(str), values, [105.0]
+    )
+
+    assert artifact["sha256"] == FIGURE.sha256(table_path)
+    assert statistics["peer_count"] == 11
+    assert statistics["peer_median"] == pytest.approx(np.median(values))
+    assert statistics["peer_median"] != pytest.approx(
+        np.median(values[peers["model"].to_numpy(str) != "r.avaflow"])
+    )
+    assert off_scale["model"] == "r.avaflow"
+    assert off_scale["value"] == pytest.approx(322.59)
+    assert off_scale["axis_min"] == pytest.approx(88.0)
+    assert off_scale["axis_max"] == pytest.approx(118.0)
+    assert off_scale["peer_count_in_statistics"] == 11
+    assert off_scale["included_in_peer_statistics"] is True
+
+
+def test_selected_runout_does_not_reopen_the_validated_pft(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    _write_clean_article_provenance(tmp_path)
+    summaries = FIGURE.validate_current_source_results(tmp_path)
+    fields = FIGURE.validated_submission_fields(tmp_path, summaries)
+
+    def fail_reopen(_path: Path):
+        raise AssertionError("validated PFT was reopened")
+
+    monkeypatch.setattr(FIGURE, "read_ascii", fail_reopen)
+    runout = FIGURE.runout_from_validated_field(
+        fields["IdealizedTopo"]["pft"],
+        {"_points": np.asarray([[0.0, 0.0], [10.0, 0.0]])},
+    )
+
+    assert runout == pytest.approx(5.0)
+
+
+def test_thalweg_provenance_hashes_all_shapefile_sidecars(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    base = (
+        tmp_path / "validation" / "_data" / "ISeeSnow" / "data"
+        / "IdealizedTopo" / "Inputs" / "LINES" / "path_aimec"
+    )
+    base.parent.mkdir(parents=True)
+    with shapefile.Writer(str(base), shapeType=shapefile.POLYLINE) as writer:
+        writer.field("id", "N")
+        writer.line([[[0.0, 0.0], [10.0, 0.0]]])
+        writer.record(1)
+    base.with_suffix(".prj").write_text("LOCAL_CS[]", encoding="utf-8")
+    monkeypatch.setattr(FIGURE, "REPO", tmp_path)
+
+    thalweg = FIGURE.validated_thalweg("IdealizedTopo")
+
+    artifacts = thalweg["artifacts"]
+    assert {Path(record["path"]).suffix for record in artifacts} == {
+        ".dbf", ".prj", ".shp", ".shx",
+    }
+    assert all(
+        record["sha256"] == FIGURE.sha256(Path(record["path"]))
+        for record in artifacts
+    )
+
+
 def test_iseesnow_figure_notebook_uses_the_case_sensitive_published_path(tmp_path: Path) -> None:
     build_spec = importlib.util.spec_from_file_location("build_iseesnow_notebooks", VALIDATION / "build_notebooks.py")
     assert build_spec is not None and build_spec.loader is not None
@@ -251,16 +719,30 @@ def test_iseesnow_preserves_the_requested_fixed_grid_cadence() -> None:
         DRIVER.output_interval_count(0.25, 0.1)
 
 
+def test_iseesnow_rejects_topography_paths_fortran_would_truncate(
+    tmp_path: Path,
+) -> None:
+    short_run = tmp_path / "Run"
+    assert DRIVER.require_supported_topography_path(short_run).name == "topography.asc"
+
+    long_run = tmp_path / ("x" * DRIVER.FORTRAN_TOPOGRAPHY_PATH_LIMIT) / "Run"
+    with pytest.raises(ValueError, match="shorter --results-root"):
+        DRIVER.require_supported_topography_path(long_run)
+
+
 def test_iseesnow_configures_state_regularization_independently_of_pfv(tmp_path: Path) -> None:
     destination = DRIVER.configure_template(
         "CoulombOnly",
         tmp_path,
         state_momentum_regularization_depth_m=0.075,
+        voellmy_state_momentum_regularization_depth_m=0.125,
     )
 
     computation = yaml.safe_load(destination.read_text(encoding="utf-8"))["computation"]
     assert computation["velocity_depth_threshold"] == 0.05
     assert computation["state_momentum_regularization_depth"] == 0.075
+    assert computation["voellmy_state_momentum_regularization_depth"] == 0.125
+    assert computation["cfl_max"] == 1.0
     template = yaml.safe_load(destination.read_text(encoding="utf-8"))
     assert template["computation"]["nb_simul"] == 120
     assert template["animation"]["n_out"] == 121
@@ -270,6 +752,12 @@ def test_iseesnow_configures_state_regularization_independently_of_pfv(tmp_path:
             "CoulombOnly",
             tmp_path,
             state_momentum_regularization_depth_m=float("nan"),
+        )
+    with pytest.raises(ValueError, match="Voellmy.*non-negative and finite"):
+        DRIVER.configure_template(
+            "IdealizedTopo",
+            tmp_path,
+            voellmy_state_momentum_regularization_depth_m=-0.01,
         )
 
 

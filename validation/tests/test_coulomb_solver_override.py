@@ -40,6 +40,7 @@ def test_kerswell_explicit_solver_threads_source_run_and_provenance(
 
     def fake_prepare(case: Path, **kwargs) -> Path:
         observed["source_override"] = kwargs["source_override"]
+        observed["initial_dt_factor"] = kwargs["initial_dt_factor"]
         work = case / "AVAC"
         work.mkdir(parents=True)
         return work
@@ -76,12 +77,14 @@ def test_kerswell_explicit_solver_threads_source_run_and_provenance(
     monkeypatch.setattr(
         sys, "argv",
         ["run_avac_validation.py", "--solver", str(solver), "--cores", "1",
-         "--solver-source", str(source), "--ny", "11", "--case-name", "kshort"],
+         "--solver-source", str(source), "--ny", "11", "--case-name", "kshort",
+         "--initial-dt-factor", "0.15"],
     )
 
     driver.main()
 
     assert observed["source_override"] == source
+    assert observed["initial_dt_factor"] == pytest.approx(0.15)
     assert observed["solver"] == solver.resolve()
     assert observed["extract_solver"] == str(solver.resolve())
     assert driver.TRANSVERSE_CELLS == 11
@@ -93,6 +96,70 @@ def test_kerswell_explicit_solver_threads_source_run_and_provenance(
     assert controls["width_base_cells"] == 11
     assert controls["requested_t_final_s"] == 10.0
     assert controls["outputs"] == 200
+    assert controls["initial_dt_factor"] == pytest.approx(0.15)
+    assert controls["initial_dt_s"] == pytest.approx(
+        0.15 * 0.01 / np.sqrt(driver.GRAVITY)
+    )
+
+
+def test_prepare_coulomb_case_retains_legacy_initial_dt_default(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    runtime_module = __import__(
+        "avac4qgis_validation.runtime", fromlist=["prepare_avac_coulomb_case"]
+    )
+    replacements: dict[str, str] = {}
+    monkeypatch.setattr(runtime_module, "_run_setrun", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        runtime_module,
+        "_replace_data_value",
+        lambda path, label, value: replacements.__setitem__(label, value),
+    )
+
+    runtime_module.prepare_avac_coulomb_case(
+        tmp_path / "legacy-default",
+        xlower=0.0,
+        xupper=1.0,
+        ylower=0.0,
+        yupper=1.0,
+        dx=0.5,
+        t_final=1.0,
+        nout=4,
+        mu=0.1,
+        depth=lambda X, Y: np.ones_like(X),
+    )
+
+    assert float(replacements["dt_initial"]) == pytest.approx(
+        0.2 * 0.5 / np.sqrt(runtime_module.GRAVITY)
+    )
+
+
+@pytest.mark.parametrize("initial_dt_factor", [0.0, -0.1, np.nan, np.inf, -np.inf])
+def test_prepare_coulomb_case_rejects_invalid_initial_dt_before_cleanup(
+    tmp_path: Path, monkeypatch, initial_dt_factor: float,
+) -> None:
+    runtime_module = __import__(
+        "avac4qgis_validation.runtime", fromlist=["prepare_avac_coulomb_case"]
+    )
+
+    def unexpected_cleanup(case: Path) -> None:
+        raise AssertionError(f"invalid factor unexpectedly cleaned {case}")
+
+    monkeypatch.setattr(runtime_module, "clean_case", unexpected_cleanup)
+    with pytest.raises(ValueError, match="initial_dt_factor must be finite and positive"):
+        runtime_module.prepare_avac_coulomb_case(
+            tmp_path / "invalid-factor",
+            xlower=0.0,
+            xupper=1.0,
+            ylower=0.0,
+            yupper=1.0,
+            dx=0.5,
+            t_final=1.0,
+            nout=4,
+            mu=0.1,
+            depth=lambda X, Y: np.ones_like(X),
+            initial_dt_factor=initial_dt_factor,
+        )
 
 
 def test_kerswell_output_schedule_rejects_partial_and_off_cadence() -> None:

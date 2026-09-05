@@ -242,16 +242,21 @@ def test_state_regularization_depth_is_independent_and_physical() -> None:
     setprob = (avac / "setprob.f90").read_text(encoding="utf-8")
 
     assert "state_momentum_regularization_depth_rh = 0.05d0" in module
+    assert "voellmy_state_momentum_regularization_depth_rh = 0.10d0" in module
     assert "state_momentum_regularization_depth_rh)" in source
+    assert "voellmy_state_momentum_regularization_depth_rh)" in source
     regularization_block = source[source.index("if (patch_nonplanar) then") :]
     assert "velocity_depth_threshold_rh" not in regularization_block
     assert "0.02d0*min(dx,dy)" not in regularization_block
-    assert "if (imodel_rh == 1) then" in source
+    assert "if (imodel_rh >= 1) then" in source
+    assert "if (imodel_rh == 1) then" in regularization_block
     assert "ii = max(2, min(mx-1, i))" in source
     assert "jj = max(2, min(my-1, j))" in source
     assert "locally_nonplanar_bed(aux(1,ii,jj)" in source
     assert "state_momentum_regularization_depth" in setrun
+    assert "voellmy_state_momentum_regularization_depth" in setrun
     assert "read(7,*) state_momentum_regularization_depth" in setprob
+    assert "read(7,*) voellmy_state_momentum_regularization_depth" in setprob
 
 
 def test_nonplanar_gate_rejects_flat_and_constant_slope_beds(tmp_path: Path):

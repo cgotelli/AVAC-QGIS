@@ -526,6 +526,20 @@ def verify() -> None:
     assert dock.summary_grid.itemData(0) == 1 and dock.summary_grid.count() == 1
     assert dock.parameter_controls["rheology.model"].findText("cohesive_Voellmy") >= 0
     assert dock.parameter_controls["rheology.C"] is not None
+    coulomb_regularization = dock.parameter_controls[
+        "computation.state_momentum_regularization_depth"
+    ]
+    voellmy_regularization = dock.parameter_controls[
+        "computation.voellmy_state_momentum_regularization_depth"
+    ]
+    assert coulomb_regularization.value() == 0.05
+    assert voellmy_regularization.value() == 0.10
+    assert not coulomb_regularization.isEnabled()
+    assert voellmy_regularization.isEnabled()
+    dock.parameter_controls["rheology.model"].setCurrentText("Coulomb")
+    assert coulomb_regularization.isEnabled()
+    assert not voellmy_regularization.isEnabled()
+    dock.parameter_controls["rheology.model"].setCurrentText("Voellmy")
     assert dock.results_toolbox.count() == 5
     assert dock.wave_parameter_toolbox.count() == 3
     assert [dock.parameter_toolbox.itemText(index) for index in range(dock.parameter_toolbox.count())] == [

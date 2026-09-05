@@ -56,12 +56,13 @@ module rheology_module
     ! reference depth.  It is intentionally independent of the separate
     ! state-level shallow-momentum regularization below.
     real(kind=8), save :: velocity_depth_threshold_rh = 0.05d0
-    ! Physical depth scale for the Kurganov--Petrova Coulomb-state
-    ! regularization on locally non-planar terrain.  A fixed value makes mesh
-    ! comparisons explicit; the projection is applied once per source step,
-    ! so temporal sensitivity must still be checked.  Zero disables it above
-    ! dry_tol.  Voellmy variants retain their established source update.
+    ! Physical depth scales for the Kurganov--Petrova shallow-momentum
+    ! regularization on locally non-planar terrain.  Coulomb and the Voellmy
+    ! equations use separate controls because their source updates differ.
+    ! Fixed values make mesh comparisons explicit; zero disables the
+    ! corresponding regularization above dry_tol.
     real(kind=8), save :: state_momentum_regularization_depth_rh = 0.05d0
+    real(kind=8), save :: voellmy_state_momentum_regularization_depth_rh = 0.10d0
     integer,      save :: imodel_rh = 0
 
     ! Altitude-zoned rheological parameters (populated by setprob.f90)

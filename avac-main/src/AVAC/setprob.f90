@@ -11,6 +11,7 @@
 !   u_cr              legacy unused compatibility value (m/s)
 !   velocity_depth_threshold  minimum depth for a reported velocity (m)
 !   state_momentum_regularization_depth  Coulomb shallow-state depth scale (m)
+!   voellmy_state_momentum_regularization_depth  Voellmy depth scale (m)
 !   n_zones           number of altitude zones (>= 1)
 !   z_break_0 .. z_break_{n-2}   altitude thresholds (m), one per line, ascending
 !   mu_0 .. mu_{n-1}             Coulomb coefficients, one per line
@@ -35,6 +36,7 @@ subroutine setprob
     !double precision :: rho, C, u_cr
     double precision :: rho, u_cr, velocity_depth_threshold
     double precision :: state_momentum_regularization_depth
+    double precision :: voellmy_state_momentum_regularization_depth
     double precision :: d_0, x_b, theta
     integer :: imodel, itype_init, n_zones
     character(len=20) :: constitutive_model
@@ -56,6 +58,7 @@ subroutine setprob
     read(7,*) u_cr
     read(7,*) velocity_depth_threshold
     read(7,*) state_momentum_regularization_depth
+    read(7,*) voellmy_state_momentum_regularization_depth
 
     !     # Number of altitude zones
     read(7,*) n_zones
@@ -128,6 +131,8 @@ subroutine setprob
     velocity_depth_threshold_rh = max(0.d0, velocity_depth_threshold)
     state_momentum_regularization_depth_rh = &
         max(0.d0, state_momentum_regularization_depth)
+    voellmy_state_momentum_regularization_depth_rh = &
+        max(0.d0, voellmy_state_momentum_regularization_depth)
     imodel_rh = imodel
     conserve_depth_amr = .true.
     refinement_energy_depth = velocity_depth_threshold_rh
@@ -145,8 +150,10 @@ subroutine setprob
     print *, 'u_cr (legacy, unused) = ', u_cr
     print *, 'velocity depth threshold (m) = ', &
              velocity_depth_threshold_rh
-    print *, 'state momentum regularization depth (m) = ', &
+    print *, 'Coulomb state momentum regularization depth (m) = ', &
              state_momentum_regularization_depth_rh
+    print *, 'Voellmy state momentum regularization depth (m) = ', &
+             voellmy_state_momentum_regularization_depth_rh
     print *, 'constitutive_model = ', trim(constitutive_model), &
              '  (imodel=', imodel, ')'
     print *, 'number of altitude zones = ', n_zones

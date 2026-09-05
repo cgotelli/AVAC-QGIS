@@ -178,6 +178,19 @@ def setrun(claw_pkg='geoclaw'):
         raise ValueError(
             "state_momentum_regularization_depth must be a non-negative finite number."
         )
+    try:
+        voellmy_state_momentum_regularization_depth = float(
+            Param.get("voellmy_state_momentum_regularization_depth", 0.10)
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "voellmy_state_momentum_regularization_depth must be a non-negative finite number."
+        ) from exc
+    if (not np.isfinite(voellmy_state_momentum_regularization_depth)
+            or voellmy_state_momentum_regularization_depth < 0.0):
+        raise ValueError(
+            "voellmy_state_momentum_regularization_depth must be a non-negative finite number."
+        )
     minimum_cells = 2 * active_ghost_cells
     if nx < minimum_cells or ny < minimum_cells:
         raise ValueError(
@@ -646,6 +659,9 @@ def setrun(claw_pkg='geoclaw'):
     probdata.add_param('state_momentum_regularization_depth',
                        state_momentum_regularization_depth,
                        'Coulomb shallow-state momentum regularization depth (m)')
+    probdata.add_param('voellmy_state_momentum_regularization_depth',
+                       voellmy_state_momentum_regularization_depth,
+                       'Voellmy shallow-state momentum regularization depth (m)')
     probdata.add_param('n_zones', n_zones,               'number of altitude rheology zones')
     for k, z in enumerate(z_breaks):
         probdata.add_param(f'z_break_{k}', float(z),
