@@ -1,6 +1,6 @@
 {
   "avac_field_source": "hash-validated PFT/PFV submission rasters",
-  "peer_scalar_source": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\ISeeSnow\\paper_figures\\iseesnow_table_c1_core.csv",
+  "peer_scalar_source": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\ISeeSnow\\paper_figures\\iseesnow_table_c1_core.csv",
   "peer_scalar_sha256": "d8b9a9f16b760b1702962380997e26e1910467fd07a73c3563c6b34b430e9094",
   "peer_group": "ISeeSnow Table C1 core group",
   "runout_definition": "furthest thalweg coordinate with PFT > 0.5 m",
@@ -9,7 +9,7 @@
   ],
   "publication_gate": {
     "execution_mode": "explicit_solver_source_snapshot",
-    "solver_sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23",
+    "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
     "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
     "accepted_cfl_violation_count": 0,
     "selected_protocol": {
@@ -63,35 +63,35 @@
         "maximum_courant_number": 0.63,
         "cfl_max": 1.0,
         "pft": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
-          "sha256": "278ab16641ee43f6cacc81335356e482f79c44d9576b44069ba67ff77c0f4b7a",
-          "peak": 10.0959645
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
+          "sha256": "575b6aabb8e9baba92f3946c842e346f65866e6ecc92298f3675b51045f17aca",
+          "peak": 9.60686465
         },
         "pfv": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pfv.asc",
-          "sha256": "ee6e6986e613ff27cef978fd213967bb9eadb75e4ecf0085686fe78bb13edd18",
-          "peak": 39.72084
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pfv.asc",
+          "sha256": "695123bc30af883e2c00f40c417f7025ceb33609d71e3f24d7193acfb929ed18",
+          "peak": 39.722583
         },
         "thalweg": {
           "artifacts": [
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.dbf",
               "sha256": "c99a8ad047bd8d940d8ba264dd7e305309458c4b8351ef5ae174f397d7b7c721"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.prj",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.prj",
               "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.qix",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.qix",
               "sha256": "cc1b79354c74dfcd04d17678f4aa1c2b1cc0e935de20228e91108988a02ac430"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.shp",
               "sha256": "1230a63dbfb79f341ca31b98f2643eda61fade72c8be76f3f394e27b66fa7a11"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\LINES\\path_aimec.shx",
               "sha256": "de3489c9e167e5d5e032f2642c3be902444541e37e810bbb6dbee73ed99a617c"
             }
           ]
@@ -100,45 +100,45 @@
           "official_inputs": [
             {
               "name": "DEM_IdealizedTopo.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc",
               "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768"
             },
             {
               "name": "release1HS.dbf",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.dbf",
               "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8"
             },
             {
               "name": "release1HS.shp",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.shp",
               "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e"
             },
             {
               "name": "release1HS.shx",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.shx",
               "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e"
             },
             {
               "name": "release1HSField5m.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HSField5m.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HSField5m.asc",
               "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb"
             },
             {
               "name": "simulationParameterValues_IdealizedTopo.csv",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv",
               "sha256": "88d5d9dcf540bffba1e6cf5d28f222d5a1092e19814093cd115eb98aab5b6cd8"
             }
           ],
           "configuration_record": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS.txt",
-            "sha256": "d83d868159f7083b9695136d5bcbbf44f83c17920ae3f548b4567ebf882077f1"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS.txt",
+            "sha256": "47b2717a6df37e91d20805937e1f93d3686aaf33ceac61d39b77abe3a47269fb"
           },
           "plugin_case": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\AVAC4QGIS_ISeeSnow_01IdealizedTopo_Case.yaml",
-            "sha256": "748ad31e14da82d215c35ef7cad49352e51d792719bbfd73272722ecab5a8744"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\AVAC4QGIS_ISeeSnow_01IdealizedTopo_Case.yaml",
+            "sha256": "bc345a0891f624d1c45649f23b31da7f505f99acca67c992e70eee72161df7de"
           },
           "configuration_template": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\avac_iseesnow_template.yaml",
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\avac_iseesnow_template.yaml",
             "sha256": "a22e95fb4c01c3392d86e074b4cabb4ee0d5ec5603575bb7841231db5ca1f647"
           },
           "verified_plugin_parameters": {
@@ -160,38 +160,38 @@
         }
       },
       "RealTopo": {
-        "maximum_courant_number": 0.59,
+        "maximum_courant_number": 0.81,
         "cfl_max": 1.0,
         "pft": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
-          "sha256": "9b57ebd9a73021db1d64b8e697e352b3a43282780f17d8c5ea9c7a65ef0e6271",
-          "peak": 22.7901766
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
+          "sha256": "f5cecc617caaf0d39d789d5d42d44cf91ca7a566bfe332f7e682dadee51eab45",
+          "peak": 21.0663607
         },
         "pfv": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pfv.asc",
-          "sha256": "e276dade9075e6b1cdd1466d2b74ea289c4dcae82d6307eb21ff6a8f37876975",
-          "peak": 59.533824
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pfv.asc",
+          "sha256": "773e01f1e5333ccdb120e70d04896b209e318860c1343e18e37ab7648d7e24a5",
+          "peak": 82.794039
         },
         "thalweg": {
           "artifacts": [
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.cpg",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.cpg",
               "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.dbf",
               "sha256": "06fbb96b7a34f12486177d75b028a16be8fe11215073dbc450231acda7d9935f"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.prj",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.prj",
               "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.shp",
               "sha256": "e926348c55ef57e9655c2a651b49d4a93537f6ea8957b9eb376b68c6ce4cac33"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\LINES\\path_aimec.shx",
               "sha256": "7b4e26a0960626825e11ecc6c8d931973f98ceb9227e33733332ce2b277eae19"
             }
           ]
@@ -200,60 +200,60 @@
           "official_inputs": [
             {
               "name": "DEM_RealTopo.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\DEM_RealTopo.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\DEM_RealTopo.asc",
               "sha256": "79c1cb63f8c339faad47dc36794a19874ad3d1d12de36bd59e97ea8b498b73c9"
             },
             {
               "name": "relWog.cpg",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.cpg",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.cpg",
               "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824"
             },
             {
               "name": "relWog.dbf",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.dbf",
               "sha256": "5dd730f977a579994c1c30350a7774cf8c5d8bd027b177fddfc2f1459149c13c"
             },
             {
               "name": "relWog.prj",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.prj",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.prj",
               "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0"
             },
             {
               "name": "relWog.qix",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.qix",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.qix",
               "sha256": "02fbde728637ea95c8c389df1f2986009752f01a7a511eecf8dbed7a1d1a7039"
             },
             {
               "name": "relWog.shp",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.shp",
               "sha256": "5b77425e3057c2ee464b7c502f4b904822e1207f61ec85b8c16a3c75cedc3d50"
             },
             {
               "name": "relWog.shx",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.shx",
               "sha256": "88527ace4589d3dfd2654ac51d8f4c2f97d938597281d51941edba1042a00f9d"
             },
             {
               "name": "relWogField5m.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWogField5m.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWogField5m.asc",
               "sha256": "90086d6be54b3843ebb04cd3ce48be7d0027b687e4dc57fa74bc30bbd51097b3"
             },
             {
               "name": "simulationParameterValues_RealTopo.csv",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv",
               "sha256": "2838acdab6ef5fdeb492ce44dfaf51a8d41de004d4a2ea221700c0149ee10647"
             }
           ],
           "configuration_record": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS.txt",
-            "sha256": "95d69ea4fa548f0c27d1392d9a192bb81318c170fdfbade885f89d7bfa5a02b7"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS.txt",
+            "sha256": "5b7884df2a0859be097355c363ed89cf303ab670088b941dce1b12ed5eed002a"
           },
           "plugin_case": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\AVAC4QGIS_ISeeSnow_02RealTopo_Case.yaml",
-            "sha256": "50a399f98ad100c84142b25bae9c26fbcf6acb769d81284e8835f411b84d59a8"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\AVAC4QGIS_ISeeSnow_02RealTopo_Case.yaml",
+            "sha256": "ced528b95bacac35e3a30a6ad8d93f956a630a2d6bbbc73a64e7b88397238bdd"
           },
           "configuration_template": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\avac_iseesnow_template.yaml",
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\avac_iseesnow_template.yaml",
             "sha256": "0aeb0c2473de943b39afc95eebd61b16c7192d7abb054b9b3d345fb54924c32b"
           },
           "verified_plugin_parameters": {
@@ -278,35 +278,35 @@
         "maximum_courant_number": 0.29,
         "cfl_max": 1.0,
         "pft": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
-          "sha256": "d2610cbc38b0ae922b766f1c4a44fa2141466eba5666919f86df8389513a508d",
-          "peak": 6.0286141
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
+          "sha256": "7108610db7701b7bbf8cc0d586db284e85891c7926ddc0dcd5903095fb2f9ea8",
+          "peak": 5.4411163
         },
         "pfv": {
-          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pfv.asc",
-          "sha256": "0bf8c8b48a5625956f16857f14d86e5abd2aa2dde9b3b9eb86f6483b136ccced",
-          "peak": 102.04183
+          "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pfv.asc",
+          "sha256": "4bff6fddc07954173a0819d8810d1f7672c7283d3d3df114492bbb8ee21c4939",
+          "peak": 102.12615
         },
         "thalweg": {
           "artifacts": [
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.dbf",
               "sha256": "c99a8ad047bd8d940d8ba264dd7e305309458c4b8351ef5ae174f397d7b7c721"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.prj",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.prj",
               "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.qix",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.qix",
               "sha256": "cc1b79354c74dfcd04d17678f4aa1c2b1cc0e935de20228e91108988a02ac430"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.shp",
               "sha256": "1230a63dbfb79f341ca31b98f2643eda61fade72c8be76f3f394e27b66fa7a11"
             },
             {
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\LINES\\path_aimec.shx",
               "sha256": "de3489c9e167e5d5e032f2642c3be902444541e37e810bbb6dbee73ed99a617c"
             }
           ]
@@ -315,45 +315,45 @@
           "official_inputs": [
             {
               "name": "DEM_CoulombOnly.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc",
               "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768"
             },
             {
               "name": "release1HS.dbf",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.dbf",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.dbf",
               "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8"
             },
             {
               "name": "release1HS.shp",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.shp",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.shp",
               "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e"
             },
             {
               "name": "release1HS.shx",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.shx",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.shx",
               "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e"
             },
             {
               "name": "release1HSField5m.asc",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HSField5m.asc",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HSField5m.asc",
               "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb"
             },
             {
               "name": "simulationParameterValues_CoulombOnly.csv",
-              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv",
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv",
               "sha256": "edca4a7138d96610d4d371de608aec734b7ea66eefd79593d9d525e00d2c1786"
             }
           ],
           "configuration_record": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS.txt",
-            "sha256": "30bbf5b21e9744324fab384a7c861ec661bfb015fbd78facf66c707d8087442d"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS.txt",
+            "sha256": "4728a3724bd3922b737ae1b6a664eb3c188fa1edd8df461ffdf73c9b83c87e67"
           },
           "plugin_case": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\AVAC4QGIS_ISeeSnow_03CoulombOnly_Case.yaml",
-            "sha256": "c84c0e60b8f4b87d5ee149df9819b71b4a7f2433bf5284d55a50ea1232f82ec5"
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\AVAC4QGIS_ISeeSnow_03CoulombOnly_Case.yaml",
+            "sha256": "6a42ac4645c0b441635a9df9f6fdd75f7a83879e131062c85b992748c88ec83a"
           },
           "configuration_template": {
-            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\avac_iseesnow_template.yaml",
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\avac_iseesnow_template.yaml",
             "sha256": "40ba0e26e5be335caa5e0d0a1d92d050b6fed917147c9f0ff9be0f150c3959ed"
           },
           "verified_plugin_parameters": {
@@ -377,19 +377,19 @@
     },
     "runtime_attestation": {
       "validation_timing": "article_figure_generation",
-      "runtime_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64",
-      "runtime_manifest": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\runtime-manifest.json",
-      "runtime_manifest_sha256": "e49b9da9b04e507f0660a0b66b4429ed83a63ed9b9e87b1e70784327b9b0e01b",
-      "expected_runtime_manifest_sha256": "e49b9da9b04e507f0660a0b66b4429ed83a63ed9b9e87b1e70784327b9b0e01b",
+      "runtime_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64",
+      "runtime_manifest": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\runtime-manifest.json",
+      "runtime_manifest_sha256": "fbaa98125cbe67000ed9f4cc5e412625c6a8d04c659a19e6492fcade5146ccb3",
+      "expected_runtime_manifest_sha256": "fbaa98125cbe67000ed9f4cc5e412625c6a8d04c659a19e6492fcade5146ccb3",
       "runtime_version": "0.6.1",
       "platform": "windows-amd64",
       "architecture": "amd64",
       "solver": {
-        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
-        "sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23"
+        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+        "sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88"
       },
       "setrun_backend": {
-        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
         "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
       }
     }
@@ -405,7 +405,8 @@
         "peer_median": 2.31,
         "peer_q3": 2.335,
         "peer_max": 2.42,
-        "avac": 2.3000516129343387
+        "avac": 2.310051337906718,
+        "comparison": 2.3000516129343387
       },
       "pft_peak_m": {
         "source_field": "pft_peak_m",
@@ -416,7 +417,8 @@
         "peer_median": 8.037,
         "peer_q3": 9.285,
         "peer_max": 27.06,
-        "avac": 10.0959645
+        "avac": 9.60686465,
+        "comparison": 10.0959645
       },
       "pfv_peak_mps": {
         "source_field": "pfv_peak_mps",
@@ -427,7 +429,8 @@
         "peer_median": 37.9,
         "peer_q3": 39.285,
         "peer_max": 41.55,
-        "avac": 39.72084
+        "avac": 39.722583,
+        "comparison": 39.72084
       }
     },
     "RealTopo": {
@@ -440,7 +443,8 @@
         "peer_median": 2.082305,
         "peer_q3": 2.1041875,
         "peer_max": 2.12365,
-        "avac": 2.0670046545942813
+        "avac": 2.093315153238461,
+        "comparison": 2.0670046545942813
       },
       "pft_peak_m": {
         "source_field": "pft_peak_m",
@@ -451,7 +455,8 @@
         "peer_median": 21.925,
         "peer_q3": 24.767500000000002,
         "peer_max": 30.4,
-        "avac": 22.7901766
+        "avac": 21.0663607,
+        "comparison": 22.7901766
       },
       "pfv_peak_mps": {
         "source_field": "pfv_peak_mps",
@@ -462,7 +467,8 @@
         "peer_median": 49.084999999999994,
         "peer_q3": 52.465,
         "peer_max": 80.23,
-        "avac": 59.533824
+        "avac": 82.794039,
+        "comparison": 59.533824
       }
     },
     "CoulombOnly": {
@@ -475,7 +481,8 @@
         "peer_median": 3.1443000000000003,
         "peer_q3": 3.226515,
         "peer_max": 3.6326,
-        "avac": 2.8749987162464805
+        "avac": 3.1300406336389552,
+        "comparison": 2.8749987162464805
       },
       "pft_peak_m": {
         "source_field": "pft_peak_m",
@@ -486,7 +493,8 @@
         "peer_median": 5.99,
         "peer_q3": 7.125,
         "peer_max": 9.97,
-        "avac": 6.0286141
+        "avac": 5.4411163,
+        "comparison": 6.0286141
       },
       "pfv_peak_mps": {
         "source_field": "pfv_peak_mps",
@@ -497,7 +505,7 @@
         "peer_median": 105.745,
         "peer_q3": 110.71549999999999,
         "peer_max": 322.59,
-        "avac": 102.04183,
+        "avac": 102.12615,
         "off_scale_peer": {
           "model": "r.avaflow",
           "value": 322.59,
@@ -508,11 +516,12 @@
           "included_in_peer_statistics": true,
           "peer_count_in_statistics": 11,
           "note": "r.avaflow is drawn as an off-scale marker but remains included in all n=11 peer statistics."
-        }
+        },
+        "comparison": 102.04183
       }
     }
   },
-  "avac_label": "AVAC4QGIS (packaged final)",
-  "comparison_root": null,
-  "comparison_label": null
+  "avac_label": "AVAC4QGIS (terrain transport)",
+  "comparison_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+  "comparison_label": "Previous packaged code"
 }

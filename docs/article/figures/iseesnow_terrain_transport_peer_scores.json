@@ -1,0 +1,2456 @@
+{
+  "script": {
+    "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\runout-investigation-76844b9\\score_full_run_pfv.py",
+    "sha256": "e8e5961f0edd656e6104db3c3a1f9095e7f194dc6c7726e4394ba2066d11f589"
+  },
+  "comparison_helper": {
+    "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\ISeeSnow\\compare_iseesnow.py",
+    "sha256": "f332cb01a927eb94e7bb4f544ff4b61b41823fff26648156743302ff84d592be"
+  },
+  "primary": "PFT peer-difficulty-normalized full-grid RMSE",
+  "secondary": "PFV RMSE normalized by each peer's median PFV RMSE against every other aligned peer",
+  "scope": "matched 1200 s horizons; completion does not assert practical rest",
+  "cases": [
+    {
+      "case": "IdealizedTopo",
+      "comparison": {
+        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200-IdealizedTopo-comparison\\cross_source_comparison.json",
+        "sha256": "8d549ede84e4204caedce602408750d1172c03b2b32aa075f5e63d4b73680a1a"
+      },
+      "peer_count": 9,
+      "peer_artifacts": [
+        {
+          "model": "TITAN2Dv420",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\EllipticCylinder_01IdealizedTopo_null_TITAN2Dv420_pft.asc",
+            "sha256": "c3ec3c7d627f241d0bf95239ab8c86da907b1cb8b863efffa5b1ce5011159c8f"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\EllipticCylinder_01IdealizedTopo_null_TITAN2Dv420_pfv.asc",
+            "sha256": "bb94b2d968f9276b366b51a0952b30919923e1f1262d526bd08a2ce08411e1ef"
+          }
+        },
+        {
+          "model": "flo2d",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1hs_01_null_flo2d_pft.asc",
+            "sha256": "c077023c2d2389c803ae2dbf961b7a608a1a9a100fc9b89610f4896b78ad100f"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1hs_01_null_flo2d_pfv.asc",
+            "sha256": "e0d3ced4429a1dbbb2091a504cb1c82f2346379231f3fbf0f01352554370bc90"
+          }
+        },
+        {
+          "model": "com1DFA",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_com1DFA_pft.asc",
+            "sha256": "a18d0f2c09ac14bb8ae8bb36aee232348937fb72af4f8ec25ed253934bfe1ac5"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_com1DFA_pfv.asc",
+            "sha256": "b3a437fbff07694bd95284c3f583f2c4c8957e94f6856f50866a7b1848e03f7a"
+          }
+        },
+        {
+          "model": "Gerris",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_Gerris_pft.asc",
+            "sha256": "6d0fc316ae22070acf9ce59005fdcb23ebe86096f2ddf3463575d700855df80f"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_Gerris_pfv.asc",
+            "sha256": "7064961d3bd5e015989c060cd9756061943d3839483687b89d1036dece480f77"
+          }
+        },
+        {
+          "model": "INRAEaval",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_INRAEaval_pft.asc",
+            "sha256": "deddfffce1ddba2ee791ee8090ed679e180fd115e2a91ba0c62a11dd8299a9cb"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_INRAEaval_pfv.asc",
+            "sha256": "369fd53b9c8e2acac4cb27c886c3b4f2d5ee0c6cc754b096cfd97f62b3bea0ee"
+          }
+        },
+        {
+          "model": "minVoellmyv2",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_minVoellmyv2_pft.asc",
+            "sha256": "aaa322bc029996be27b81ae3876f99bc185e5311ad75e165e4c8522fa877822c"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_minVoellmyv2_pfv.asc",
+            "sha256": "f3bbe1ec2c67e536ba6bb26d3d49ce7d235944449d91432cdd3265776ba84378"
+          }
+        },
+        {
+          "model": "TRENT2D",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_TRENT2D_pft.asc",
+            "sha256": "d429cd14b91caf5e396f165eacccb004710dc566c08fa1957a7f8b2a362e0a0d"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_01IdealizedTopo_null_TRENT2D_pfv.asc",
+            "sha256": "813736d59eeb3bde828c89e7486dff04d68800e2f8282fb0ce71b4222ae1801d"
+          }
+        },
+        {
+          "model": "01IdealizedTopo_faSavageHutterFoamGamma",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_null_01IdealizedTopo_faSavageHutterFoamGamma_pft.asc",
+            "sha256": "ac080564e611d5509e7cf7a58009e384b3d0f0ffdbfd66fdc5fa3919eec0db5d"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\release1HS_null_01IdealizedTopo_faSavageHutterFoamGamma_pfv.asc",
+            "sha256": "c8d80217301600b6a1f39d532b1f43afd619ef0d9bce6cd4f436c01fc18c1199"
+          }
+        },
+        {
+          "model": "MoT-Voellmy",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\1HS_01_curv91s_MoT-Voellmy_h_max.asc",
+            "sha256": "c98e181329fdb4a2df05674ada774b2766df4d9ceb63f93a42dbc0be98d162ee"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Outputs_IdealizedTopo\\1HS_01_curv91s_MoT-Voellmy_s_max.asc",
+            "sha256": "d2cf02f40e9c5069fe0e542c554b4504e6ce5edee96fa7e4682093e5c7038349"
+          }
+        }
+      ],
+      "pfv_peer_difficulty_rmse_m_s": {
+        "TITAN2Dv420": 0.9897952933942297,
+        "flo2d": 3.4983441348021778,
+        "com1DFA": 1.463642999666099,
+        "Gerris": 0.6783617896085036,
+        "INRAEaval": 0.6920156115451817,
+        "minVoellmyv2": 0.4933041849897609,
+        "TRENT2D": 0.5486551107500726,
+        "01IdealizedTopo_faSavageHutterFoamGamma": 0.588438486559026,
+        "MoT-Voellmy": 0.5955532825371751
+      },
+      "runs": {
+        "baseline": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\run_summary.json",
+              "sha256": "039e671ff8547194f7ac4688b5515d52bdae8e13dd5e957e6b474799107964b2"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "validation_scope": "recorded executable/backend/input/submission hashes; not independent package or article certification",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc",
+                "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.dbf",
+                "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.shp",
+                "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.shx",
+                "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HSField5m.asc",
+                "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HSField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv",
+                "sha256": "88d5d9dcf540bffba1e6cf5d28f222d5a1092e19814093cd115eb98aab5b6cd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
+              "sha256": "278ab16641ee43f6cacc81335356e482f79c44d9576b44069ba67ff77c0f4b7a"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pfv.asc",
+              "sha256": "ee6e6986e613ff27cef978fd213967bb9eadb75e4ecf0085686fe78bb13edd18"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\native_mass_history.csv",
+              "sha256": "0a9e853b1c8f62b6c94e098c790b1abb7a6266da26241d30a6c0342e1d339ea2"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\AVAC4QGIS_ISeeSnow_01IdealizedTopo_Case.yaml",
+              "sha256": "748ad31e14da82d215c35ef7cad49352e51d792719bbfd73272722ecab5a8744"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS.txt",
+              "sha256": "d83d868159f7083b9695136d5bcbbf44f83c17920ae3f548b4567ebf882077f1"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "df6eca7be7e424552d9392394e2bd874eb507b5fa9e673279e676dfc857449f1"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\initial_depth_normal.asc",
+                "sha256": "ce93328b69aa6294e6cc63055d2d6556aee3fafb09c1010b56d075439fef221f"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\initial_depth_vertical.asc",
+                "sha256": "df3d82b20b681a978d3d3aa103ffaf337f74c0e066e14e5be8e7e28ab1fb5630"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "vanleer",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.1,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.5,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 666.479736600013,
+            "cpu_seconds": 666.479736600013,
+            "initial_volume_m3": 74908.91343653202,
+            "final_volume_m3": 74908.91335418422,
+            "relative_volume_change": -1.0993058129423467e-09,
+            "practical_rest_sustained_from_seconds": null,
+            "flow_stopped_at_seconds": null,
+            "flow_rest_confirmed_by_ceiling": false,
+            "final_max_speed_mps": 6.721101852964799,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 1010.6974211521447,
+              "0p05_to_0p10": 899.5303140021861,
+              "0p10_to_0p20": 518.6819219961762,
+              "0p20_to_0p50": 100.31495615839958,
+              "ge_0p50": 357.85862505435944
+            },
+            "maximum_courant_number": 0.63,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "baseline",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "278ab16641ee43f6cacc81335356e482f79c44d9576b44069ba67ff77c0f4b7a",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\run_summary.json",
+            "case": "IdealizedTopo",
+            "state_momentum_regularization_depth_m": 0.1,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "278ab16641ee43f6cacc81335356e482f79c44d9576b44069ba67ff77c0f4b7a",
+            "limiter": "vanleer",
+            "cfl_target": 0.5,
+            "normalized_median_rmse": 1.0776911400833336,
+            "median_rmse_m": 0.11029666909775931,
+            "mean_rmse_m": 0.1536159996323807,
+            "maximum_rmse_m": 0.33751727072112203,
+            "rmse_to_cellwise_peer_median_m": 0.10504553866801727,
+            "normalized_median_mae": 0.9240193131261535,
+            "median_mae_m": 0.011492835529488824,
+            "normalized_median_support_disagreement": 0.9123100666495718,
+            "median_support_iou": 0.9048616470069452,
+            "normalized_median_pattern_disagreement": 1.1040731831258974,
+            "median_active_correlation": 0.9026568994748478,
+            "pft_peak_m": 10.0959645,
+            "pft_integral_m3": 422967.8373817551,
+            "pft_support_area_m2": 212075.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 0.9503065060981851,
+            "median_rmse_m_s": 0.5545231669369612,
+            "median_support_iou": 0.8735393687889047
+          },
+          "pfv_peak_m_s": 39.72084,
+          "pfv_per_peer": [
+            {
+              "peer": "TITAN2Dv420",
+              "mae": 0.13837760759051296,
+              "rmse": 1.236430373708893,
+              "support_iou": 0.772386241839618,
+              "active_correlation": 0.8890912584525629,
+              "avac_peak": 39.72084,
+              "peer_peak": 37.900057639339224,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 254625.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5547553.117339857,
+              "peer_difficulty_rmse_m_s": 0.9897952933942297,
+              "normalized_rmse": 1.249177867343556
+            },
+            {
+              "peer": "flo2d",
+              "mae": 0.5197356448488368,
+              "rmse": 3.378461601242295,
+              "support_iou": 0.6984515077424613,
+              "active_correlation": 0.6872873448759556,
+              "avac_peak": 39.72084,
+              "peer_peak": 10.928,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 164575.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 866298.3999999998,
+              "peer_difficulty_rmse_m_s": 3.4983441348021778,
+              "normalized_rmse": 0.9657316350420564
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.17110064438204228,
+              "rmse": 1.7269340240917286,
+              "support_iou": 0.8596302665520207,
+              "active_correlation": 0.6714152079564244,
+              "avac_peak": 39.72084,
+              "peer_peak": 35.66962816961604,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 232425.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5739251.912753085,
+              "peer_difficulty_rmse_m_s": 1.463642999666099,
+              "normalized_rmse": 1.179887461960119
+            },
+            {
+              "peer": "Gerris",
+              "mae": 0.03921430191684351,
+              "rmse": 0.37938036871877767,
+              "support_iou": 0.9287555659714085,
+              "active_correlation": 0.9773857768650998,
+              "avac_peak": 39.72084,
+              "peer_peak": 39.70840072631836,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 211375.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 4759867.924581486,
+              "peer_difficulty_rmse_m_s": 0.6783617896085036,
+              "normalized_rmse": 0.5592596377483552
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 0.08530452993461687,
+              "rmse": 0.7660654848189586,
+              "support_iou": 0.8244204018547141,
+              "active_correlation": 0.9596148949329206,
+              "avac_peak": 39.72084,
+              "peer_peak": 38.04735,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 242525.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5057493.43575,
+              "peer_difficulty_rmse_m_s": 0.6920156115451817,
+              "normalized_rmse": 1.1070060733289429
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 0.045163672783358165,
+              "rmse": 0.4687901764812325,
+              "support_iou": 0.875164113785558,
+              "active_correlation": 0.9847997287661994,
+              "avac_peak": 39.72084,
+              "peer_peak": 38.858153,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 228350.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 4899734.7671,
+              "peer_difficulty_rmse_m_s": 0.4933041849897609,
+              "normalized_rmse": 0.9503065060981851
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 0.050255523066098685,
+              "rmse": 0.49385748614804514,
+              "support_iou": 0.8749726536862831,
+              "active_correlation": 0.9841325695583616,
+              "avac_peak": 39.72084,
+              "peer_peak": 39.928,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 228400.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5093583.350000001,
+              "peer_difficulty_rmse_m_s": 0.5486551107500726,
+              "normalized_rmse": 0.9001237325081818
+            },
+            {
+              "peer": "01IdealizedTopo_faSavageHutterFoamGamma",
+              "mae": 0.055732489621770104,
+              "rmse": 0.43075096297699966,
+              "support_iou": 0.8883705431522826,
+              "active_correlation": 0.9816669895292879,
+              "avac_peak": 39.72084,
+              "peer_peak": 37.7688,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 224900.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5040470.746129254,
+              "peer_difficulty_rmse_m_s": 0.588438486559026,
+              "normalized_rmse": 0.7320237761739115
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 0.05791728722492989,
+              "rmse": 0.5545231669369612,
+              "support_iou": 0.8735393687889047,
+              "active_correlation": 0.9748332327118241,
+              "avac_peak": 39.72084,
+              "peer_peak": 41.554,
+              "avac_positive_area_m2": 200125.0,
+              "peer_positive_area_m2": 228775.0,
+              "avac_field_integral": 4722658.808683305,
+              "peer_field_integral": 5069326.3,
+              "peer_difficulty_rmse_m_s": 0.5955532825371751,
+              "normalized_rmse": 0.9311058862350361
+            }
+          ]
+        },
+        "candidate": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\run_summary.json",
+              "sha256": "a8499c6874dbf099f065098c6002ddccee0098072d0bfa5229a72f5ec086476e"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "validation_scope": "recorded executable/backend/input/submission hashes; not independent package or article certification",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc",
+                "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.dbf",
+                "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.shp",
+                "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HS.shx",
+                "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HS.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\release1HSField5m.asc",
+                "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\release1HSField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv",
+                "sha256": "88d5d9dcf540bffba1e6cf5d28f222d5a1092e19814093cd115eb98aab5b6cd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\IdealizedTopo\\Inputs\\simulationParameterValues_IdealizedTopo.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
+              "sha256": "575b6aabb8e9baba92f3946c842e346f65866e6ecc92298f3675b51045f17aca"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pfv.asc",
+              "sha256": "695123bc30af883e2c00f40c417f7025ceb33609d71e3f24d7193acfb929ed18"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\native_mass_history.csv",
+              "sha256": "0b2f56f8297abba701a01aca1c23ff366b4ce1970b707c4b13643386bfdec63c"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\AVAC4QGIS_ISeeSnow_01IdealizedTopo_Case.yaml",
+              "sha256": "bc345a0891f624d1c45649f23b31da7f505f99acca67c992e70eee72161df7de"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS.txt",
+              "sha256": "47b2717a6df37e91d20805937e1f93d3686aaf33ceac61d39b77abe3a47269fb"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "27ba3b36c1df6f54c995a4166a59862810955d9dc7dc9e0a7234b4bfc6c4fed0"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\initial_depth_normal.asc",
+                "sha256": "ce93328b69aa6294e6cc63055d2d6556aee3fafb09c1010b56d075439fef221f"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\initial_depth_vertical.asc",
+                "sha256": "df3d82b20b681a978d3d3aa103ffaf337f74c0e066e14e5be8e7e28ab1fb5630"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "vanleer",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.1,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.5,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 817.3488447000273,
+            "cpu_seconds": 817.3488447000273,
+            "initial_volume_m3": 74908.91343653202,
+            "final_volume_m3": 74908.91349642246,
+            "relative_volume_change": 7.995102537593079e-10,
+            "practical_rest_sustained_from_seconds": null,
+            "flow_stopped_at_seconds": null,
+            "flow_rest_confirmed_by_ceiling": false,
+            "final_max_speed_mps": 6.528795220890317,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 1042.975159501657,
+              "0p05_to_0p10": 911.6124577820301,
+              "0p10_to_0p20": 541.8863067403436,
+              "0p20_to_0p50": 92.00518541038036,
+              "ge_0p50": 291.6830152273178
+            },
+            "maximum_courant_number": 0.63,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "candidate",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\Submission\\release1HS_01IdealizedTopo_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "575b6aabb8e9baba92f3946c842e346f65866e6ecc92298f3675b51045f17aca",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\IdealizedTopo\\run_summary.json",
+            "case": "IdealizedTopo",
+            "state_momentum_regularization_depth_m": 0.1,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "575b6aabb8e9baba92f3946c842e346f65866e6ecc92298f3675b51045f17aca",
+            "limiter": "vanleer",
+            "cfl_target": 0.5,
+            "normalized_median_rmse": 0.9676894128141279,
+            "median_rmse_m": 0.10088383330842612,
+            "mean_rmse_m": 0.14390034984761935,
+            "maximum_rmse_m": 0.3312681091909059,
+            "rmse_to_cellwise_peer_median_m": 0.09137391170166755,
+            "normalized_median_mae": 0.8782466317002533,
+            "median_mae_m": 0.010264604752189297,
+            "normalized_median_support_disagreement": 0.8403750341122136,
+            "median_support_iou": 0.9073951434878588,
+            "normalized_median_pattern_disagreement": 0.9398004313060204,
+            "median_active_correlation": 0.9230728024810793,
+            "pft_peak_m": 9.60686465,
+            "pft_integral_m3": 420994.44557853596,
+            "pft_support_area_m2": 212125.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 0.9500428842482117,
+            "median_rmse_m_s": 0.542129585384061,
+            "median_support_iou": 0.8770357416111051
+          },
+          "pfv_peak_m_s": 39.722583,
+          "pfv_per_peer": [
+            {
+              "peer": "TITAN2Dv420",
+              "mae": 0.13574419466064724,
+              "rmse": 1.2334691576654888,
+              "support_iou": 0.7762183235867446,
+              "active_correlation": 0.886766188396784,
+              "avac_peak": 39.722583,
+              "peer_peak": 37.900057639339224,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 254625.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5547553.117339857,
+              "peer_difficulty_rmse_m_s": 0.9897952933942297,
+              "normalized_rmse": 1.2461861214106675
+            },
+            {
+              "peer": "flo2d",
+              "mae": 0.5227200271578153,
+              "rmse": 3.390445190520058,
+              "support_iou": 0.7026082906380997,
+              "active_correlation": 0.6857696194984805,
+              "avac_peak": 39.722583,
+              "peer_peak": 10.928,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 164575.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 866298.3999999998,
+              "peer_difficulty_rmse_m_s": 3.4983441348021778,
+              "normalized_rmse": 0.9691571383133177
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.168908190094366,
+              "rmse": 1.7235799306228614,
+              "support_iou": 0.8640860215053764,
+              "active_correlation": 0.6635849509081061,
+              "avac_peak": 39.722583,
+              "peer_peak": 35.66962816961604,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 232425.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5739251.912753085,
+              "peer_difficulty_rmse_m_s": 1.463642999666099,
+              "normalized_rmse": 1.1775958556943613
+            },
+            {
+              "peer": "Gerris",
+              "mae": 0.03724608602866447,
+              "rmse": 0.3703075201371061,
+              "support_iou": 0.9322867853795689,
+              "active_correlation": 0.9780141877213376,
+              "avac_peak": 39.722583,
+              "peer_peak": 39.70840072631836,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 211375.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 4759867.924581486,
+              "peer_difficulty_rmse_m_s": 0.6783617896085036,
+              "normalized_rmse": 0.5458849920642171
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 0.08344109454862991,
+              "rmse": 0.7623343799569635,
+              "support_iou": 0.8281121187139324,
+              "active_correlation": 0.9581349472610244,
+              "avac_peak": 39.722583,
+              "peer_peak": 38.04735,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 242525.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5057493.43575,
+              "peer_difficulty_rmse_m_s": 0.6920156115451817,
+              "normalized_rmse": 1.101614424932942
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 0.045060994865615246,
+              "rmse": 0.46866013071938584,
+              "support_iou": 0.8770357416111051,
+              "active_correlation": 0.9831782986821926,
+              "avac_peak": 39.722583,
+              "peer_peak": 38.858153,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 228350.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 4899734.7671,
+              "peer_difficulty_rmse_m_s": 0.4933041849897609,
+              "normalized_rmse": 0.9500428842482117
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 0.04703777718703469,
+              "rmse": 0.48457382140088917,
+              "support_iou": 0.8793084582558267,
+              "active_correlation": 0.9832785663104745,
+              "avac_peak": 39.722583,
+              "peer_peak": 39.928,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 228400.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5093583.350000001,
+              "peer_difficulty_rmse_m_s": 0.5486551107500726,
+              "normalized_rmse": 0.8832029665018938
+            },
+            {
+              "peer": "01IdealizedTopo_faSavageHutterFoamGamma",
+              "mae": 0.052460117076221086,
+              "rmse": 0.41750433594664527,
+              "support_iou": 0.8921470620904143,
+              "active_correlation": 0.9818302110177223,
+              "avac_peak": 39.722583,
+              "peer_peak": 37.7688,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 224900.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5040470.746129254,
+              "peer_difficulty_rmse_m_s": 0.588438486559026,
+              "normalized_rmse": 0.7095122863021055
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 0.05787362080031841,
+              "rmse": 0.542129585384061,
+              "support_iou": 0.8774574049803407,
+              "active_correlation": 0.9746158315047196,
+              "avac_peak": 39.722583,
+              "peer_peak": 41.554,
+              "avac_positive_area_m2": 200975.0,
+              "peer_positive_area_m2": 228775.0,
+              "avac_field_integral": 4747204.270050942,
+              "peer_field_integral": 5069326.3,
+              "peer_difficulty_rmse_m_s": 0.5955532825371751,
+              "normalized_rmse": 0.9102956885309764
+            }
+          ]
+        }
+      },
+      "pft_candidate_wins": [
+        "TITAN2Dv420",
+        "flo2d",
+        "com1DFA",
+        "Gerris",
+        "INRAEaval",
+        "minVoellmyv2",
+        "TRENT2D",
+        "01IdealizedTopo_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_wins": [
+        "TITAN2Dv420",
+        "com1DFA",
+        "Gerris",
+        "INRAEaval",
+        "minVoellmyv2",
+        "TRENT2D",
+        "01IdealizedTopo_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_losses": [
+        "flo2d"
+      ],
+      "pfv_paired_peer_comparisons": [
+        {
+          "peer": "TITAN2Dv420",
+          "baseline_normalized_rmse": 1.249177867343556,
+          "candidate_normalized_rmse": 1.2461861214106675,
+          "baseline_rmse_m_s": 1.236430373708893,
+          "candidate_rmse_m_s": 1.2334691576654888,
+          "candidate_minus_baseline_rmse_m_s": -0.002961216043404269,
+          "winner": "candidate"
+        },
+        {
+          "peer": "flo2d",
+          "baseline_normalized_rmse": 0.9657316350420564,
+          "candidate_normalized_rmse": 0.9691571383133177,
+          "baseline_rmse_m_s": 3.378461601242295,
+          "candidate_rmse_m_s": 3.390445190520058,
+          "candidate_minus_baseline_rmse_m_s": 0.011983589277762885,
+          "winner": "baseline"
+        },
+        {
+          "peer": "com1DFA",
+          "baseline_normalized_rmse": 1.179887461960119,
+          "candidate_normalized_rmse": 1.1775958556943613,
+          "baseline_rmse_m_s": 1.7269340240917286,
+          "candidate_rmse_m_s": 1.7235799306228614,
+          "candidate_minus_baseline_rmse_m_s": -0.0033540934688671697,
+          "winner": "candidate"
+        },
+        {
+          "peer": "Gerris",
+          "baseline_normalized_rmse": 0.5592596377483552,
+          "candidate_normalized_rmse": 0.5458849920642171,
+          "baseline_rmse_m_s": 0.37938036871877767,
+          "candidate_rmse_m_s": 0.3703075201371061,
+          "candidate_minus_baseline_rmse_m_s": -0.009072848581671566,
+          "winner": "candidate"
+        },
+        {
+          "peer": "INRAEaval",
+          "baseline_normalized_rmse": 1.1070060733289429,
+          "candidate_normalized_rmse": 1.101614424932942,
+          "baseline_rmse_m_s": 0.7660654848189586,
+          "candidate_rmse_m_s": 0.7623343799569635,
+          "candidate_minus_baseline_rmse_m_s": -0.003731104861995127,
+          "winner": "candidate"
+        },
+        {
+          "peer": "minVoellmyv2",
+          "baseline_normalized_rmse": 0.9503065060981851,
+          "candidate_normalized_rmse": 0.9500428842482117,
+          "baseline_rmse_m_s": 0.4687901764812325,
+          "candidate_rmse_m_s": 0.46866013071938584,
+          "candidate_minus_baseline_rmse_m_s": -0.0001300457618466644,
+          "winner": "candidate"
+        },
+        {
+          "peer": "TRENT2D",
+          "baseline_normalized_rmse": 0.9001237325081818,
+          "candidate_normalized_rmse": 0.8832029665018938,
+          "baseline_rmse_m_s": 0.49385748614804514,
+          "candidate_rmse_m_s": 0.48457382140088917,
+          "candidate_minus_baseline_rmse_m_s": -0.009283664747155973,
+          "winner": "candidate"
+        },
+        {
+          "peer": "01IdealizedTopo_faSavageHutterFoamGamma",
+          "baseline_normalized_rmse": 0.7320237761739115,
+          "candidate_normalized_rmse": 0.7095122863021055,
+          "baseline_rmse_m_s": 0.43075096297699966,
+          "candidate_rmse_m_s": 0.41750433594664527,
+          "candidate_minus_baseline_rmse_m_s": -0.013246627030354396,
+          "winner": "candidate"
+        },
+        {
+          "peer": "MoT-Voellmy",
+          "baseline_normalized_rmse": 0.9311058862350361,
+          "candidate_normalized_rmse": 0.9102956885309764,
+          "baseline_rmse_m_s": 0.5545231669369612,
+          "candidate_rmse_m_s": 0.542129585384061,
+          "candidate_minus_baseline_rmse_m_s": -0.012393581552900268,
+          "winner": "candidate"
+        }
+      ],
+      "pft_score_change_percent": -10.20716633716592,
+      "pfv_score_change_percent": -0.027740718208468795
+    },
+    {
+      "case": "RealTopo",
+      "comparison": {
+        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200-RealTopo-comparison\\cross_source_comparison.json",
+        "sha256": "4660165e473f3de25a48bd1539dddcd81426f5db498ccbf3e8831dc4167c97d6"
+      },
+      "peer_count": 8,
+      "peer_artifacts": [
+        {
+          "model": "flo2d",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\realwog_02_null_flo2d_pft.asc",
+            "sha256": "ac85d895a1c9a97bd3a52ebdecf2c6f3102d9376ed08586033d44ba7cc306a98"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\realwog_02_null_flo2d_pfv.asc",
+            "sha256": "0d7733ed7c1b9599c5c9a420880c7add5883c37b310b00bd24cf96e490c353b0"
+          }
+        },
+        {
+          "model": "INRAEaval",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\realWog_02RealTopo_null_INRAEaval_pft.asc",
+            "sha256": "d9c13e59bc3fe1e04e48518a25a19d9e5eda246a815ff01a18654d7106cc1966"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\realWog_02RealTopo_null_INRAEaval_pfv.asc",
+            "sha256": "430e6ea8746d0474a3fb9fb4b0704c69812ec0c464a2211390fec16814c38b38"
+          }
+        },
+        {
+          "model": "com1DFA",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_com1DFA_pft.asc",
+            "sha256": "4ae6493c37e7d970f1a8917f25c88a70ae77b9b08c3d5b5d56c1fa4214b4a5ed"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_com1DFA_pfv.asc",
+            "sha256": "2201b27c445d6d73c8cdccf13a23d4de15fee4567a3f90059e59d3cbe93798b8"
+          }
+        },
+        {
+          "model": "Gerris",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_Gerris_pft.asc",
+            "sha256": "727032740aa07555f264f92789af867002c5627984895033f668017fbac5d54f"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_Gerris_pfv.asc",
+            "sha256": "4aab9f9a71bb0c8a0d8b3a83ee05c2f940d3c357a59d3ce546a03592d8b7dff4"
+          }
+        },
+        {
+          "model": "minVoellmyv2",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_minVoellmyv2_pft.asc",
+            "sha256": "5a53bc9886f89893580c64df954ad15275c3a5e6b9deb619a919674f3c605f0d"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_minVoellmyv2_pfv.asc",
+            "sha256": "e64b3213688375c5829e1e616f2db5ed582e817bd2e56bdfd3c143e848f52c84"
+          }
+        },
+        {
+          "model": "TRENT2D",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_TRENT2D_pft.asc",
+            "sha256": "9711b146111f0f517809c2d8aee37b899d9a4dd6e8e5ba61e4d959e2e5233e23"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_02RealTopo_null_TRENT2D_pfv.asc",
+            "sha256": "e2830c7462f356df9736909e8a80d9492b7d51c796369fa35b3fcb3742c3f621"
+          }
+        },
+        {
+          "model": "02RealTopo_faSavageHutterFoamGamma",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_null_02RealTopo_faSavageHutterFoamGamma_pft.asc",
+            "sha256": "0f917ca11b9a170c0041bd382ab548eef414d7f2eaf0922f10d649ab6cf9f5f3"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\relWog_null_02RealTopo_faSavageHutterFoamGamma_pfv.asc",
+            "sha256": "61d25ac9cc3abcc0ddbe498149332f661a70fc3d4da72eb5d6cc821be9914384"
+          }
+        },
+        {
+          "model": "MoT-Voellmy",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\Wog_02_curv151s_MoT-Voellmy_h_max.asc",
+            "sha256": "feecfafcc024757be7473d11728423a693e668c0f28d34766d446dbca33a1282"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Outputs_RealTopo\\Wog_02_curv151s_MoT-Voellmy_s_max.asc",
+            "sha256": "65655c68ef2967bf1bfbc49b78506119ae77206c6a1c2b46b36ef8ac66c1298f"
+          }
+        }
+      ],
+      "pfv_peer_difficulty_rmse_m_s": {
+        "flo2d": 7.820806482706317,
+        "INRAEaval": 3.629671677803996,
+        "com1DFA": 2.874228150934933,
+        "Gerris": 2.3067193323553243,
+        "minVoellmyv2": 2.9817344991260635,
+        "TRENT2D": 2.4495011530691273,
+        "02RealTopo_faSavageHutterFoamGamma": 2.211222979727487,
+        "MoT-Voellmy": 2.3062579284051394
+      },
+      "runs": {
+        "baseline": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\run_summary.json",
+              "sha256": "dc1641435cda2d94f4b4b62ea7823104728ff3d86d629df7cfff376950d63367"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "validation_scope": "recorded executable/backend/input/submission hashes; not independent package or article certification",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\DEM_RealTopo.asc",
+                "sha256": "79c1cb63f8c339faad47dc36794a19874ad3d1d12de36bd59e97ea8b498b73c9",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\DEM_RealTopo.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.cpg",
+                "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.cpg"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.dbf",
+                "sha256": "5dd730f977a579994c1c30350a7774cf8c5d8bd027b177fddfc2f1459149c13c",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.prj",
+                "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.prj"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.qix",
+                "sha256": "02fbde728637ea95c8c389df1f2986009752f01a7a511eecf8dbed7a1d1a7039",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.qix"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.shp",
+                "sha256": "5b77425e3057c2ee464b7c502f4b904822e1207f61ec85b8c16a3c75cedc3d50",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.shx",
+                "sha256": "88527ace4589d3dfd2654ac51d8f4c2f97d938597281d51941edba1042a00f9d",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWogField5m.asc",
+                "sha256": "90086d6be54b3843ebb04cd3ce48be7d0027b687e4dc57fa74bc30bbd51097b3",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWogField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv",
+                "sha256": "2838acdab6ef5fdeb492ce44dfaf51a8d41de004d4a2ea221700c0149ee10647",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
+              "sha256": "9b57ebd9a73021db1d64b8e697e352b3a43282780f17d8c5ea9c7a65ef0e6271"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pfv.asc",
+              "sha256": "e276dade9075e6b1cdd1466d2b74ea289c4dcae82d6307eb21ff6a8f37876975"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\native_mass_history.csv",
+              "sha256": "cd95d30a1ff4590c96034931aaa62ca1673c57af21bb1898af778c98eac2e4b8"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\AVAC4QGIS_ISeeSnow_02RealTopo_Case.yaml",
+              "sha256": "50a399f98ad100c84142b25bae9c26fbcf6acb769d81284e8835f411b84d59a8"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS.txt",
+              "sha256": "95d69ea4fa548f0c27d1392d9a192bb81318c170fdfbade885f89d7bfa5a02b7"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "144309fa0ee2544a7dd47a221457da798c6cde1488edc96231065e3043bd2bbc"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\initial_depth_normal.asc",
+                "sha256": "24eb0b90f0d37905b354e086959f7dcfbc5ae4e1d5a75d0b8dbef57f8289e0c1"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\initial_depth_vertical.asc",
+                "sha256": "74f538eae228e5d5d6b8c51a5dce58f79bbfef45e66ff74a744fe8d27ac6298e"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "vanleer",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.1,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.5,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 739.6719513999997,
+            "cpu_seconds": 739.6719513999997,
+            "initial_volume_m3": 247891.0338299327,
+            "final_volume_m3": 247891.03385259976,
+            "relative_volume_change": 9.143958270588608e-11,
+            "practical_rest_sustained_from_seconds": null,
+            "flow_stopped_at_seconds": null,
+            "flow_rest_confirmed_by_ceiling": false,
+            "final_max_speed_mps": 8.751085484672537,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 6116.675790772206,
+              "0p05_to_0p10": 2032.2858204133809,
+              "0p10_to_0p20": 762.1147515252233,
+              "0p20_to_0p50": 1015.4212698340416,
+              "ge_0p50": 70182.39134550095
+            },
+            "maximum_courant_number": 0.59,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "baseline",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "9b57ebd9a73021db1d64b8e697e352b3a43282780f17d8c5ea9c7a65ef0e6271",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\run_summary.json",
+            "case": "RealTopo",
+            "state_momentum_regularization_depth_m": 0.1,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "9b57ebd9a73021db1d64b8e697e352b3a43282780f17d8c5ea9c7a65ef0e6271",
+            "limiter": "vanleer",
+            "cfl_target": 0.5,
+            "normalized_median_rmse": 1.098223055321104,
+            "median_rmse_m": 0.5672113196230677,
+            "mean_rmse_m": 0.5622060914744026,
+            "maximum_rmse_m": 0.7603046368776504,
+            "rmse_to_cellwise_peer_median_m": 0.42932230877981736,
+            "normalized_median_mae": 1.1019137964220653,
+            "median_mae_m": 0.10958866416058513,
+            "normalized_median_support_disagreement": 1.0130268572298926,
+            "median_support_iou": 0.8015375220377629,
+            "normalized_median_pattern_disagreement": 1.224491592824033,
+            "median_active_correlation": 0.7917086500865225,
+            "pft_peak_m": 22.7901766,
+            "pft_integral_m3": 1605212.351261606,
+            "pft_support_area_m2": 664750.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 1.1262640370473034,
+            "median_rmse_m_s": 2.9397108489716937,
+            "median_support_iou": 0.7330728837758897
+          },
+          "pfv_peak_m_s": 59.533824,
+          "pfv_per_peer": [
+            {
+              "peer": "flo2d",
+              "mae": 1.7585558731667152,
+              "rmse": 6.62070255351483,
+              "support_iou": 0.3525265430195163,
+              "active_correlation": 0.49334033399172905,
+              "avac_peak": 59.533824,
+              "peer_peak": 10.493,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 205150.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 734566.075,
+              "peer_difficulty_rmse_m_s": 7.820806482706317,
+              "normalized_rmse": 0.8465498498338752
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 1.0781834452509576,
+              "rmse": 4.301636161977046,
+              "support_iou": 0.6187088201096285,
+              "active_correlation": 0.7177456917780994,
+              "avac_peak": 59.533824,
+              "peer_peak": 53.09063,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 899400.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 18988045.659749996,
+              "peer_difficulty_rmse_m_s": 3.629671677803996,
+              "normalized_rmse": 1.1851309274836666
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.7229734414041178,
+              "rmse": 3.1864486612123675,
+              "support_iou": 0.8220406612198365,
+              "active_correlation": 0.7657845926739747,
+              "avac_peak": 59.533824,
+              "peer_peak": 47.57103680059275,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 636300.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 16934674.176995978,
+              "peer_difficulty_rmse_m_s": 2.874228150934933,
+              "normalized_rmse": 1.108627601526996
+            },
+            {
+              "peer": "Gerris",
+              "mae": 0.35522842951481703,
+              "rmse": 1.7307589536420431,
+              "support_iou": 0.8201524006806244,
+              "active_correlation": 0.9194776092595868,
+              "avac_peak": 59.533824,
+              "peer_peak": 73.00460052490234,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 667775.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 14399301.010620944,
+              "peer_difficulty_rmse_m_s": 2.3067193323553243,
+              "normalized_rmse": 0.7503118950647608
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 0.42370747214712196,
+              "rmse": 1.8640610744559711,
+              "support_iou": 0.7493635653915346,
+              "active_correlation": 0.9084127174332877,
+              "avac_peak": 59.533824,
+              "peer_peak": 40.871505,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 726075.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 13506967.621425001,
+              "peer_difficulty_rmse_m_s": 2.9817344991260635,
+              "normalized_rmse": 0.6251599781946787
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 0.6467862623391972,
+              "rmse": 3.0172495941751696,
+              "support_iou": 0.716782202160245,
+              "active_correlation": 0.8197267005726069,
+              "avac_peak": 59.533824,
+              "peer_peak": 80.23,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 768775.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 16272555.625,
+              "peer_difficulty_rmse_m_s": 2.4495011530691273,
+              "normalized_rmse": 1.231781250804751
+            },
+            {
+              "peer": "02RealTopo_faSavageHutterFoamGamma",
+              "mae": 0.6716358497155204,
+              "rmse": 2.862172103768218,
+              "support_iou": 0.7744939555805455,
+              "active_correlation": 0.8338389424287359,
+              "avac_peak": 59.533824,
+              "peer_peak": 50.555,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 700000.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 16574565.739766983,
+              "peer_difficulty_rmse_m_s": 2.211222979727487,
+              "normalized_rmse": 1.2943842072955278
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 0.6630754822699912,
+              "rmse": 2.6381295341654387,
+              "support_iou": 0.6553007001201043,
+              "active_correlation": 0.8755964715640715,
+              "avac_peak": 59.533824,
+              "peer_peak": 44.376,
+              "avac_positive_area_m2": 562375.0,
+              "peer_positive_area_m2": 850300.0,
+              "avac_field_integral": 12647291.587994464,
+              "peer_field_integral": 15849389.899999999,
+              "peer_difficulty_rmse_m_s": 2.3062579284051394,
+              "normalized_rmse": 1.143900472567611
+            }
+          ]
+        },
+        "candidate": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\run_summary.json",
+              "sha256": "3ff6b43ce94ca251526b7a7816b649560ea5c8f266a7882d6054c42d5a301faa"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "validation_scope": "recorded executable/backend/input/submission hashes; not independent package or article certification",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\DEM_RealTopo.asc",
+                "sha256": "79c1cb63f8c339faad47dc36794a19874ad3d1d12de36bd59e97ea8b498b73c9",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\DEM_RealTopo.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.cpg",
+                "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.cpg"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.dbf",
+                "sha256": "5dd730f977a579994c1c30350a7774cf8c5d8bd027b177fddfc2f1459149c13c",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.prj",
+                "sha256": "af61f17863d3f6c062af630b1196dbdb760a093bc12d3d780261518dbff874e0",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.prj"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.qix",
+                "sha256": "02fbde728637ea95c8c389df1f2986009752f01a7a511eecf8dbed7a1d1a7039",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.qix"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.shp",
+                "sha256": "5b77425e3057c2ee464b7c502f4b904822e1207f61ec85b8c16a3c75cedc3d50",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWog.shx",
+                "sha256": "88527ace4589d3dfd2654ac51d8f4c2f97d938597281d51941edba1042a00f9d",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWog.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\relWogField5m.asc",
+                "sha256": "90086d6be54b3843ebb04cd3ce48be7d0027b687e4dc57fa74bc30bbd51097b3",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\relWogField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv",
+                "sha256": "2838acdab6ef5fdeb492ce44dfaf51a8d41de004d4a2ea221700c0149ee10647",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\RealTopo\\Inputs\\simulationParameterValues_RealTopo.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
+              "sha256": "f5cecc617caaf0d39d789d5d42d44cf91ca7a566bfe332f7e682dadee51eab45"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pfv.asc",
+              "sha256": "773e01f1e5333ccdb120e70d04896b209e318860c1343e18e37ab7648d7e24a5"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\native_mass_history.csv",
+              "sha256": "cab6957bb86b8da89910a7bf745349b5ca925108cea836d57277fa6457caa487"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\AVAC4QGIS_ISeeSnow_02RealTopo_Case.yaml",
+              "sha256": "ced528b95bacac35e3a30a6ad8d93f956a630a2d6bbbc73a64e7b88397238bdd"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS.txt",
+              "sha256": "5b7884df2a0859be097355c363ed89cf303ab670088b941dce1b12ed5eed002a"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "2b5f05a16df6bc230c172374c94d32fd93a0ca2b1b2a97cea37b23e668c38727"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\initial_depth_normal.asc",
+                "sha256": "24eb0b90f0d37905b354e086959f7dcfbc5ae4e1d5a75d0b8dbef57f8289e0c1"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\initial_depth_vertical.asc",
+                "sha256": "74f538eae228e5d5d6b8c51a5dce58f79bbfef45e66ff74a744fe8d27ac6298e"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "vanleer",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.1,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.5,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 1051.4603951000026,
+            "cpu_seconds": 1051.4603951000026,
+            "initial_volume_m3": 247891.0338299327,
+            "final_volume_m3": 247891.03381381376,
+            "relative_volume_change": -6.5024347684585e-11,
+            "practical_rest_sustained_from_seconds": null,
+            "flow_stopped_at_seconds": null,
+            "flow_rest_confirmed_by_ceiling": false,
+            "final_max_speed_mps": 9.896773495968004,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 5484.946371847764,
+              "0p05_to_0p10": 2057.9302535392344,
+              "0p10_to_0p20": 814.0923311933875,
+              "0p20_to_0p50": 1012.4036177992821,
+              "ge_0p50": 56593.14721673727
+            },
+            "maximum_courant_number": 0.81,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "candidate",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\Submission\\relWog_02RealTopo_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "f5cecc617caaf0d39d789d5d42d44cf91ca7a566bfe332f7e682dadee51eab45",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\RealTopo\\run_summary.json",
+            "case": "RealTopo",
+            "state_momentum_regularization_depth_m": 0.1,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "f5cecc617caaf0d39d789d5d42d44cf91ca7a566bfe332f7e682dadee51eab45",
+            "limiter": "vanleer",
+            "cfl_target": 0.5,
+            "normalized_median_rmse": 0.9664568448795066,
+            "median_rmse_m": 0.47729887993564135,
+            "mean_rmse_m": 0.5258537767697472,
+            "maximum_rmse_m": 0.8142860825069239,
+            "rmse_to_cellwise_peer_median_m": 0.36682550736827463,
+            "normalized_median_mae": 0.9372154080552155,
+            "median_mae_m": 0.08894520589152716,
+            "normalized_median_support_disagreement": 0.9417361800103554,
+            "median_support_iou": 0.8079338001604988,
+            "normalized_median_pattern_disagreement": 1.0003346900890766,
+            "median_active_correlation": 0.8387544015043681,
+            "pft_peak_m": 21.0663607,
+            "pft_integral_m3": 1667334.824445588,
+            "pft_support_area_m2": 705375.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 0.9565291296059755,
+            "median_rmse_m_s": 2.5468131807275904,
+            "median_support_iou": 0.743376797481887
+          },
+          "pfv_peak_m_s": 82.794039,
+          "pfv_per_peer": [
+            {
+              "peer": "flo2d",
+              "mae": 2.0972532131984347,
+              "rmse": 7.637189498344375,
+              "support_iou": 0.3296748638389173,
+              "active_correlation": 0.4576439350886619,
+              "avac_peak": 82.794039,
+              "peer_peak": 10.493,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 205150.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 734566.075,
+              "peer_difficulty_rmse_m_s": 7.820806482706317,
+              "normalized_rmse": 0.9765219885227996
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 0.8633092276120127,
+              "rmse": 3.6303064880040425,
+              "support_iou": 0.6625377559786072,
+              "active_correlation": 0.7928523237302565,
+              "avac_peak": 82.794039,
+              "peer_peak": 53.09063,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 899400.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 18988045.659749996,
+              "peer_difficulty_rmse_m_s": 3.629671677803996,
+              "normalized_rmse": 1.0001748946616655
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.5420234980704214,
+              "rmse": 2.617010162685458,
+              "support_iou": 0.8266134987446463,
+              "active_correlation": 0.8012194334986161,
+              "avac_peak": 82.794039,
+              "peer_peak": 47.57103680059275,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 636300.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 16934674.176995978,
+              "peer_difficulty_rmse_m_s": 2.874228150934933,
+              "normalized_rmse": 0.9105088480307986
+            },
+            {
+              "peer": "Gerris",
+              "mae": 0.3715869425919808,
+              "rmse": 1.7308813180839526,
+              "support_iou": 0.8360839667028592,
+              "active_correlation": 0.910863703758149,
+              "avac_peak": 82.794039,
+              "peer_peak": 73.00460052490234,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 667775.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 14399301.010620944,
+              "peer_difficulty_rmse_m_s": 2.3067193323553243,
+              "normalized_rmse": 0.7503649420220534
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 0.6465047152167895,
+              "rmse": 2.67993953082144,
+              "support_iou": 0.7337450173168659,
+              "active_correlation": 0.8336106746007262,
+              "avac_peak": 82.794039,
+              "peer_peak": 40.871505,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 726075.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 13506967.621425001,
+              "peer_difficulty_rmse_m_s": 2.9817344991260635,
+              "normalized_rmse": 0.8987854323069078
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 0.5614523917926605,
+              "rmse": 2.476616198769723,
+              "support_iou": 0.7530085776469082,
+              "active_correlation": 0.8625744690859738,
+              "avac_peak": 82.794039,
+              "peer_peak": 80.23,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 768775.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 16272555.625,
+              "peer_difficulty_rmse_m_s": 2.4495011530691273,
+              "normalized_rmse": 1.011069619488287
+            },
+            {
+              "peer": "02RealTopo_faSavageHutterFoamGamma",
+              "mae": 0.46356334546467426,
+              "rmse": 2.0708905230961334,
+              "support_iou": 0.8153899842959343,
+              "active_correlation": 0.8939871046931671,
+              "avac_peak": 82.794039,
+              "peer_peak": 50.555,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 700000.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 16574565.739766983,
+              "peer_difficulty_rmse_m_s": 2.211222979727487,
+              "normalized_rmse": 0.9365362706891514
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 0.6022061192507894,
+              "rmse": 2.296941744925272,
+              "support_iou": 0.6982324710289125,
+              "active_correlation": 0.9101195454290519,
+              "avac_peak": 82.794039,
+              "peer_peak": 44.376,
+              "avac_positive_area_m2": 600500.0,
+              "peer_positive_area_m2": 850300.0,
+              "avac_field_integral": 14945406.057017278,
+              "peer_field_integral": 15849389.899999999,
+              "peer_difficulty_rmse_m_s": 2.3062579284051394,
+              "normalized_rmse": 0.9959604763347915
+            }
+          ]
+        }
+      },
+      "pft_candidate_wins": [
+        "INRAEaval",
+        "com1DFA",
+        "TRENT2D",
+        "02RealTopo_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_wins": [
+        "INRAEaval",
+        "com1DFA",
+        "TRENT2D",
+        "02RealTopo_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_losses": [
+        "flo2d",
+        "Gerris",
+        "minVoellmyv2"
+      ],
+      "pfv_paired_peer_comparisons": [
+        {
+          "peer": "flo2d",
+          "baseline_normalized_rmse": 0.8465498498338752,
+          "candidate_normalized_rmse": 0.9765219885227996,
+          "baseline_rmse_m_s": 6.62070255351483,
+          "candidate_rmse_m_s": 7.637189498344375,
+          "candidate_minus_baseline_rmse_m_s": 1.0164869448295448,
+          "winner": "baseline"
+        },
+        {
+          "peer": "INRAEaval",
+          "baseline_normalized_rmse": 1.1851309274836666,
+          "candidate_normalized_rmse": 1.0001748946616655,
+          "baseline_rmse_m_s": 4.301636161977046,
+          "candidate_rmse_m_s": 3.6303064880040425,
+          "candidate_minus_baseline_rmse_m_s": -0.6713296739730037,
+          "winner": "candidate"
+        },
+        {
+          "peer": "com1DFA",
+          "baseline_normalized_rmse": 1.108627601526996,
+          "candidate_normalized_rmse": 0.9105088480307986,
+          "baseline_rmse_m_s": 3.1864486612123675,
+          "candidate_rmse_m_s": 2.617010162685458,
+          "candidate_minus_baseline_rmse_m_s": -0.5694384985269094,
+          "winner": "candidate"
+        },
+        {
+          "peer": "Gerris",
+          "baseline_normalized_rmse": 0.7503118950647608,
+          "candidate_normalized_rmse": 0.7503649420220534,
+          "baseline_rmse_m_s": 1.7307589536420431,
+          "candidate_rmse_m_s": 1.7308813180839526,
+          "candidate_minus_baseline_rmse_m_s": 0.00012236444190949491,
+          "winner": "baseline"
+        },
+        {
+          "peer": "minVoellmyv2",
+          "baseline_normalized_rmse": 0.6251599781946787,
+          "candidate_normalized_rmse": 0.8987854323069078,
+          "baseline_rmse_m_s": 1.8640610744559711,
+          "candidate_rmse_m_s": 2.67993953082144,
+          "candidate_minus_baseline_rmse_m_s": 0.8158784563654691,
+          "winner": "baseline"
+        },
+        {
+          "peer": "TRENT2D",
+          "baseline_normalized_rmse": 1.231781250804751,
+          "candidate_normalized_rmse": 1.011069619488287,
+          "baseline_rmse_m_s": 3.0172495941751696,
+          "candidate_rmse_m_s": 2.476616198769723,
+          "candidate_minus_baseline_rmse_m_s": -0.5406333954054467,
+          "winner": "candidate"
+        },
+        {
+          "peer": "02RealTopo_faSavageHutterFoamGamma",
+          "baseline_normalized_rmse": 1.2943842072955278,
+          "candidate_normalized_rmse": 0.9365362706891514,
+          "baseline_rmse_m_s": 2.862172103768218,
+          "candidate_rmse_m_s": 2.0708905230961334,
+          "candidate_minus_baseline_rmse_m_s": -0.7912815806720848,
+          "winner": "candidate"
+        },
+        {
+          "peer": "MoT-Voellmy",
+          "baseline_normalized_rmse": 1.143900472567611,
+          "candidate_normalized_rmse": 0.9959604763347915,
+          "baseline_rmse_m_s": 2.6381295341654387,
+          "candidate_rmse_m_s": 2.296941744925272,
+          "candidate_minus_baseline_rmse_m_s": -0.3411877892401667,
+          "winner": "candidate"
+        }
+      ],
+      "pft_score_change_percent": -11.998128231160754,
+      "pfv_score_change_percent": -15.070614159563988
+    },
+    {
+      "case": "CoulombOnly",
+      "comparison": {
+        "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\runout-investigation-76844b9\\full1200-peer-field-audit\\coulomb-source-comparison\\cross_source_comparison.json",
+        "sha256": "5104906cf00ba412ded2515a80e5f45eee771032576f79a5bc70de9d8377af5e"
+      },
+      "peer_count": 8,
+      "peer_artifacts": [
+        {
+          "model": "TITAN2Dv420",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\EllipticCylinder_03CoulombOnlyInternalFrict30_null_TITAN2Dv420_pft.asc",
+            "sha256": "4022e1bd5797b26e3b366711c16ae8e795c8587d91ee6c62c38d052e5e7d5ea7"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\EllipticCylinder_03CoulombOnlyInternalFrict30_null_TITAN2Dv420_pfv.asc",
+            "sha256": "351bc1bd9792985694e9ce7a7f8b0aca0d463608928d40f6592c492b17902e09"
+          }
+        },
+        {
+          "model": "com1DFA",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_com1DFA_pft.asc",
+            "sha256": "7e4c41e0defd207104956e9e49b32a75949647c8b70feca37fe8969ca0a24ce9"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_com1DFA_pfv.asc",
+            "sha256": "966520a2d804edea377c3de9fba662ce4558d233dd9ba1a2ff6284ab6858dfd9"
+          }
+        },
+        {
+          "model": "Gerris",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_Gerris_pft.asc",
+            "sha256": "17edd9ae5b05c8e93204a20299bccca63f9ac6bab3775a6507045f643fd78e72"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_Gerris_pfv.asc",
+            "sha256": "2930e4eb7eb89cad91ecb31be57782a11b55f1b5d611d43a41c00bdd8e70d252"
+          }
+        },
+        {
+          "model": "INRAEaval",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_INRAEaval_pft.asc",
+            "sha256": "28711d7db4494ddc2469e851f7a61486d5bbdda85df5d06cbccdcaf118a3b4db"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_INRAEaval_pfv.asc",
+            "sha256": "defd118fb9138b432c5c9b984819580fd26fbcba08a95f4779b0e2d84f3fec12"
+          }
+        },
+        {
+          "model": "minVoellmyv2",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_minVoellmyv2_pft.asc",
+            "sha256": "225ac0afe1f158c4453ba060ef60bb135aa5efa9531506d33fb5fa345542bbe9"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_minVoellmyv2_pfv.asc",
+            "sha256": "9e7c2c4d8885d5493a55c4a9625d7211774c952b598c358a822bd17632d1681c"
+          }
+        },
+        {
+          "model": "TRENT2D",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_TRENT2D_pft.asc",
+            "sha256": "72cd97011e181173b98aec6220d5532734c1e4ae54dcd7d508702a310e361faf"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_03CoulombOnly_null_TRENT2D_pfv.asc",
+            "sha256": "45c506d7654cf6a06f28f05b54f19d2e2d98ceb3597d111d93b85ab6ceb098f8"
+          }
+        },
+        {
+          "model": "03CoulombOnly_faSavageHutterFoamGamma",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_null_03CoulombOnly_faSavageHutterFoamGamma_pft.asc",
+            "sha256": "d40e860c7417da54c5301a27c20f4e54abdd078a880e846e473264e0dc87b989"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\release1HS_null_03CoulombOnly_faSavageHutterFoamGamma_pfv.asc",
+            "sha256": "26b815d41906da0b82953e9aa651298b41284d064a38f540e516190c83f4f4e5"
+          }
+        },
+        {
+          "model": "MoT-Voellmy",
+          "pft": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\1HS_03_curv76s_MoT-Voellmy_h_max.asc",
+            "sha256": "8cd54e0ebe17afa3f4cc7cb7789b950547dca68913cdc675c7dad9c1ff785c65"
+          },
+          "pfv": {
+            "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Outputs_CoulombOnly\\1HS_03_curv76s_MoT-Voellmy_s_max.asc",
+            "sha256": "72d3e032d7da78f7b796338c9721ee9943178e0da5421be892395f9167701d35"
+          }
+        }
+      ],
+      "pfv_peer_difficulty_rmse_m_s": {
+        "TITAN2Dv420": 6.762663163787378,
+        "com1DFA": 6.441663446997348,
+        "Gerris": 6.934013283739239,
+        "INRAEaval": 8.595620312722422,
+        "minVoellmyv2": 9.760545591439655,
+        "TRENT2D": 5.045829671031038,
+        "03CoulombOnly_faSavageHutterFoamGamma": 5.16018103602219,
+        "MoT-Voellmy": 7.002025764618483
+      },
+      "runs": {
+        "baseline": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\run_summary.json",
+              "sha256": "84ad9e77d8b22bcf1dbd79ca708799f9d67e9ce0fba6e11f4550a32f13b0ddcb"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-cfl-kernel-final4b-f52006f\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc",
+                "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.dbf",
+                "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.shp",
+                "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.shx",
+                "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HSField5m.asc",
+                "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HSField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv",
+                "sha256": "edca4a7138d96610d4d371de608aec734b7ea66eefd79593d9d525e00d2c1786",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
+              "sha256": "d2610cbc38b0ae922b766f1c4a44fa2141466eba5666919f86df8389513a508d"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pfv.asc",
+              "sha256": "0bf8c8b48a5625956f16857f14d86e5abd2aa2dde9b3b9eb86f6483b136ccced"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\native_mass_history.csv",
+              "sha256": "e482c28470d5dac1a420dfb290bd1e98370246bbf2b9615317b0d86edb75d5cf"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\AVAC4QGIS_ISeeSnow_03CoulombOnly_Case.yaml",
+              "sha256": "c84c0e60b8f4b87d5ee149df9819b71b4a7f2433bf5284d55a50ea1232f82ec5"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS.txt",
+              "sha256": "30bbf5b21e9744324fab384a7c861ec661bfb015fbd78facf66c707d8087442d"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "9317eaada7e79ec317423c7744e41412be3d7be66e1e149a45ba0a84645b552b"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\initial_depth_normal.asc",
+                "sha256": "ce93328b69aa6294e6cc63055d2d6556aee3fafb09c1010b56d075439fef221f"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\initial_depth_vertical.asc",
+                "sha256": "df3d82b20b681a978d3d3aa103ffaf337f74c0e066e14e5be8e7e28ab1fb5630"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "minmod",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.05,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.25,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 2060.8128160000197,
+            "cpu_seconds": 2060.8128160000197,
+            "initial_volume_m3": 74908.91343653202,
+            "final_volume_m3": 74908.91340197185,
+            "relative_volume_change": -4.613626249471394e-10,
+            "practical_rest_sustained_from_seconds": 540.0,
+            "flow_stopped_at_seconds": 560.0,
+            "flow_rest_confirmed_by_ceiling": true,
+            "final_max_speed_mps": 13.482156329280429,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 500.67041715956293,
+              "0p05_to_0p10": 94.70362551510334,
+              "0p10_to_0p20": 55.70016819983721,
+              "0p20_to_0p50": 15.850413963198662,
+              "ge_0p50": 0.0
+            },
+            "maximum_courant_number": 0.29,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "baseline",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "d2610cbc38b0ae922b766f1c4a44fa2141466eba5666919f86df8389513a508d",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\run_summary.json",
+            "case": "CoulombOnly",
+            "state_momentum_regularization_depth_m": 0.05,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0b0ebc8539c71daf358617747ad728a013cd4d0ad4e5951331011b3484501e23",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "d2610cbc38b0ae922b766f1c4a44fa2141466eba5666919f86df8389513a508d",
+            "limiter": "minmod",
+            "cfl_target": 0.25,
+            "normalized_median_rmse": 1.2005184750110394,
+            "median_rmse_m": 0.3304087779656369,
+            "mean_rmse_m": 0.3206668072779185,
+            "maximum_rmse_m": 0.3865477321117418,
+            "rmse_to_cellwise_peer_median_m": 0.25482198278339874,
+            "normalized_median_mae": 1.3202305823890823,
+            "median_mae_m": 0.05318178746153615,
+            "normalized_median_support_disagreement": 1.3385704921632664,
+            "median_support_iou": 0.7251593112570462,
+            "normalized_median_pattern_disagreement": 1.3203042574455526,
+            "median_active_correlation": 0.5586224405403806,
+            "pft_peak_m": 6.0286141,
+            "pft_integral_m3": 767877.9021830512,
+            "pft_support_area_m2": 348950.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 1.0376313098207706,
+            "median_rmse_m_s": 6.360189896660352,
+            "median_support_iou": 0.7126506070926408
+          },
+          "pfv_peak_m_s": 102.04183,
+          "pfv_per_peer": [
+            {
+              "peer": "TITAN2Dv420",
+              "mae": 0.9958859123400058,
+              "rmse": 6.45330162386511,
+              "support_iou": 0.7256959547629404,
+              "active_correlation": 0.7263840066751779,
+              "avac_peak": 102.04183,
+              "peer_peak": 95.5645865767511,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 457850.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 23348772.844088867,
+              "peer_difficulty_rmse_m_s": 6.762663163787378,
+              "normalized_rmse": 0.9542544804569252
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.8694634852507812,
+              "rmse": 5.507393540154343,
+              "support_iou": 0.7462168789999402,
+              "active_correlation": 0.7979164047844728,
+              "avac_peak": 102.04183,
+              "peer_peak": 102.3582705472094,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 394250.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 22390950.078503843,
+              "peer_difficulty_rmse_m_s": 6.441663446997348,
+              "normalized_rmse": 0.8549644956570192
+            },
+            {
+              "peer": "Gerris",
+              "mae": 1.0818016393861964,
+              "rmse": 5.819802796408518,
+              "support_iou": 0.714108141702921,
+              "active_correlation": 0.8338771976478924,
+              "avac_peak": 102.04183,
+              "peer_peak": 108.89199829101562,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 422825.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 23854532.884661384,
+              "peer_difficulty_rmse_m_s": 6.934013283739239,
+              "normalized_rmse": 0.8393123229308451
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 2.473792136733875,
+              "rmse": 11.12388423068067,
+              "support_iou": 0.5618060374739764,
+              "active_correlation": 0.6682647129478553,
+              "avac_peak": 102.04183,
+              "peer_peak": 112.54106,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 564600.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 34878070.757,
+              "peer_difficulty_rmse_m_s": 8.595620312722422,
+              "normalized_rmse": 1.2941339689255644
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 2.5139280878044286,
+              "rmse": 10.941651050886373,
+              "support_iou": 0.5270136943052212,
+              "active_correlation": 0.6829955549104857,
+              "avac_peak": 102.04183,
+              "peer_peak": 114.189708,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 631700.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 35354594.29995,
+              "peer_difficulty_rmse_m_s": 9.760545591439655,
+              "normalized_rmse": 1.1210081391846158
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 1.1340521459697654,
+              "rmse": 6.267078169455594,
+              "support_iou": 0.7111930724823605,
+              "active_correlation": 0.8336065987801426,
+              "avac_peak": 102.04183,
+              "peer_peak": 101.865,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 464700.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 25103939.450000003,
+              "peer_difficulty_rmse_m_s": 5.045829671031038,
+              "normalized_rmse": 1.242031257106428
+            },
+            {
+              "peer": "03CoulombOnly_faSavageHutterFoamGamma",
+              "mae": 0.519688225571124,
+              "rmse": 3.618723298886127,
+              "support_iou": 0.8335649317837291,
+              "active_correlation": 0.8763669948307796,
+              "avac_peak": 102.04183,
+              "peer_peak": 90.5278,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 390100.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 18938299.334222056,
+              "peer_difficulty_rmse_m_s": 5.16018103602219,
+              "normalized_rmse": 0.7012783608994616
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 1.9113729996210507,
+              "rmse": 8.926718439399586,
+              "support_iou": 0.5950175096413848,
+              "active_correlation": 0.7686383162902637,
+              "avac_peak": 102.04183,
+              "peer_peak": 108.385,
+              "avac_positive_area_m2": 335625.0,
+              "peer_positive_area_m2": 563925.0,
+              "avac_field_integral": 16650277.917099942,
+              "peer_field_integral": 31043213.800000004,
+              "peer_difficulty_rmse_m_s": 7.002025764618483,
+              "normalized_rmse": 1.274876548513525
+            }
+          ]
+        },
+        "candidate": {
+          "root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+          "provenance": {
+            "run_summary": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\run_summary.json",
+              "sha256": "91b0ce4271ac364e17332464ee0d05ce35ea270ad13ce216af8520c057f56b14"
+            },
+            "execution_mode": "explicit_solver_source_snapshot",
+            "solver": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\bin\\xgeoclaw.exe",
+              "sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88"
+            },
+            "backend": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\qgis-terrain-0765\\runtime\\0.6.1\\windows-amd64\\backend\\AVAC\\setrun.py",
+              "sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970"
+            },
+            "official_input_manifest": [
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc",
+                "sha256": "d0e9ee75ebb26b2a49d48695a4184066e46e9b8f5a1a74afd4297d076e4cf768",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.dbf",
+                "sha256": "cfcc0f89f4868a66198a9d1a078d0e211f751b028d430c7cc7123a64b20e8bd8",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.dbf"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.shp",
+                "sha256": "901e0139498755d12448737177c792e39004d638d41c68a5f63e2e223f18219e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.shp"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HS.shx",
+                "sha256": "1dba65b70407db11fa5d325ef45f9aa4990b75e124a639a86d96d0356e60428e",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HS.shx"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\release1HSField5m.asc",
+                "sha256": "30459c3f7e636e94a828dff457a475b469ae46ba6db6e433317cc53c45335ffb",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\release1HSField5m.asc"
+              },
+              {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv",
+                "sha256": "edca4a7138d96610d4d371de608aec734b7ea66eefd79593d9d525e00d2c1786",
+                "official_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-runout-transport\\validation\\_data\\ISeeSnow\\data\\CoulombOnly\\Inputs\\simulationParameterValues_CoulombOnly.csv"
+              }
+            ],
+            "pft": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
+              "sha256": "7108610db7701b7bbf8cc0d586db284e85891c7926ddc0dcd5903095fb2f9ea8"
+            },
+            "pfv": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pfv.asc",
+              "sha256": "4bff6fddc07954173a0819d8810d1f7672c7283d3d3df114492bbb8ee21c4939"
+            },
+            "native_mass_history": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\native_mass_history.csv",
+              "sha256": "a5a02b60f12fcd46933840ce2e94586ea8868a6bcc76f23385824660bbe12f88"
+            },
+            "plugin_case": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\AVAC4QGIS_ISeeSnow_03CoulombOnly_Case.yaml",
+              "sha256": "6a42ac4645c0b441635a9df9f6fdd75f7a83879e131062c85b992748c88ec83a"
+            },
+            "configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS.txt",
+              "sha256": "4728a3724bd3922b737ae1b6a664eb3c188fa1edd8df461ffdf73c9b83c87e67"
+            },
+            "prepared_configuration": {
+              "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Run\\AVAC\\AVAC_configuration.yaml",
+              "sha256": "8a70dd0ac386aa47dbddb9b0294aa46e7c4254a30ac5b9d51a6bfd7ba7235ff7"
+            },
+            "generated_initial_fields": {
+              "initial_depth_normal.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\initial_depth_normal.asc",
+                "sha256": "ce93328b69aa6294e6cc63055d2d6556aee3fafb09c1010b56d075439fef221f"
+              },
+              "initial_depth_vertical.asc": {
+                "path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\initial_depth_vertical.asc",
+                "sha256": "df3d82b20b681a978d3d3aa103ffaf337f74c0e066e14e5be8e7e28ab1fb5630"
+              }
+            }
+          },
+          "protocol": {
+            "simulation_end_ceiling_seconds": 1200.0,
+            "native_state_output_interval_seconds": 10.0,
+            "fixed_grid_output_interval_seconds": 10.0,
+            "fixed_grid_output_frame_count": 121,
+            "spatial_order": 2,
+            "limiter": "minmod",
+            "native_dry_tolerance_m": 0.0001,
+            "practical_rest_minimum_depth_m": 0.05,
+            "state_momentum_regularization_depth_m": 0.05,
+            "coulomb_state_momentum_regularization_depth_m": 0.05,
+            "voellmy_state_momentum_regularization_depth_m": 0.1,
+            "cfl_target": 0.25,
+            "cfl_max": 1.0,
+            "refinement_levels": 1,
+            "refinement_ratio": 2,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "diagnostic_gauge": null
+          },
+          "diagnostics": {
+            "wall_seconds": 2427.8840244999737,
+            "cpu_seconds": 2427.8840244999737,
+            "initial_volume_m3": 74908.91343653202,
+            "final_volume_m3": 74908.91351215415,
+            "relative_volume_change": 1.0095210779719059e-09,
+            "practical_rest_sustained_from_seconds": 620.0,
+            "flow_stopped_at_seconds": 640.0,
+            "flow_rest_confirmed_by_ceiling": true,
+            "final_max_speed_mps": 12.121996765213728,
+            "final_moving_volume_by_vertical_depth_band_m3": {
+              "dry_to_0p05": 476.8097178079188,
+              "0p05_to_0p10": 109.69888726249337,
+              "0p10_to_0p20": 64.06592056155205,
+              "0p20_to_0p50": 0.0,
+              "ge_0p50": 0.0
+            },
+            "maximum_courant_number": 0.29,
+            "accepted_cfl_violation_count": 0,
+            "rejected_cfl_trial_count": 0,
+            "maximum_rejected_courant_number": null,
+            "first_rejected_cfl_trial": null,
+            "maximum_amr_level": 1
+          },
+          "pft_score": {
+            "candidate": "candidate",
+            "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200",
+            "pft_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\Submission\\release1HS_03CoulombOnly_null_AVAC4QGIS_pft.asc",
+            "pft_sha256": "7108610db7701b7bbf8cc0d586db284e85891c7926ddc0dcd5903095fb2f9ea8",
+            "run_summary_path": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\pt-07654535-t1200\\CoulombOnly\\run_summary.json",
+            "case": "CoulombOnly",
+            "state_momentum_regularization_depth_m": 0.05,
+            "spatial_order": 2,
+            "simulation_end_ceiling_seconds": 1200.0,
+            "refinement_levels": 1,
+            "finest_effective_cell_size_m": 5.0,
+            "speed_limit_mps": 1e+99,
+            "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+            "setrun_backend_sha256": "37b8107b81e2a8f18db885f7090146e18f62fc4e67dd7dbc9b0a1eafb646e970",
+            "submission_pft_sha256": "7108610db7701b7bbf8cc0d586db284e85891c7926ddc0dcd5903095fb2f9ea8",
+            "limiter": "minmod",
+            "cfl_target": 0.25,
+            "normalized_median_rmse": 0.9911607912752286,
+            "median_rmse_m": 0.3003020130083954,
+            "mean_rmse_m": 0.29185590823696417,
+            "maximum_rmse_m": 0.37978745843804845,
+            "rmse_to_cellwise_peer_median_m": 0.22078886875169984,
+            "normalized_median_mae": 1.1347922590427415,
+            "median_mae_m": 0.04472849485448005,
+            "normalized_median_support_disagreement": 0.8400314989524398,
+            "median_support_iou": 0.8408933077387204,
+            "normalized_median_pattern_disagreement": 0.8907160387046344,
+            "median_active_correlation": 0.7001098978996387,
+            "pft_peak_m": 5.4411163,
+            "pft_integral_m3": 857165.9358772184,
+            "pft_support_area_m2": 396375.0
+          },
+          "pfv_score": {
+            "normalized_median_rmse": 0.9809568359319343,
+            "median_rmse_m_s": 5.78059424988638,
+            "median_support_iou": 0.7730879485580482
+          },
+          "pfv_peak_m_s": 102.12615,
+          "pfv_per_peer": [
+            {
+              "peer": "TITAN2Dv420",
+              "mae": 1.033947721979242,
+              "rmse": 6.54551528242347,
+              "support_iou": 0.7331093305763763,
+              "active_correlation": 0.6462419244742377,
+              "avac_peak": 102.12615,
+              "peer_peak": 95.5645865767511,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 457850.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 23348772.844088867,
+              "peer_difficulty_rmse_m_s": 6.762663163787378,
+              "normalized_rmse": 0.967890182298789
+            },
+            {
+              "peer": "com1DFA",
+              "mae": 0.49785707426710707,
+              "rmse": 4.186214573847269,
+              "support_iou": 0.8729899649377343,
+              "active_correlation": 0.8385999479610504,
+              "avac_peak": 102.12615,
+              "peer_peak": 102.3582705472094,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 394250.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 22390950.078503843,
+              "peer_difficulty_rmse_m_s": 6.441663446997348,
+              "normalized_rmse": 0.6498654591770995
+            },
+            {
+              "peer": "Gerris",
+              "mae": 0.6947781965054873,
+              "rmse": 3.764983126791053,
+              "support_iou": 0.8442020665901263,
+              "active_correlation": 0.9241139701713945,
+              "avac_peak": 102.12615,
+              "peer_peak": 108.89199829101562,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 422825.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 23854532.884661384,
+              "peer_difficulty_rmse_m_s": 6.934013283739239,
+              "normalized_rmse": 0.5429731632646579
+            },
+            {
+              "peer": "INRAEaval",
+              "mae": 2.1072275546205046,
+              "rmse": 9.47347586300749,
+              "support_iou": 0.6552222465513466,
+              "active_correlation": 0.7712977127997294,
+              "avac_peak": 102.12615,
+              "peer_peak": 112.54106,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 564600.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 34878070.757,
+              "peer_difficulty_rmse_m_s": 8.595620312722422,
+              "normalized_rmse": 1.1021282372123566
+            },
+            {
+              "peer": "minVoellmyv2",
+              "mae": 2.1665957194165806,
+              "rmse": 10.349476471150556,
+              "support_iou": 0.5975138121546961,
+              "active_correlation": 0.6533106681375198,
+              "avac_peak": 102.12615,
+              "peer_peak": 114.189708,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 631700.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 35354594.29995,
+              "peer_difficulty_rmse_m_s": 9.760545591439655,
+              "normalized_rmse": 1.0603379057239806
+            },
+            {
+              "peer": "TRENT2D",
+              "mae": 0.7905239388546841,
+              "rmse": 5.015673217349289,
+              "support_iou": 0.81306656653972,
+              "active_correlation": 0.8624717652516666,
+              "avac_peak": 102.12615,
+              "peer_peak": 101.865,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 464700.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 25103939.450000003,
+              "peer_difficulty_rmse_m_s": 5.045829671031038,
+              "normalized_rmse": 0.9940234895650795
+            },
+            {
+              "peer": "03CoulombOnly_faSavageHutterFoamGamma",
+              "mae": 0.5339984537688806,
+              "rmse": 3.5993253285720592,
+              "support_iou": 0.8404801720019112,
+              "active_correlation": 0.8545427366831125,
+              "avac_peak": 102.12615,
+              "peer_peak": 90.5278,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 390100.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 18938299.334222056,
+              "peer_difficulty_rmse_m_s": 5.16018103602219,
+              "normalized_rmse": 0.6975191962153827
+            },
+            {
+              "peer": "MoT-Voellmy",
+              "mae": 1.5651444093162492,
+              "rmse": 7.8945627992334,
+              "support_iou": 0.6742763420364378,
+              "active_correlation": 0.7874610632939287,
+              "avac_peak": 102.12615,
+              "peer_peak": 108.385,
+              "avac_positive_area_m2": 380325.0,
+              "peer_positive_area_m2": 563925.0,
+              "avac_field_integral": 19259341.386066623,
+              "peer_field_integral": 31043213.800000004,
+              "peer_difficulty_rmse_m_s": 7.002025764618483,
+              "normalized_rmse": 1.1274684019480394
+            }
+          ]
+        }
+      },
+      "pft_candidate_wins": [
+        "com1DFA",
+        "Gerris",
+        "INRAEaval",
+        "minVoellmyv2",
+        "TRENT2D",
+        "03CoulombOnly_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_wins": [
+        "com1DFA",
+        "Gerris",
+        "INRAEaval",
+        "minVoellmyv2",
+        "TRENT2D",
+        "03CoulombOnly_faSavageHutterFoamGamma",
+        "MoT-Voellmy"
+      ],
+      "pfv_candidate_losses": [
+        "TITAN2Dv420"
+      ],
+      "pfv_paired_peer_comparisons": [
+        {
+          "peer": "TITAN2Dv420",
+          "baseline_normalized_rmse": 0.9542544804569252,
+          "candidate_normalized_rmse": 0.967890182298789,
+          "baseline_rmse_m_s": 6.45330162386511,
+          "candidate_rmse_m_s": 6.54551528242347,
+          "candidate_minus_baseline_rmse_m_s": 0.09221365855835995,
+          "winner": "baseline"
+        },
+        {
+          "peer": "com1DFA",
+          "baseline_normalized_rmse": 0.8549644956570192,
+          "candidate_normalized_rmse": 0.6498654591770995,
+          "baseline_rmse_m_s": 5.507393540154343,
+          "candidate_rmse_m_s": 4.186214573847269,
+          "candidate_minus_baseline_rmse_m_s": -1.321178966307074,
+          "winner": "candidate"
+        },
+        {
+          "peer": "Gerris",
+          "baseline_normalized_rmse": 0.8393123229308451,
+          "candidate_normalized_rmse": 0.5429731632646579,
+          "baseline_rmse_m_s": 5.819802796408518,
+          "candidate_rmse_m_s": 3.764983126791053,
+          "candidate_minus_baseline_rmse_m_s": -2.0548196696174648,
+          "winner": "candidate"
+        },
+        {
+          "peer": "INRAEaval",
+          "baseline_normalized_rmse": 1.2941339689255644,
+          "candidate_normalized_rmse": 1.1021282372123566,
+          "baseline_rmse_m_s": 11.12388423068067,
+          "candidate_rmse_m_s": 9.47347586300749,
+          "candidate_minus_baseline_rmse_m_s": -1.6504083676731796,
+          "winner": "candidate"
+        },
+        {
+          "peer": "minVoellmyv2",
+          "baseline_normalized_rmse": 1.1210081391846158,
+          "candidate_normalized_rmse": 1.0603379057239806,
+          "baseline_rmse_m_s": 10.941651050886373,
+          "candidate_rmse_m_s": 10.349476471150556,
+          "candidate_minus_baseline_rmse_m_s": -0.5921745797358167,
+          "winner": "candidate"
+        },
+        {
+          "peer": "TRENT2D",
+          "baseline_normalized_rmse": 1.242031257106428,
+          "candidate_normalized_rmse": 0.9940234895650795,
+          "baseline_rmse_m_s": 6.267078169455594,
+          "candidate_rmse_m_s": 5.015673217349289,
+          "candidate_minus_baseline_rmse_m_s": -1.2514049521063049,
+          "winner": "candidate"
+        },
+        {
+          "peer": "03CoulombOnly_faSavageHutterFoamGamma",
+          "baseline_normalized_rmse": 0.7012783608994616,
+          "candidate_normalized_rmse": 0.6975191962153827,
+          "baseline_rmse_m_s": 3.618723298886127,
+          "candidate_rmse_m_s": 3.5993253285720592,
+          "candidate_minus_baseline_rmse_m_s": -0.01939797031406787,
+          "winner": "candidate"
+        },
+        {
+          "peer": "MoT-Voellmy",
+          "baseline_normalized_rmse": 1.274876548513525,
+          "candidate_normalized_rmse": 1.1274684019480394,
+          "baseline_rmse_m_s": 8.926718439399586,
+          "candidate_rmse_m_s": 7.8945627992334,
+          "candidate_minus_baseline_rmse_m_s": -1.0321556401661862,
+          "winner": "candidate"
+        }
+      ],
+      "pft_score_change_percent": -17.438938932937752,
+      "pfv_score_change_percent": -5.461908613631328
+    }
+  ]
+}

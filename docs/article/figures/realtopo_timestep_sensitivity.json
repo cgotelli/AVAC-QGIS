@@ -1,0 +1,262 @@
+{
+  "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+  "runs": {
+    "0.5": {
+      "audit": {
+        "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\rt-0765-peak-cfl050",
+        "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+        "duration_seconds": 120.0,
+        "wall_seconds": 231.03040920000058,
+        "cfl_target": 0.5,
+        "maximum_courant_number": 0.81,
+        "accepted_cfl_violation_count": 0,
+        "rejected_cfl_trial_count": 0,
+        "relative_volume_change": 2.330223354539185e-10,
+        "pft_peak_m": 21.0663607,
+        "pft_support_above_0p01_m_m2": 637575.0,
+        "global_pfv_peak_m_s": 82.794039,
+        "global_pfv_peak_xy": [
+          168515.0,
+          363570.0
+        ],
+        "global_pfv_peak_time_s": 52.465967,
+        "gauge_xy": [
+          168515.0,
+          363570.0
+        ],
+        "gauge_native_bed_slope": [
+          0.05874023586511612,
+          -0.42277830839157104
+        ],
+        "gauge_fgmax_peak_m_s": 82.794039,
+        "gauge_fgmax_peak_time_s": 52.465967,
+        "gauge_reported_peak_m_s": 82.7938671263788,
+        "gauge_raw_speed_at_reported_peak_m_s": 82.7938671263788,
+        "gauge_peak_time_s": 52.46597,
+        "gauge_peak_vertical_depth_m": 1.317012,
+        "gauge_peak_horizontal_momenta": [
+          -66.07575,
+          78.43328
+        ],
+        "gauge_max_ever_vertical_depth_m": 6.535297,
+        "gauge_samples": 1664,
+        "notes": "Native gauges record every accepted step. Peak depth is simultaneous gauge state, not max-ever cell depth. Speeds use native initial terrain central slopes and production FGmax depth desingularization; text precision can cause small differences."
+      },
+      "point_peaks": {
+        "coarse_peak": {
+          "xy": [
+            168515.0,
+            363570.0
+          ],
+          "pfv_peak_m_s": 82.794039,
+          "pfv_peak_time_s": 52.465967,
+          "simultaneous_peak_vertical_depth_m": 1.317012,
+          "depth_note": "Measured every-step native gauge (observation-only replicate has identical PFT/PFV hashes)"
+        },
+        "superseded_patch_peak": {
+          "xy": [
+            168580.0,
+            363530.0
+          ],
+          "pfv_peak_m_s": 42.408315,
+          "pfv_peak_time_s": 42.160147,
+          "simultaneous_peak_vertical_depth_m": 3.386195,
+          "depth_note": "Measured every-step native gauge (observation-only replicate has identical PFT/PFV hashes)"
+        },
+        "intermediate_peak": {
+          "xy": [
+            168580.0,
+            363480.0
+          ],
+          "pfv_peak_m_s": 67.876097,
+          "pfv_peak_time_s": 52.969222,
+          "simultaneous_peak_vertical_depth_m": null,
+          "depth_note": "Not gauged; no simultaneous depth claim from max-ever depth or 10-second snapshots"
+        }
+      }
+    },
+    "0.25": {
+      "audit": {
+        "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\rt-0765-gauge-cfl025",
+        "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+        "duration_seconds": 120.0,
+        "wall_seconds": 457.56060990004335,
+        "cfl_target": 0.25,
+        "maximum_courant_number": 0.29,
+        "accepted_cfl_violation_count": 0,
+        "rejected_cfl_trial_count": 0,
+        "relative_volume_change": 5.603193674418068e-10,
+        "pft_peak_m": 21.1320487,
+        "pft_support_above_0p01_m_m2": 621950.0,
+        "global_pfv_peak_m_s": 69.786124,
+        "global_pfv_peak_xy": [
+          168580.0,
+          363480.0
+        ],
+        "global_pfv_peak_time_s": 48.888148,
+        "gauge_xy": [
+          168580.0,
+          363530.0
+        ],
+        "gauge_native_bed_slope": [
+          0.774279773235321,
+          -0.3919921815395355
+        ],
+        "gauge_fgmax_peak_m_s": 41.413377,
+        "gauge_fgmax_peak_time_s": 42.383131,
+        "gauge_reported_peak_m_s": 41.41340518950414,
+        "gauge_raw_speed_at_reported_peak_m_s": 41.41340518950413,
+        "gauge_peak_time_s": 42.38313,
+        "gauge_peak_vertical_depth_m": 2.952215,
+        "gauge_peak_horizontal_momenta": [
+          -71.52585,
+          60.03615
+        ],
+        "gauge_max_ever_vertical_depth_m": 2.952215,
+        "gauge_samples": 3324,
+        "notes": "Native gauges record every accepted step. Peak depth is simultaneous gauge state, not max-ever cell depth. Speeds use native initial terrain central slopes and production FGmax depth desingularization; text precision can cause small differences."
+      },
+      "point_peaks": {
+        "coarse_peak": {
+          "xy": [
+            168515.0,
+            363570.0
+          ],
+          "pfv_peak_m_s": 43.913125,
+          "pfv_peak_time_s": 42.24809,
+          "simultaneous_peak_vertical_depth_m": null,
+          "depth_note": "Not gauged; no simultaneous depth claim from max-ever depth or 10-second snapshots"
+        },
+        "superseded_patch_peak": {
+          "xy": [
+            168580.0,
+            363530.0
+          ],
+          "pfv_peak_m_s": 41.413377,
+          "pfv_peak_time_s": 42.383131,
+          "simultaneous_peak_vertical_depth_m": 2.952215,
+          "depth_note": "Measured every-step native gauge (observation-only replicate has identical PFT/PFV hashes)"
+        },
+        "intermediate_peak": {
+          "xy": [
+            168580.0,
+            363480.0
+          ],
+          "pfv_peak_m_s": 69.786124,
+          "pfv_peak_time_s": 48.888148,
+          "simultaneous_peak_vertical_depth_m": null,
+          "depth_note": "Not gauged; no simultaneous depth claim from max-ever depth or 10-second snapshots"
+        }
+      }
+    },
+    "0.125": {
+      "audit": {
+        "results_root": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\rt-0765-peak-cfl0125",
+        "solver_sha256": "0765453579d6fa0d90a6e6cb7a8bfee77543d8cf6aec372c459bf72edbb46b88",
+        "duration_seconds": 120.0,
+        "wall_seconds": 1004.5354517999804,
+        "cfl_target": 0.125,
+        "maximum_courant_number": 0.14,
+        "accepted_cfl_violation_count": 0,
+        "rejected_cfl_trial_count": 0,
+        "relative_volume_change": 3.928313902103727e-11,
+        "pft_peak_m": 21.229195,
+        "pft_support_above_0p01_m_m2": 613850.0,
+        "global_pfv_peak_m_s": 71.774507,
+        "global_pfv_peak_xy": [
+          168580.0,
+          363480.0
+        ],
+        "global_pfv_peak_time_s": 41.201455,
+        "gauge_xy": [
+          168515.0,
+          363570.0
+        ],
+        "gauge_native_bed_slope": [
+          0.05874023586511612,
+          -0.42277830839157104
+        ],
+        "gauge_fgmax_peak_m_s": 44.196479,
+        "gauge_fgmax_peak_time_s": 44.502844,
+        "gauge_reported_peak_m_s": 44.19639119745769,
+        "gauge_raw_speed_at_reported_peak_m_s": 44.196391197457686,
+        "gauge_peak_time_s": 44.50284,
+        "gauge_peak_vertical_depth_m": 4.674747,
+        "gauge_peak_horizontal_momenta": [
+          -95.42187,
+          166.7093
+        ],
+        "gauge_max_ever_vertical_depth_m": 6.832329,
+        "gauge_samples": 6666,
+        "notes": "Native gauges record every accepted step. Peak depth is simultaneous gauge state, not max-ever cell depth. Speeds use native initial terrain central slopes and production FGmax depth desingularization; text precision can cause small differences."
+      },
+      "point_peaks": {
+        "coarse_peak": {
+          "xy": [
+            168515.0,
+            363570.0
+          ],
+          "pfv_peak_m_s": 44.196479,
+          "pfv_peak_time_s": 44.502844,
+          "simultaneous_peak_vertical_depth_m": 4.674747,
+          "depth_note": "Measured every-step native gauge (observation-only replicate has identical PFT/PFV hashes)"
+        },
+        "superseded_patch_peak": {
+          "xy": [
+            168580.0,
+            363530.0
+          ],
+          "pfv_peak_m_s": 40.279129,
+          "pfv_peak_time_s": 42.416934,
+          "simultaneous_peak_vertical_depth_m": null,
+          "depth_note": "Not gauged; no simultaneous depth claim from max-ever depth or 10-second snapshots"
+        },
+        "intermediate_peak": {
+          "xy": [
+            168580.0,
+            363480.0
+          ],
+          "pfv_peak_m_s": 71.774507,
+          "pfv_peak_time_s": 41.201455,
+          "simultaneous_peak_vertical_depth_m": null,
+          "depth_note": "Not gauged; no simultaneous depth claim from max-ever depth or 10-second snapshots"
+        }
+      }
+    }
+  },
+  "successive_field_differences": {
+    "0.5_vs_0.25": {
+      "pft": {
+        "rmse_entire_domain": 0.07649825580393496,
+        "rmse_pft_wet_union": 0.2493839162109264,
+        "max_absolute_difference": 2.5146895600000003,
+        "mean_absolute_difference_entire_domain": 0.013278246085870585
+      },
+      "pfv": {
+        "rmse_entire_domain": 0.6095886885603198,
+        "rmse_pft_wet_union": 1.9872603801265396,
+        "max_absolute_difference": 42.394901999999995,
+        "mean_absolute_difference_entire_domain": 0.082262489794484
+      }
+    },
+    "0.25_vs_0.125": {
+      "pft": {
+        "rmse_entire_domain": 0.036662308366282814,
+        "rmse_pft_wet_union": 0.12108531814881286,
+        "max_absolute_difference": 1.242105500000001,
+        "mean_absolute_difference_entire_domain": 0.006469685226220442
+      },
+      "pfv": {
+        "rmse_entire_domain": 0.2941255124973833,
+        "rmse_pft_wet_union": 0.9714207570908051,
+        "max_absolute_difference": 15.832761,
+        "mean_absolute_difference_entire_domain": 0.03874198445705749
+      }
+    }
+  },
+  "successive_rmse_ratio_fine_pair_over_coarse_pair": {
+    "pft": 0.4792567880272763,
+    "pfv": 0.4824983107741493
+  },
+  "warning": "Three fixed-duration timestep targets are a convergence diagnostic of the full configured scheme, not proof of physical correctness or final runout agreement. CFL acceptance alone is not convergence. Existing shallow-state momentum projection is applied every accepted step without a dt factor, so this sweep does not isolate tangent transport error from wet-front projection effects."
+}
