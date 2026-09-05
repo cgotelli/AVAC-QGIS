@@ -536,9 +536,27 @@ def verify() -> None:
     assert voellmy_regularization.value() == 0.10
     assert not coulomb_regularization.isEnabled()
     assert voellmy_regularization.isEnabled()
+    limiter = dock.parameter_controls["computation.limiter"]
+    assert limiter.currentText() == "superbee"
     dock.parameter_controls["rheology.model"].setCurrentText("Coulomb")
     assert coulomb_regularization.isEnabled()
     assert not voellmy_regularization.isEnabled()
+    assert limiter.currentText() == "minmod"
+    limiter.setCurrentText("mc")
+    dock.parameter_controls["rheology.model"].setCurrentText("Voellmy")
+    assert limiter.currentText() == "superbee"
+    dock.parameter_controls["rheology.model"].setCurrentText("Coulomb")
+    assert limiter.currentText() == "mc"
+    dock.parameter_controls["rheology.model"].setCurrentText("Voellmy")
+    dock._set_controlled_parameters({
+        "rheology.model": "Coulomb",
+        "computation.limiter": "vanleer",
+    })
+    assert limiter.currentText() == "vanleer"
+    dock.parameter_controls["rheology.model"].setCurrentText("Voellmy")
+    assert limiter.currentText() == "superbee"
+    dock.parameter_controls["rheology.model"].setCurrentText("Coulomb")
+    assert limiter.currentText() == "vanleer"
     dock.parameter_controls["rheology.model"].setCurrentText("Voellmy")
     assert dock.results_toolbox.count() == 5
     assert dock.wave_parameter_toolbox.count() == 3
@@ -546,7 +564,7 @@ def verify() -> None:
         "AVAC Inputs", "Release / initial conditions", "Rheology", "Simulation / numerical",
     ]
     assert "computation.boundary" not in dock.parameter_controls
-    assert dock.parameter_controls["computation.limiter"].currentText() == "superbee"
+    assert limiter.currentText() == "superbee"
     assert dock.output_interval_control.value() == 1.0
     assert dock._controlled_parameters()["computation.nb_simul"] == 150
     assert dock._controlled_parameters()["animation.n_out"] == 151

@@ -33,6 +33,25 @@ OPTIONAL_CONTROL_DEFAULTS: dict[str, Any] = {
     "computation.voellmy_state_momentum_regularization_depth": 0.10,
 }
 
+# Limiter evidence is constitutive-model specific.  The Coulomb default comes
+# from the curved-terrain ISeeSnow PFT comparison, while the two Voellmy
+# branches retain the established AVAC production default.  Complete YAMLs
+# still carry one explicit ``computation.limiter`` value; this policy is used
+# only when a new model is selected, never to rewrite a saved choice.
+MODEL_DEFAULT_LIMITERS: dict[str, str] = {
+    "Voellmy": "superbee",
+    "Coulomb": "minmod",
+    "cohesive_Voellmy": "superbee",
+}
+
+
+def default_limiter_for_model(model: str) -> str:
+    """Return the validated default limiter for a newly selected AVAC model."""
+    try:
+        return MODEL_DEFAULT_LIMITERS[model]
+    except KeyError as exc:
+        raise ValueError(f"No default limiter is defined for rheology model {model!r}.") from exc
+
 
 # These defaults are the established AVAC initial-condition defaults.  Keep
 # them in the configuration layer as well as using them during preprocessing,

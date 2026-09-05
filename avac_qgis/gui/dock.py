@@ -36,7 +36,7 @@ from ..core.runtime_assets import default_template_path, ensure_bundled_runtime,
 from ..core.runtime_execution import prepare_runtime_execution, runtime_solver
 from ..core.wave_execution import prepare_wave_boundary_conditions, prepare_wave_runtime_execution, validate_wave_runtime_dependencies
 from ..core.export import animation_frames, animation_provenance, frame_filename, locate_ffmpeg
-from ..core.configuration import apply_controlled_values, controlled_values, load_complete_configuration, restore_controlled_values, validate_controlled_values, validate_grid_contract
+from ..core.configuration import apply_controlled_values, controlled_values, default_limiter_for_model, load_complete_configuration, restore_controlled_values, validate_controlled_values, validate_grid_contract
 from ..core.runner import AvacRunner, output_summary
 from ..core.preprocessing import (
     configuration_for_raster, initial_snow_surface_elevation, read_avac_topography,
@@ -163,6 +163,12 @@ class AvacDockWidget(QDockWidget):
         self._frame_player_index = 0
         self._frame_player_times: dict[str, list[float]] = {"avac": [], "wave": []}
         self.parameter_controls: dict[str, QWidget] = {}
+        # Each constitutive equation keeps its own limiter selection.  This
+        # lets a newly selected Coulomb setup start from Minmod without
+        # overwriting an explicit value loaded for that model, or changing the
+        # established Voellmy default.
+        self._limiters_by_rheology_model: dict[str, str] = {}
+        self._active_limiter_model: str | None = None
         # The normal UI exposes duration and requested cadence.  Keep these
         # raw schema controls off-screen so loaded legacy YAMLs can still be
         # opened and saved without changing their established schedules.
@@ -2009,7 +2015,7 @@ class AvacDockWidget(QDockWidget):
         self.rheology_visualize_button.setToolTip("Create a categorical DEM raster showing the active altitude-dependent rheology zones.")
         self.rheology_visualize_button.clicked.connect(self.show_rheology_visualization)
         form.addRow(self.rheology_visualize_button)
-        page.setLayout(form); model.currentTextChanged.connect(self._update_rheology_controls); return page
+        page.setLayout(form); model.currentTextChanged.connect(self._on_rheology_model_changed); return page
 
     def _parameter_simulation_page(self) -> QWidget:
         page, form = QWidget(), QFormLayout()
@@ -2059,8 +2065,17 @@ class AvacDockWidget(QDockWidget):
                 voellmy_state_regularization,
             ),
         )
-        limiter = QComboBox(); limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); limiter.setCurrentText("superbee")
+        limiter = QComboBox(); limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"])
+        model = self.parameter_controls["rheology.model"].currentText()
+        limiter.setCurrentText(default_limiter_for_model(model))
+        limiter.setToolTip(
+            "Model-specific default: Minmod for Coulomb; Superbee for "
+            "Voellmy and cohesive Voellmy. Explicit selections are preserved."
+        )
         form.addRow("Limiter", self._parameter_control("computation.limiter", limiter))
+        limiter.currentTextChanged.connect(self._remember_limiter_for_model)
+        self._active_limiter_model = model
+        self._limiters_by_rheology_model[model] = limiter.currentText()
         page.setLayout(form); return page
 
     def _controlled_parameters(self) -> dict[str, object]:
@@ -2093,6 +2108,10 @@ class AvacDockWidget(QDockWidget):
         return values
 
     def _set_controlled_parameters(self, values: dict[str, object]) -> None:
+        previous_model = self._active_limiter_model
+        limiter_control = self.parameter_controls.get("computation.limiter")
+        if previous_model is not None and isinstance(limiter_control, QComboBox):
+            self._limiters_by_rheology_model[previous_model] = limiter_control.currentText()
         for path, value in values.items():
             control = self.parameter_controls.get(path)
             if control is None: continue
@@ -2103,6 +2122,26 @@ class AvacDockWidget(QDockWidget):
             elif isinstance(control, QCheckBox): control.setChecked(bool(value))
             elif isinstance(control, QComboBox): control.setCurrentText(str(value))
             control.blockSignals(blocked)
+        if isinstance(limiter_control, QComboBox):
+            model = self.parameter_controls["rheology.model"].currentText()
+            if "rheology.model" in values and "computation.limiter" not in values:
+                blocked = limiter_control.blockSignals(True)
+                limiter_control.setCurrentText(
+                    self._limiters_by_rheology_model.get(
+                        model, default_limiter_for_model(model)
+                    )
+                )
+                limiter_control.blockSignals(blocked)
+            if "rheology.model" in values and "computation.limiter" in values:
+                # A complete template or saved Case is authoritative for its
+                # active model.  Discard choices cached from the prior setup,
+                # then preserve this exact explicit value on model round trips.
+                self._limiters_by_rheology_model = {
+                    model: limiter_control.currentText()
+                }
+            else:
+                self._limiters_by_rheology_model[model] = limiter_control.currentText()
+            self._active_limiter_model = model
         self._update_rheology_controls()
         mu = values.get("rheology.mu", self.parameter_controls["rheology.mu"].value())
         xi = values.get("rheology.xi", self.parameter_controls["rheology.xi"].value())
@@ -2140,6 +2179,30 @@ class AvacDockWidget(QDockWidget):
 
     def _use_raw_timing(self, *_args) -> None:
         self._timing_mode = "raw"
+
+    def _remember_limiter_for_model(self, limiter: str) -> None:
+        """Remember a deliberate limiter selection for the active equation."""
+        model = self.parameter_controls["rheology.model"].currentText()
+        self._limiters_by_rheology_model[model] = limiter
+        self._active_limiter_model = model
+
+    def _on_rheology_model_changed(self, model: str) -> None:
+        """Restore a model's choice, or apply its default on first selection."""
+        limiter = self.parameter_controls.get("computation.limiter")
+        if isinstance(limiter, QComboBox):
+            if self._active_limiter_model is not None:
+                self._limiters_by_rheology_model[
+                    self._active_limiter_model
+                ] = limiter.currentText()
+            selected = self._limiters_by_rheology_model.get(
+                model, default_limiter_for_model(model)
+            )
+            blocked = limiter.blockSignals(True)
+            limiter.setCurrentText(selected)
+            limiter.blockSignals(blocked)
+            self._limiters_by_rheology_model[model] = limiter.currentText()
+            self._active_limiter_model = model
+        self._update_rheology_controls()
 
     def _update_rheology_controls(self, *_args) -> None:
         model = self.parameter_controls["rheology.model"].currentText()

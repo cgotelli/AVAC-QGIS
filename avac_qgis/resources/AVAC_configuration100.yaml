@@ -15,6 +15,8 @@ computation:
   voellmy_state_momentum_regularization_depth: 0.10
   force_stop: false
   initial_mass: true
+  # This template is Voellmy. The QGIS model selector defaults new Coulomb
+  # setups to Minmod without changing this explicit Voellmy value.
   limiter: superbee
   mass_frac_stop: 0.01
   mass_threshold_velocity: 0.01

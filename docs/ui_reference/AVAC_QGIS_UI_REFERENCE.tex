@@ -292,7 +292,10 @@ material behavior, not merely result styling.
         equal or be a whole-number multiple of the DEM pixel size, and both
         domain spans must contain a whole number of solver cells.
   \item \control{Limiter} selects none, minmod, superbee, MC, or van Leer for
-        second-order wave limiting. The AVAC default is superbee.
+        second-order wave limiting. The default is model-specific: a newly
+        selected Coulomb model uses minmod, while Voellmy and cohesive Voellmy
+        retain superbee. An explicit selection is remembered separately for
+        each model, and saved configurations retain their recorded limiter.
 \end{itemize}
 
 There is no boundary selector. Every normally prepared AVAC case uses

@@ -13,8 +13,12 @@ The reproducible CoulombOnly validation configuration is:
 PFT is the selection variable. PFV is retained only as a secondary,
 selection-independent audit, as requested, because it changes much less across
 the limiter candidates. The
-Minmod choice is local to the CoulombOnly validation driver; it does not change
-the general AVAC4QGIS template default or either Voellmy ISeeSnow case.
+Minmod is now also the AVAC4QGIS default whenever a user selects a new Coulomb
+setup. Limiter choices are model-specific: existing saved values are preserved,
+the packaged Voellmy template remains Superbee, and the two Voellmy ISeeSnow
+cases retain their explicitly validated van Leer protocol. Locked flat-bed
+verification configurations are not migrated, so their reference results do
+not change.
 Because the same seven PFT fields select and then score the limiter, those
 agreement metrics are in-sample numerical-scheme evidence, not an independent
 validation dataset.
@@ -61,6 +65,9 @@ same-step retry is numerically desirable but must reject and repeat an entire
 AMR level transactionally; retrying an individual patch would desynchronize
 sibling grids and observation/flux bookkeeping. No result containing an
 accepted CFL violation is eligible for comparison or publication.
+The retry must be compiled into the plugin's managed AVAC runtime and covered
+by the normal package workflow; users must not need to install a compiler,
+Python package, or any other dependency manually.
 
 A flat Kerswell AMR diagnostic also showed why reducing only `dt_initial` is
 not a general substitute. Changing its initial-step factor from 0.20 to 0.15

@@ -8,11 +8,17 @@ from pathlib import Path
 import yaml
 import numpy as np
 
-from avac_qgis.core.configuration import apply_controlled_values, controlled_values, load_complete_configuration, restore_controlled_values, validate_controlled_values, validate_grid_contract
+from avac_qgis.core.configuration import apply_controlled_values, controlled_values, default_limiter_for_model, load_complete_configuration, restore_controlled_values, validate_controlled_values, validate_grid_contract
 from avac_qgis.core.preprocessing import AvacRaster, configuration_for_raster, materialize_configuration
 
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "resources" / "AVAC_configuration100.yaml"
+
+
+def test_limiter_defaults_are_constitutive_model_specific() -> None:
+    assert default_limiter_for_model("Coulomb") == "minmod"
+    assert default_limiter_for_model("Voellmy") == "superbee"
+    assert default_limiter_for_model("cohesive_Voellmy") == "superbee"
 
 
 def test_grid_contract_matches_model_ghost_stencil() -> None:
