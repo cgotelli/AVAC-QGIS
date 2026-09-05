@@ -357,15 +357,13 @@ contains
     ! k_v is the bed Hessian projected onto the horizontal flow direction.
     ! Its term is the Fischer et al. (2012) centripetal correction to normal
     ! load: positive concave curvature increases Coulomb resistance; negative
-    ! convex curvature decreases it.  AVAC deliberately does not add a local
-    ! source for rotation of the terrain-tangent velocity into the horizontal
-    ! map plane.  That changing-basis effect requires the material position
-    ! and changing terrain angle along its path.  Treating it as a coefficient
-    ! frozen at one cell produces a spurious Riccati acceleration and a
-    ! finite-time pole.  The horizontal map velocity is therefore not rotated
-    ! by this source step; a terrain-following state or a coupled flux/source
-    ! formulation would be required for that extension.  The component
-    ! transverse to the instantaneous flow direction is not included.
+    ! convex curvature decreases it. This frozen constitutive helper does not
+    ! include the changing terrain basis: src2 applies that vector operation
+    ! separately using reconstructed material departure/arrival normals.
+    ! Adding it again as a coefficient frozen at one cell would double-count
+    ! transport and introduce a spurious Riccati acceleration/finite-time pole.
+    ! Gravity here remains the inherited flow-parallel Cartesian correction;
+    ! it is not a full vector terrain-following gravity/pressure formulation.
     ! ------------------------------------------------------------------
     subroutine cartesian_source_coefficients(h, u, v, dzdx, dzdy, &
                                              d2zdx2, d2zdxdy, d2zdy2, &

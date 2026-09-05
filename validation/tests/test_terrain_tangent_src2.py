@@ -35,6 +35,11 @@ def source_step(tmp_path_factory):
   integer :: num_manning=1
   real(kind=8) :: manning_coefficient(1)=0.d0, manning_break(1)=0.d0
 end module geoclaw_module
+module amr_module
+  implicit none
+  real(kind=8) :: xlower=0.d0,xupper=0.d0,ylower=0.d0,yupper=0.d0
+  logical :: xperdom=.false.,yperdom=.false.
+end module amr_module
 """,
         encoding="utf-8",
     )
@@ -43,12 +48,23 @@ end module geoclaw_module
         """program terrain_src2_driver
   use geoclaw_module
   use rheology_module
+  use amr_module
   implicit none
   integer, parameter :: meqn=3, maux=2, mbc=2
-  integer :: mx, my, i, j, ghost_mode, friction_flag
+  integer :: mx, my, i, j, ghost_mode, friction_flag, domain_mx, domain_my
+  integer :: terrain_mode, xperiodic, yperiodic
   real(kind=8) :: dt, u, v, h, bx, by, bxx, bxy, byy, x, y, datum
+  real(kind=8) :: patch_xlower,patch_ylower,sample_x,sample_y,pi
   real(kind=8), allocatable :: q(:,:,:), aux(:,:,:)
-  read(*,*) mx,my,dt,ghost_mode,friction_flag,friction_depth,u,v,h,bx,by,bxx,bxy,byy,datum
+  read(*,*) mx,my,dt,ghost_mode,friction_flag,friction_depth,u,v,h,bx,by,bxx,bxy,byy,datum, &
+            patch_xlower,patch_ylower,domain_mx,domain_my,terrain_mode,xperiodic,yperiodic
+  xlower=0.d0
+  ylower=0.d0
+  xupper=dble(domain_mx)
+  yupper=dble(domain_my)
+  xperdom=xperiodic==1
+  yperdom=yperiodic==1
+  pi=acos(-1.d0)
   friction_forcing = friction_flag == 1
   imodel_rh = 1
   n_zones_rh = 1
@@ -64,16 +80,28 @@ end module geoclaw_module
   aux = 0.d0
   do j=1-mbc,my+mbc
     do i=1-mbc,mx+mbc
-      x=dble(i-1)
-      y=dble(j-1)
-      aux(1,i,j)=datum+bx*x+by*y+0.5d0*bxx*x*x+bxy*x*y+0.5d0*byy*y*y
-      if (ghost_mode == 1 .and. (i<1 .or. i>mx .or. j<1 .or. j>my)) then
+      x=patch_xlower+dble(i-1)
+      y=patch_ylower+dble(j-1)
+      sample_x=x
+      sample_y=y
+      if (xperdom) sample_x=modulo(x,dble(domain_mx))
+      if (yperdom) sample_y=modulo(y,dble(domain_my))
+      aux(1,i,j)=datum+bx*sample_x+by*sample_y+0.5d0*bxx*sample_x*sample_x+ &
+                bxy*sample_x*sample_y+0.5d0*byy*sample_y*sample_y
+      if (terrain_mode==1) then
+        aux(1,i,j)=aux(1,i,j)+0.003d0*sample_x**3-0.002d0*sample_x*sample_y**2
+      else if (terrain_mode==2) then
+        aux(1,i,j)=sin(2.d0*pi*sample_x/dble(domain_mx))* &
+                  cos(2.d0*pi*sample_y/dble(domain_my))
+      endif
+      if (ghost_mode == 1 .and. (((x<0 .or. x>=domain_mx) .and. .not.xperdom) .or. &
+                                ((y<0 .or. y>=domain_my) .and. .not.yperdom))) then
         aux(1,i,j)=1000.d0+17.d0*x*x-31.d0*y*y+7.d0*x*y
       endif
       q(:,i,j)=[h,h*u,h*v]
     enddo
   enddo
-  call src2(meqn,mbc,mx,my,0.d0,0.d0,1.d0,1.d0,q,maux,aux,0.d0,dt)
+  call src2(meqn,mbc,mx,my,patch_xlower,patch_ylower,1.d0,1.d0,q,maux,aux,0.d0,dt)
   do j=1,my
     do i=1,mx
       write(*,'(2(i4,1x),3(es25.17,1x))') i,j,q(:,i,j)
@@ -99,9 +127,11 @@ end program terrain_src2_driver
         shape=(7, 7), dt=0.04, ghost_mode=0, friction=True, friction_depth=1.0e6,
         velocity=(3.0, -1.0), depth=1.0,
         polynomial=(-0.7, 0.1, 0.04, -0.01, -0.02), datum=0.0,
+        tile_origin=(0, 0), domain_shape=None, terrain_mode=0, periodic=(False, False),
     ):
         values = [*shape, dt, ghost_mode, int(friction), friction_depth,
-                  *velocity, depth, *polynomial, datum]
+                  *velocity, depth, *polynomial, datum, *tile_origin,
+                  *(domain_shape or shape), terrain_mode, *map(int, periodic)]
         completed = subprocess.run(
             [str(executable)],
             input=" ".join(format(float(value), ".17g") for value in values) + "\n",
@@ -208,3 +238,60 @@ def test_production_step_converges_to_connection_on_curved_corner(source_step):
     assert errors[1] < 0.51 * errors[0]
     assert errors[2] < 0.51 * errors[1]
     assert errors[2] < 1.0e-4
+
+
+@pytest.mark.parametrize("axis", [0, 1])
+@pytest.mark.parametrize("widths", [(7, 7), (1, 2, 3, 1, 2, 4, 1)])
+def test_nonquadratic_transport_is_independent_of_internal_patch_tiling(source_step, axis, widths):
+    shape = [14, 11] if axis == 0 else [11, 14]
+    baseline = source_step(shape=shape, friction=False, ghost_mode=1, terrain_mode=1)
+    pieces = []
+    origin = [0, 0]
+    for width in widths:
+        tile_shape = list(shape)
+        tile_shape[axis] = width
+        pieces.append(source_step(
+            shape=tile_shape, tile_origin=origin, domain_shape=shape,
+            friction=False, ghost_mode=1, terrain_mode=1,
+        ))
+        origin[axis] += width
+    stitched = np.concatenate(pieces, axis=axis)
+    # The bed and material state are identical. Merely moving a computational
+    # patch boundary must not change the connection source at any cell.
+    assert np.array_equal(baseline, stitched)
+
+
+@pytest.mark.parametrize("shape", [(2, 2), (7, 2), (2, 7)])
+def test_bilinear_bed_resolves_mixed_curvature_even_in_two_cell_direction(source_step, shape):
+    velocity = np.array([3.0, -1.0])
+    bx, by, bxy = -0.5, 0.25, 0.03125
+    hessian = np.array([[0.0, bxy], [bxy, 0.0]])
+    dt = 0.04
+    result = source_step(
+        shape=shape, friction=False, ghost_mode=1, dt=dt,
+        polynomial=(bx, by, 0.0, bxy, 0.0),
+    )
+    assert np.max(np.abs(result[:, :, 1] - velocity[0])) > 1.0e-4
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            arrival = np.array([bx, by]) + hessian @ [i, j]
+            departure = arrival - dt * hessian @ velocity
+            final_velocity = result[i, j, 1:]
+            expected_energy = velocity @ velocity + (velocity @ departure) ** 2
+            actual_energy = final_velocity @ final_velocity + (final_velocity @ arrival) ** 2
+            assert actual_energy == pytest.approx(expected_energy, rel=4.0e-14)
+
+
+@pytest.mark.parametrize("periodic", [(True, False), (False, True), (True, True)])
+def test_periodic_wrapped_terrain_is_preserved_across_internal_tiling(source_step, periodic):
+    shape = (14, 11)
+    baseline = source_step(
+        shape=shape, friction=False, ghost_mode=1, terrain_mode=2, periodic=periodic,
+    )
+    pieces = []
+    for start, width in [(0, 1), (1, 2), (3, 7), (10, 4)]:
+        pieces.append(source_step(
+            shape=(width, shape[1]), tile_origin=(start, 0), domain_shape=shape,
+            friction=False, ghost_mode=1, terrain_mode=2, periodic=periodic,
+        ))
+    assert np.array_equal(baseline, np.concatenate(pieces, axis=0))

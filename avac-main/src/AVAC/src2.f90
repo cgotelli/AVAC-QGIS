@@ -59,7 +59,7 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     ! original horizontal shallow-water equations. All granular constitutive
     ! laws receive the same terrain transport, including frictionless runs.
     if (imodel_rh >= 1 .and. dt > 0.d0) then
-        call terrain_momentum_transport(meqn,mbc,mx,my,maux,dx,dy,q,aux,dry_tolerance,dt)
+        call terrain_momentum_transport(meqn,mbc,mx,my,maux,xlower,ylower,dx,dy,q,aux,dry_tolerance,dt)
     end if
 
     if (friction_forcing) then
@@ -273,37 +273,60 @@ end subroutine src2
 ! departure gradient uses a first-order material backtrace over the accepted
 ! Godunov time step; rejected preflight trials never reach this routine.
 !
-! Only interior topography is evidence of geometry: extrapolated ghost beds
-! at physical/AMR patch boundaries must not turn an affine bed into curvature.
-! Extend the nearest interior quadratic gradient to the one-cell patch rim.
-! A one-cell direction is an unresolved extruded direction; two cells resolve
-! a constant slope; three or more cells also resolve that direction's curvature.
-subroutine terrain_momentum_transport(meqn,mbc,mx,my,maux,dx,dy,q,aux,h_dry,dt)
+! Ghost topography inside the physical domain is genuine neighboring terrain,
+! including at AMR/tile interfaces. Discarding it would make geometry depend
+! on arbitrary patch partitioning. Only exclude exterior physical closures;
+! periodically wrapped ghosts also remain genuine terrain. Extend the nearest
+! valid quadratic gradient only where a physical exterior prevents centering.
+! One physically resolved sample implies extrusion; two resolve a first
+! derivative (and a mixed derivative when both axes have two); three resolve
+! the corresponding pure second derivative. Patch width is not domain width.
+subroutine terrain_momentum_transport(meqn,mbc,mx,my,maux,xlower,ylower,dx,dy,q,aux,h_dry,dt)
     use rheology_module, only: terrain_tangent_transport
+    use amr_module, only: domain_xlower => xlower, domain_xupper => xupper, &
+                          domain_ylower => ylower, domain_yupper => yupper, &
+                          xperdom, yperdom
     implicit none
     integer, intent(in) :: meqn,mbc,mx,my,maux
-    real(kind=8), intent(in) :: dx,dy,h_dry,dt
+    real(kind=8), intent(in) :: xlower,ylower,dx,dy,h_dry,dt
     real(kind=8), intent(inout) :: q(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
     real(kind=8), intent(in) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
-    integer :: i,j,ii,jj,iw,ie,js,jn
+    integer :: i,j,ii,jj,iw,ie,js,jn,ilo,ihi,jlo,jhi,nx_valid,ny_valid
     real(kind=8) :: bx,by,bxx,bxy,byy,bc,bed_scale,relief,tolerance,residual
     real(kind=8) :: u,v,un,vn,h,departure_bx,departure_by,offset_x,offset_y
 
     if (dt <= 0.d0 .or. dx <= 0.d0 .or. dy <= 0.d0) return
-    if (mx < 3 .and. my < 3) return
+    ilo=1-mbc
+    ihi=mx+mbc
+    jlo=1-mbc
+    jhi=my+mbc
+    ! src2 receives the patch's INTERIOR lower corner; all aligned levels
+    ! have integer offsets to the domain edge. NINT removes coordinate
+    ! roundoff without moving an actually exterior cell into the stencil.
+    if (.not. xperdom) then
+        ilo=max(ilo,1+nint((domain_xlower-xlower)/dx))
+        ihi=min(ihi,nint((domain_xupper-xlower)/dx))
+    end if
+    if (.not. yperdom) then
+        jlo=max(jlo,1+nint((domain_ylower-ylower)/dy))
+        jhi=min(jhi,nint((domain_yupper-ylower)/dy))
+    end if
+    nx_valid=ihi-ilo+1
+    ny_valid=jhi-jlo+1
+    if (nx_valid < 1 .or. ny_valid < 1) return
     do j=1,my
         jj=j
-        if (my >= 3) jj=max(2,min(my-1,j))
-        js=max(1,jj-1)
-        jn=min(my,jj+1)
+        if (ny_valid >= 3) jj=max(jlo+1,min(jhi-1,j))
+        js=max(jlo,jj-1)
+        jn=min(jhi,jj+1)
         do i=1,mx
             h=q(1,i,j)
             if (h <= h_dry) cycle
             if (q(2,i,j) == 0.d0 .and. q(3,i,j) == 0.d0) cycle
             ii=i
-            if (mx >= 3) ii=max(2,min(mx-1,i))
-            iw=max(1,ii-1)
-            ie=min(mx,ii+1)
+            if (nx_valid >= 3) ii=max(ilo+1,min(ihi-1,i))
+            iw=max(ilo,ii-1)
+            ie=min(ihi,ii+1)
             bc=aux(1,ii,jj)
             bed_scale=max(1.d0,maxval(abs(aux(1,iw:ie,js:jn))))
             relief=maxval(abs(aux(1,iw:ie,js:jn)-bc))
@@ -314,23 +337,23 @@ subroutine terrain_momentum_transport(meqn,mbc,mx,my,maux,dx,dy,q,aux,h_dry,dt)
             bxy=0.d0
             byy=0.d0
             residual=0.d0
-            if (mx >= 2) bx=(aux(1,ie,jj)-aux(1,iw,jj))/(real(ie-iw,8)*dx)
-            if (my >= 2) by=(aux(1,ii,jn)-aux(1,ii,js))/(real(jn-js,8)*dy)
-            if (mx >= 3) then
+            if (nx_valid >= 2) bx=(aux(1,ie,jj)-aux(1,iw,jj))/(real(ie-iw,8)*dx)
+            if (ny_valid >= 2) by=(aux(1,ii,jn)-aux(1,ii,js))/(real(jn-js,8)*dy)
+            if (nx_valid >= 3) then
                 bxx=(aux(1,ie,jj)-bc)+(aux(1,iw,jj)-bc)
                 residual=max(residual,abs(bxx))
                 bxx=bxx/dx**2
             end if
-            if (my >= 3) then
+            if (ny_valid >= 3) then
                 byy=(aux(1,ii,jn)-bc)+(aux(1,ii,js)-bc)
                 residual=max(residual,abs(byy))
                 byy=byy/dy**2
             end if
-            if (mx >= 3 .and. my >= 3) then
+            if (nx_valid >= 2 .and. ny_valid >= 2) then
                 bxy=((aux(1,ie,jn)-bc)-(aux(1,iw,jn)-bc))- &
                     ((aux(1,ie,js)-bc)-(aux(1,iw,js)-bc))
                 residual=max(residual,abs(bxy))
-                bxy=bxy/(4.d0*dx*dy)
+                bxy=bxy/(real((ie-iw)*(jn-js),8)*dx*dy)
             end if
             ! Exact identity for affine terrain, including arithmetic noise
             ! from large stored elevations: do not even reconstruct momentum.

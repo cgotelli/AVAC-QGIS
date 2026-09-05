@@ -26,6 +26,11 @@ module geoclaw_module
   real(kind=8) :: manning_coefficient(1) = 0.d0
   real(kind=8) :: manning_break(1) = 0.d0
 end module geoclaw_module
+module amr_module
+  implicit none
+  real(kind=8) :: xlower=0.d0, xupper=3.d0, ylower=0.d0, yupper=3.d0
+  logical :: xperdom=.false., yperdom=.false.
+end module amr_module
 """
 
 
