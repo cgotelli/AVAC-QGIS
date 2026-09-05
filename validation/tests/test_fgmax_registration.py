@@ -121,7 +121,10 @@ def _configure(module, *, result_grid: dict[str, float | int] | None = None, zoo
     }
     module.Gauges = {"gauge_recording": False, "gauges": []}
     module.Release = {}
-    module.Rheol = {"mu": 0.2, "xi": 1000.0, "C": 0.0, "z_breaks": [], "rho": 300.0, "model": "Voellmy"}
+    # These tests isolate fixed-grid coordinate registration, so use the
+    # two-ghost Water path.  Granular production grids intentionally require
+    # ten cells per axis for AVAC's five-cell positivity stencil.
+    module.Rheol = {"mu": 0.2, "xi": 1000.0, "C": 0.0, "z_breaks": [], "rho": 300.0, "model": "Water"}
 
 
 def _sample_count(first: float, last: float, spacing: float) -> int:
@@ -201,5 +204,16 @@ def test_setrun_rejects_a_one_cell_axis_in_hand_authored_yaml(monkeypatch: pytes
     # division in GeoClaw FGmax without relying on QGIS-side validation.
     module.DEM["xmax"] = 2.0
 
-    with pytest.raises(ValueError, match="at least two computational cells"):
+    with pytest.raises(ValueError, match="at least 4 computational cells"):
+        module.setrun()
+
+
+def test_setrun_rejects_nonfinite_state_regularization_in_hand_authored_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_setrun(monkeypatch)
+    _configure(module)
+    module.Param["state_momentum_regularization_depth"] = float("nan")
+
+    with pytest.raises(ValueError, match="non-negative finite"):
         module.setrun()

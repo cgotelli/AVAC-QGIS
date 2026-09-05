@@ -10,6 +10,7 @@
 !   C                 cohesion (Pa) !!! removed
 !   u_cr              legacy unused compatibility value (m/s)
 !   velocity_depth_threshold  minimum depth for a reported velocity (m)
+!   state_momentum_regularization_depth  Coulomb shallow-state depth scale (m)
 !   n_zones           number of altitude zones (>= 1)
 !   z_break_0 .. z_break_{n-2}   altitude thresholds (m), one per line, ascending
 !   mu_0 .. mu_{n-1}             Coulomb coefficients, one per line
@@ -25,7 +26,7 @@ subroutine setprob
     use hydraulic_bc_module, only: setup_hydraulic_bc
     use geoclaw_module, only: conserve_depth_amr, refinement_energy_depth
     use geoclaw_module, only: use_fwave_positivity_limiter
-    use amr_module, only: nghost, mxnest
+    use amr_module, only: nghost
 
     implicit none
 
@@ -33,6 +34,7 @@ subroutine setprob
     integer iunit, k
     !double precision :: rho, C, u_cr
     double precision :: rho, u_cr, velocity_depth_threshold
+    double precision :: state_momentum_regularization_depth
     double precision :: d_0, x_b, theta
     integer :: imodel, itype_init, n_zones
     character(len=20) :: constitutive_model
@@ -53,6 +55,7 @@ subroutine setprob
     !read(7,*) C
     read(7,*) u_cr
     read(7,*) velocity_depth_threshold
+    read(7,*) state_momentum_regularization_depth
 
     !     # Number of altitude zones
     read(7,*) n_zones
@@ -123,29 +126,27 @@ subroutine setprob
     rho_rh = rho
     u_cr_rh = u_cr
     velocity_depth_threshold_rh = max(0.d0, velocity_depth_threshold)
+    state_momentum_regularization_depth_rh = &
+        max(0.d0, state_momentum_regularization_depth)
     imodel_rh = imodel
     conserve_depth_amr = .true.
     refinement_energy_depth = velocity_depth_threshold_rh
 
     ! The complete AVAC f-wave/yield stencil requires five ghost cells when
-    ! reconstructing the outgoing budget of a same-level neighbour.  The
-    ! coarse/fine reflux path needs separate validation, so multilevel runs
-    ! deliberately retain the legacy GeoClaw update for now.
-    use_fwave_positivity_limiter = imodel_rh >= 1 .and. mxnest == 1
-    if (use_fwave_positivity_limiter .and. nghost < 5) then
-        print *, 'ERROR: AVAC positivity limiter requires at least 5 ghost cells'
-        stop
+    ! reconstructing outgoing wet/dry budgets.  Enable it for every granular
+    ! run, including coarse/fine AMR hierarchies.
+    use_fwave_positivity_limiter = imodel_rh >= 1 .and. nghost >= 5
+    if (imodel_rh >= 1 .and. nghost < 5) then
+        print *, 'WARNING: AVAC positivity limiter disabled for a two-ghost'
+        print *, '         analytical-validation compatibility run'
     end if
-    if (imodel_rh >= 1 .and. mxnest > 1) then
-        print *, 'WARNING: AVAC positivity limiter disabled for multilevel AMR'
-        print *, '         coarse/fine conservation has not been validated'
-    end if
-
     print *, 'rho (snow density) = ', rho
     !print *, 'C (cohesion, Pa)   = ', C
     print *, 'u_cr (legacy, unused) = ', u_cr
     print *, 'velocity depth threshold (m) = ', &
              velocity_depth_threshold_rh
+    print *, 'state momentum regularization depth (m) = ', &
+             state_momentum_regularization_depth_rh
     print *, 'constitutive_model = ', trim(constitutive_model), &
              '  (imodel=', imodel, ')'
     print *, 'number of altitude zones = ', n_zones

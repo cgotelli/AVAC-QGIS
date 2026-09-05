@@ -272,10 +272,10 @@ def test_full_qgis_domain_has_geoclaw_terrain_support_without_qinit_padding(tmp_
 
 
 def test_prepare_inputs_retains_a_release_in_the_former_top_right_loss_cell(tmp_path) -> None:
-    raster = _registered_raster()
-    # This cell was outside the old [0, 2] x [0, 2] solver configuration.
+    raster = _registered_raster(20, 20)
+    # This cell was outside the old truncated solver configuration.
     upper_right = np.array([
-        [3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0], [3.0, 3.0],
+        [19.0, 19.0], [20.0, 19.0], [20.0, 20.0], [19.0, 20.0], [19.0, 19.0],
     ])
     release = {
         "d0": 1.0,
@@ -294,22 +294,22 @@ def test_prepare_inputs_retains_a_release_in_the_former_top_right_loss_cell(tmp_
 
     generated = yaml.safe_load(prepared.configuration_path.read_text(encoding="utf-8"))
     assert generated["dem_extent"]["xmin"] == 0.0
-    assert generated["dem_extent"]["xmax"] == 4.0
+    assert generated["dem_extent"]["xmax"] == 20.0
     assert generated["dem_extent"]["ymin"] == 0.0
-    assert generated["dem_extent"]["ymax"] == 4.0
+    assert generated["dem_extent"]["ymax"] == 20.0
 
     terrain = read_avac_topography(prepared.topo_path, raster.crs_authid)
-    assert terrain.z.shape == (6, 6)
-    assert terrain.x[0] < 0.0 < 4.0 < terrain.x[-1]
-    assert terrain.y[0] < 0.0 < 4.0 < terrain.y[-1]
+    assert terrain.z.shape == (22, 22)
+    assert terrain.x[0] < 0.0 < 20.0 < terrain.x[-1]
+    assert terrain.y[0] < 0.0 < 20.0 < terrain.y[-1]
 
     with prepared.init_path.open("rb") as handle:
         header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
-        payload = np.fromfile(handle, dtype="<f8").reshape((4, 4))
+        payload = np.fromfile(handle, dtype="<f8").reshape((20, 20))
     _magic, ncols, nrows, _components, _flags, xlow, yhigh, dx, dy = header
-    assert (ncols, nrows) == (4, 4)
-    assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (0.0, 4.0)
-    assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (0.0, 4.0)
+    assert (ncols, nrows) == (20, 20)
+    assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (0.0, 20.0)
+    assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (0.0, 20.0)
     # qinit is north-to-south, so the source grid's north-east cell is [0, -1].
     assert payload[0, -1] == pytest.approx(1.0)
     assert np.count_nonzero(payload) == 1
@@ -357,8 +357,8 @@ def test_fine_overlay_closes_geoclaw_node_support_at_the_qgis_footprint(tmp_path
 
 
 def test_prepare_inputs_keeps_fine_raster_bounds_with_closed_terrain_support(tmp_path) -> None:
-    main = _registered_raster()
-    fine = _registered_raster(8, 8, 0.5)
+    main = _registered_raster(20, 20)
+    fine = _registered_raster(40, 40, 0.5)
     release = {
         "d0": 1.0,
         "z_ref": 0.0,
@@ -373,19 +373,19 @@ def test_prepare_inputs_keeps_fine_raster_bounds_with_closed_terrain_support(tmp
 
     generated = yaml.safe_load(prepared.configuration_path.read_text(encoding="utf-8"))
     fine_dict = generated["refinement"]["fine_dict"]
-    assert fine_dict["xmin"] == 0.0 and fine_dict["xmax"] == 4.0
-    assert fine_dict["ymin"] == 0.0 and fine_dict["ymax"] == 4.0
-    assert (fine_dict["nbx"], fine_dict["nby"], fine_dict["cell_size"]) == (8, 8, 0.5)
+    assert fine_dict["xmin"] == 0.0 and fine_dict["xmax"] == 20.0
+    assert fine_dict["ymin"] == 0.0 and fine_dict["ymax"] == 20.0
+    assert (fine_dict["nbx"], fine_dict["nby"], fine_dict["cell_size"]) == (40, 40, 0.5)
 
     fine_terrain = read_avac_topography(tmp_path / "run" / "Topo" / "fine_topography.asc", main.crs_authid)
     # The half-spaced nodes reach, but never extend beyond, the fine QGIS
     # footprint. This avoids an edge-padded fine terrain replacing the main
-    # DEM in a strip outside [0, 4] by [0, 4].
-    assert fine_terrain.z.shape == (17, 17)
-    assert np.isclose(fine_terrain.x[0], 0.0) and np.isclose(fine_terrain.x[-1], 4.0)
-    assert np.isclose(fine_terrain.y[0], 0.0) and np.isclose(fine_terrain.y[-1], 4.0)
-    assert fine_terrain.metadata["xmin"] == -0.125 and fine_terrain.metadata["xmax"] == 4.125
-    assert fine_terrain.metadata["ymin"] == -0.125 and fine_terrain.metadata["ymax"] == 4.125
+    # DEM in a strip outside [0, 20] by [0, 20].
+    assert fine_terrain.z.shape == (81, 81)
+    assert np.isclose(fine_terrain.x[0], 0.0) and np.isclose(fine_terrain.x[-1], 20.0)
+    assert np.isclose(fine_terrain.y[0], 0.0) and np.isclose(fine_terrain.y[-1], 20.0)
+    assert fine_terrain.metadata["xmin"] == -0.125 and fine_terrain.metadata["xmax"] == 20.125
+    assert fine_terrain.metadata["ymin"] == -0.125 and fine_terrain.metadata["ymax"] == 20.125
 
 
 def test_nondivisible_qgis_extent_is_rejected_instead_of_cropping_or_padding() -> None:

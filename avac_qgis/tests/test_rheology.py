@@ -115,6 +115,87 @@ end program driver
     assert repeated_speed == pytest.approx(speed, abs=1e-12)
 
 
+def test_circular_track_projection_locks_planes_and_exposes_basis_gap(tmp_path: Path):
+    values = _compile_rheology_driver(tmp_path, """
+program driver
+  use rheology_module
+  implicit none
+  real(kind=8), parameter :: grav=9.81d0, mu=0.4d0, radius=400.d0
+  real(kind=8), parameter :: surface_speed=80.d0
+  real(kind=8) :: theta, horizontal_speed, bed_slope, bed_hessian
+  real(kind=8) :: a, b, cp, cs, ts, kv
+  real(kind=8) :: flat_acceleration, plane_acceleration, curve_acceleration
+
+  call cartesian_source_coefficients(1.d0,surface_speed,0.d0, &
+       0.d0,0.d0,0.d0,0.d0,0.d0,mu,0.d0,0.d0,300.d0,grav,1, &
+       a,b,cp,cs,ts,kv)
+  flat_acceleration = -a - b*surface_speed**2
+
+  theta = 34.d0*acos(-1.d0)/180.d0
+  horizontal_speed = surface_speed*cos(theta)
+  bed_slope = -tan(theta)
+  call cartesian_source_coefficients(1.d0,horizontal_speed,0.d0, &
+       bed_slope,0.d0,0.d0,0.d0,0.d0,mu,0.d0,0.d0,300.d0,grav,1, &
+       a,b,cp,cs,ts,kv)
+  plane_acceleration = grav*tan(theta) - a - b*horizontal_speed**2
+
+  ! For a circle, geometric curvature kappa and the graph Hessian satisfy
+  ! kappa = B_xx*cos(theta)^3.  AVAC projects the tangential force onto
+  ! horizontal velocity but deliberately omits changing-basis transport.
+  bed_hessian = (1.d0/radius)/cos(theta)**3
+  call cartesian_source_coefficients(1.d0,horizontal_speed,0.d0, &
+       bed_slope,0.d0,bed_hessian,0.d0,0.d0,mu,0.d0,0.d0, &
+       300.d0,grav,1,a,b,cp,cs,ts,kv)
+  curve_acceleration = grav*tan(theta) - a - b*horizontal_speed**2
+  write(*,'(6(es24.16,1x))') flat_acceleration,plane_acceleration, &
+       curve_acceleration,cp,cs,kv
+end program driver
+""")
+    flat, plane, curved_reduced, cos_phi, cos_psi, graph_curvature = values
+    gravity = 9.81
+    mu = 0.4
+    radius = 400.0
+    surface_speed = 80.0
+    theta = np.deg2rad(34.0)
+    geometric_curvature = 1.0 / radius
+
+    flat_reference = -mu * gravity
+    plane_reference = np.cos(theta) * gravity * (
+        np.sin(theta) - mu * np.cos(theta)
+    )
+    curved_tangential = gravity * np.sin(theta) - mu * (
+        gravity * np.cos(theta) + geometric_curvature * surface_speed**2
+    )
+    curved_reduced_reference = np.cos(theta) * curved_tangential
+    changing_basis_acceleration = (
+        geometric_curvature * surface_speed**2 * np.sin(theta)
+    )
+    curved_terrain_following_reference = (
+        curved_reduced_reference + changing_basis_acceleration
+    )
+
+    # Flat and constant-slope Coulomb dynamics are exact controls: their
+    # coordinate basis does not rotate, so no curved-coordinate term exists.
+    assert flat == pytest.approx(flat_reference, abs=2.0e-14)
+    assert plane == pytest.approx(plane_reference, abs=2.0e-14)
+    assert cos_phi == pytest.approx(np.cos(theta), abs=2.0e-14)
+    assert cos_psi == pytest.approx(np.cos(theta), abs=2.0e-14)
+    assert graph_curvature == pytest.approx(
+        geometric_curvature / np.cos(theta) ** 3, abs=2.0e-14
+    )
+
+    # This assertion documents, rather than repairs, the production model:
+    # its curved result is the projected tangential force.  A material point
+    # following the circle also receives the positive changing-basis term.
+    assert curved_reduced == pytest.approx(
+        curved_reduced_reference, abs=2.0e-13
+    )
+    assert curved_terrain_following_reference - curved_reduced == pytest.approx(
+        changing_basis_acceleration, abs=2.0e-13
+    )
+    assert changing_basis_acceleration > 8.0
+
+
 def test_convex_contact_transition_never_returns_a_pole_velocity(tmp_path: Path):
     values = _compile_rheology_driver(tmp_path, """
 program driver
@@ -153,6 +234,26 @@ end program driver
     assert values[2] / values[3] == pytest.approx(0.75)
 
 
+def test_state_regularization_depth_is_independent_and_physical() -> None:
+    avac = ROOT / "avac-main" / "src" / "AVAC"
+    module = (avac / "rheology_module.f90").read_text(encoding="utf-8")
+    source = (avac / "src2.f90").read_text(encoding="utf-8")
+    setrun = (avac / "setrun.py").read_text(encoding="utf-8")
+    setprob = (avac / "setprob.f90").read_text(encoding="utf-8")
+
+    assert "state_momentum_regularization_depth_rh = 0.05d0" in module
+    assert "state_momentum_regularization_depth_rh)" in source
+    regularization_block = source[source.index("if (patch_nonplanar) then") :]
+    assert "velocity_depth_threshold_rh" not in regularization_block
+    assert "0.02d0*min(dx,dy)" not in regularization_block
+    assert "if (imodel_rh == 1) then" in source
+    assert "ii = max(2, min(mx-1, i))" in source
+    assert "jj = max(2, min(my-1, j))" in source
+    assert "locally_nonplanar_bed(aux(1,ii,jj)" in source
+    assert "state_momentum_regularization_depth" in setrun
+    assert "read(7,*) state_momentum_regularization_depth" in setprob
+
+
 def test_nonplanar_gate_rejects_flat_and_constant_slope_beds(tmp_path: Path):
     values = _compile_rheology_driver(tmp_path, """
 program driver
@@ -171,22 +272,54 @@ end program driver
     assert np.array_equal(values.astype(int), [0, 0, 1])
 
 
-def test_nonplanar_gate_ignores_submillimetric_topography_noise(tmp_path: Path):
+def test_nonplanar_gate_is_datum_safe_and_detects_gentle_curvature(tmp_path: Path):
     values = _compile_rheology_driver(tmp_path, """
 program driver
   use rheology_module
   implicit none
-  logical :: noisy_plane, resolved_curve
-  noisy_plane = locally_nonplanar_bed(2000.d0,1999.d0,2001.0005d0, &
-                                      1998.d0,2002.d0,1997.d0, &
-                                      1999.0005d0,2001.d0,2003.0005d0)
-  resolved_curve = locally_nonplanar_bed(2000.d0,1999.d0,2001.01d0, &
-                                         1998.d0,2002.d0,1997.d0, &
-                                         1999.01d0,2001.d0,2003.01d0)
-  write(*,'(2(i2,1x))') merge(1,0,noisy_plane),merge(1,0,resolved_curve)
+  logical :: plane0, plane2k, plane1e8
+  logical :: curve0, curve2k, curve1e8
+  logical :: quadratic5, quadratic2p5, quadratic1p25
+
+  plane0 = locally_nonplanar_bed(0.d0,-2.d0,2.d0,-3.d0,3.d0, &
+                                 -5.d0,-1.d0,1.d0,5.d0)
+  plane2k = locally_nonplanar_bed(2000.d0,1998.d0,2002.d0, &
+                                  1997.d0,2003.d0,1995.d0, &
+                                  1999.d0,2001.d0,2005.d0)
+  plane1e8 = locally_nonplanar_bed(1.d8,1.d8-2.d0,1.d8+2.d0, &
+                                   1.d8-3.d0,1.d8+3.d0,1.d8-5.d0, &
+                                   1.d8-1.d0,1.d8+1.d0,1.d8+5.d0)
+
+  curve0 = locally_nonplanar_bed(0.d0,-2.d0,2.0001d0,-3.d0,3.d0, &
+                                 -5.d0,-0.9999d0,1.d0,5.0001d0)
+  curve2k = locally_nonplanar_bed(2000.d0,1998.d0,2002.0001d0, &
+                                  1997.d0,2003.d0,1995.d0, &
+                                  1999.0001d0,2001.d0,2005.0001d0)
+  curve1e8 = locally_nonplanar_bed(1.d8,1.d8-2.d0,1.d8+2.0001d0, &
+                                   1.d8-3.d0,1.d8+3.d0,1.d8-5.d0, &
+                                   1.d8-0.9999d0,1.d8+1.d0, &
+                                   1.d8+5.0001d0)
+
+  ! The same quadratic curvature sampled at successively finer spacings
+  ! remains non-affine; the residual naturally scales with dx**2.
+  quadratic5 = locally_nonplanar_bed(0.d0,0.00125d0,0.00125d0, &
+                                     0.d0,0.d0,0.00125d0, &
+                                     0.00125d0,0.00125d0,0.00125d0)
+  quadratic2p5 = locally_nonplanar_bed(0.d0,0.0003125d0, &
+                                       0.0003125d0,0.d0,0.d0, &
+                                       0.0003125d0,0.0003125d0, &
+                                       0.0003125d0,0.0003125d0)
+  quadratic1p25 = locally_nonplanar_bed(0.d0,0.000078125d0, &
+                                        0.000078125d0,0.d0,0.d0, &
+                                        0.000078125d0,0.000078125d0, &
+                                        0.000078125d0,0.000078125d0)
+  write(*,'(9(i2,1x))') merge(1,0,plane0),merge(1,0,plane2k), &
+       merge(1,0,plane1e8),merge(1,0,curve0),merge(1,0,curve2k), &
+       merge(1,0,curve1e8),merge(1,0,quadratic5), &
+       merge(1,0,quadratic2p5),merge(1,0,quadratic1p25)
 end program driver
 """)
-    assert np.array_equal(values.astype(int), [0, 1])
+    assert np.array_equal(values.astype(int), [0, 0, 0, 1, 1, 1, 1, 1, 1])
 
 
 def test_static_yield_ratio_uses_the_full_free_surface_gradient(tmp_path: Path):

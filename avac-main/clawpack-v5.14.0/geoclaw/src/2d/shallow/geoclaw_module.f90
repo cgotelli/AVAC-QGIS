@@ -63,8 +63,8 @@ module geoclaw_module
     ! AVAC can opt into an outgoing-flux limiter that prevents wet/dry
     ! undershoots before the cell update.  This remains disabled by default
     ! so ordinary GeoClaw and WAVE applications retain their established
-    ! numerical path.  AVAC enables it only for supported single-level,
-    ! granular-flow runs in setprob.
+    ! numerical path.  AVAC enables it for granular-flow runs, including
+    ! multilevel AMR, in setprob.
     logical :: use_fwave_positivity_limiter = .false.
 
 contains

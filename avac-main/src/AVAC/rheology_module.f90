@@ -52,11 +52,16 @@ module rheology_module
     ! layout-dependent rheology values at run time.
     real(kind=8), save :: rho_rh = 0.d0
     real(kind=8), save :: u_cr_rh = 0.d0
-    ! Minimum depth used when reporting velocity.  The same physical scale
-    ! bounds AVAC's shallow-state velocity regularization on locally
-    ! non-planar terrain; the mesh-dependent bound in src2 makes that update
-    ! vanish under refinement and leaves resolved flow unchanged.
+    ! Minimum depth used when reporting velocity and as the AMR kinetic-energy
+    ! reference depth.  It is intentionally independent of the separate
+    ! state-level shallow-momentum regularization below.
     real(kind=8), save :: velocity_depth_threshold_rh = 0.05d0
+    ! Physical depth scale for the Kurganov--Petrova Coulomb-state
+    ! regularization on locally non-planar terrain.  A fixed value makes mesh
+    ! comparisons explicit; the projection is applied once per source step,
+    ! so temporal sensitivity must still be checked.  Zero disables it above
+    ! dry_tol.  Voellmy variants retain their established source update.
+    real(kind=8), save :: state_momentum_regularization_depth_rh = 0.05d0
     integer,      save :: imodel_rh = 0
 
     ! Altitude-zoned rheological parameters (populated by setprob.f90)
@@ -114,19 +119,32 @@ contains
         implicit none
         real(kind=8), intent(in) :: bc, bw, be, bs, bn
         real(kind=8), intent(in) :: bsw, bse, bnw, bne
-        real(kind=8) :: bed_scale, nonplanarity, tolerance
+        real(kind=8) :: bed_scale, local_relief, nonplanarity, tolerance
+        real(kind=8) :: dw, de, ds, dn, dsw, dse, dnw, dne
 
+        ! Centre every difference on the local cell so adding a constant
+        ! vertical datum does not alter the geometric residual.  The second
+        ! tolerance term accounts only for the precision lost while forming
+        ! those differences when the stored elevations themselves are large.
+        dw = bw - bc
+        de = be - bc
+        ds = bs - bc
+        dn = bn - bc
+        dsw = bsw - bc
+        dse = bse - bc
+        dnw = bnw - bc
+        dne = bne - bc
+        local_relief = max(dabs(dw), dabs(de), dabs(ds), dabs(dn), &
+                           dabs(dsw), dabs(dse), dabs(dnw), dabs(dne))
         bed_scale = max(1.d0, dabs(bc), dabs(bw), dabs(be), dabs(bs), &
                         dabs(bn), dabs(bsw), dabs(bse), dabs(bnw), dabs(bne))
-        nonplanarity = max(dabs(be - 2.d0*bc + bw), &
-                           dabs(bn - 2.d0*bc + bs), &
-                           dabs(bne - bnw - bse + bsw))
-        ! GeoClaw stores cell-average topography, whose quadrature and AMR
-        ! transfer can leave sub-millimetric second differences even for an
-        ! analytical plane.  A one-part-per-million elevation tolerance
-        ! rejects that representation noise while remaining far below the
-        ! resolved curvature of the 5 m ISeeSnow terrain.
-        tolerance = 1.d-6 * bed_scale
+        nonplanarity = max(dabs(de + dw), dabs(dn + ds), &
+                           dabs((dne - dnw) - (dse - dsw)))
+        ! This is an affine/non-affine classifier, not a physical curvature
+        ! cutoff.  Ignore only local arithmetic noise; any resolved departure
+        ! from a plane remains eligible at each AMR level.
+        tolerance = max(1.d-12 * max(1.d0, local_relief), &
+                        64.d0 * epsilon(1.d0) * bed_scale)
         locally_nonplanar_bed = nonplanarity > tolerance
 
     end function locally_nonplanar_bed

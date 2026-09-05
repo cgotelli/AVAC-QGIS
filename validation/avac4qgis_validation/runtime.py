@@ -229,6 +229,7 @@ def prepare_source_execution(
     work_directory: str | Path,
     *,
     setrun_override: str | Path | None = None,
+    source_override: str | Path | None = None,
 ) -> Path:
     """Generate Clawpack data files from the current repository sources.
 
@@ -237,10 +238,18 @@ def prepare_source_execution(
     This is the source-tree counterpart of the plugin's bundled-runtime setup:
     it activates the repository's vendored Clawpack, runs the current ``setrun``
     backend, and stages the generated ``*.data`` files in ``_output``.
+    An explicit ``source_override`` pairs data-file generation with an
+    already-frozen diagnostic executable and bypasses the build/current-source
+    check.
     """
     if kind not in SOURCE_ROOTS:
         raise ValueError(f"Unknown runtime kind: {kind}")
-    source = runtime(kind)
+    source = (
+        Path(source_override).expanduser().resolve()
+        if source_override is not None else runtime(kind)
+    )
+    if not source.is_dir():
+        raise RuntimeError(f"{kind.upper()} source directory is missing: {source}")
     work = Path(work_directory).expanduser().resolve()
     backend = (
         Path(setrun_override).expanduser().resolve()
@@ -367,9 +376,8 @@ def write_topography(
 
     ``bed`` is evaluated at grid-cell centers.  ``ghost_cells`` halo cells
     are added on every side so boundary auxiliary cells remain inside a
-    registered topography grid.  Callers select five cells for the
-    single-level granular AVAC stencil and two for the legacy GeoClaw/WAVE
-    stencil.
+    registered topography grid.  Callers select five cells for the granular
+    AVAC stencil, including AMR, and two for the legacy GeoClaw/WAVE stencil.
     """
     nx = round((xupper - xlower) / dx)
     ny = round((yupper - ylower) / dx)
@@ -576,6 +584,25 @@ def configure_front_amr(
     }
 
 
+def configure_analytical_coulomb_amr_compatibility(
+    work: Path,
+) -> dict[str, object]:
+    """Preserve the published two-ghost quasi-1D Coulomb verification path.
+
+    The production granular solver uses a five-cell positivity stencil.  The
+    historical analytical notebooks intentionally use a five-cell-wide strip,
+    which AMRClaw cannot start with five ghost cells.  Keeping their established
+    two-ghost update makes them invariant regression locks; real two-dimensional
+    granular AMR remains on the conservative five-ghost path.
+    """
+    _replace_data_value(work / "claw.data", "num_ghost", "2")
+    return {
+        "analytical_validation_ghost_cells": 2,
+        "fwave_positivity_relimiter": False,
+        "compatibility_scope": "published quasi-1D analytical Coulomb AMR only",
+    }
+
+
 def moving_front_corridors(
     front,
     rear,
@@ -646,8 +673,21 @@ def _write_internal_inflow(path: Path, entries: list[tuple[float, float, list[tu
                 stream.write(f"{h_rate:.16g} {hu_rate:.16g} {hv_rate:.16g}\n")
 
 
-def _run_setrun(kind: str, case: Path, qinit: bool) -> None:
-    package = runtime(kind)
+def _run_setrun(
+    kind: str,
+    case: Path,
+    qinit: bool,
+    *,
+    source_override: str | Path | None = None,
+) -> None:
+    if kind not in SOURCE_ROOTS:
+        raise ValueError(f"Unknown runtime kind: {kind}")
+    package = (
+        Path(source_override).expanduser().resolve()
+        if source_override is not None else runtime(kind)
+    )
+    if not package.is_dir():
+        raise RuntimeError(f"{kind.upper()} source directory is missing: {package}")
     work = case / ("Wave" if kind == "wave" else "AVAC")
     _minimal_yaml_module(work)
     backend = package / "setrun.py"
@@ -877,6 +917,8 @@ def prepare_avac_coulomb_case(
     boundary_south: str = "wall", boundary_north: str = "wall",
     model: str = "Coulomb", cohesion: float = 0.0,
     rho: float = 1000.0, xi: float = 1.0e12,
+    source_override: str | Path | None = None,
+    analytical_validation_ghost_cells: int | None = None,
 ) -> Path:
     """Prepare a Coulomb-family case with the packaged AVAC runtime.
 
@@ -919,7 +961,9 @@ def prepare_avac_coulomb_case(
                         "mass_threshold_velocity": 0.0, "max_iter": 2000000, "nb_simul": nout,
                         "output_directory": "_output", "refinement": int(refinement), "t_max": t_final,
                         "topo_dir": "", "track_mass": False, "xlower": xlower, "xupper": xupper,
-                        "ylower": ylower, "yupper": yupper, "dx": dx, "dy": dx},
+                        "ylower": ylower, "yupper": yupper, "dx": dx, "dy": dx,
+                        **({"analytical_validation_ghost_cells": analytical_validation_ghost_cells}
+                           if analytical_validation_ghost_cells is not None else {})},
         "dem_extent": {"cell_size": dx, "nbx": round((xupper-xlower)/dx), "nby": round((yupper-ylower)/dx),
                        "nodata_value": -9999, "xmax": xupper, "xmin": xlower, "ymax": yupper, "ymin": ylower},
         "file_names": {"initiation_file": "init.xyz", "topo_source": "synthetic_validation",
@@ -935,7 +979,7 @@ def prepare_avac_coulomb_case(
                      "u_cr": 0.0, "xi": xi, "z_breaks": []},
     }
     (case / "AVAC" / "AVAC_configuration.yaml").write_text(json.dumps(config, indent=2) + "\n")
-    _run_setrun("avac", case, qinit=False)
+    _run_setrun("avac", case, qinit=False, source_override=source_override)
     work = case / "AVAC"
     # Keep AVAC's custom friction source but eliminate the unrelated GeoClaw
     # Manning contribution, yielding the pure Coulomb model of Kerswell.
@@ -1243,16 +1287,32 @@ def _parse_external_time(stderr: str, flavor: str) -> dict[str, float | None]:
     return metrics
 
 
-def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, object]:
-    """Run the exact checked solver binary and save its complete log.
+def run_solver(
+    kind: str,
+    working_directory: Path,
+    cores: int = 1,
+    *,
+    executable_override: str | Path | None = None,
+) -> dict[str, object]:
+    """Run the selected solver binary and save its complete log.
 
     ``cores`` controls only OpenMP parallelism; it does not change the grid,
     equations, time integrator, or output schedule.  A single core remains the
-    default so earlier validation notebooks retain deterministic behavior.
+    default so earlier validation notebooks retain deterministic behavior.  An
+    explicit executable is used exactly as supplied and bypasses the normal
+    build/current-source check; its path and content hash remain recorded.
     """
+    if kind not in SOURCE_ROOTS:
+        raise ValueError(f"Unknown runtime kind: {kind}")
     if cores < 1:
         raise ValueError("cores must be at least 1")
-    executable = solver_executable(kind)
+    executable = (
+        Path(executable_override).expanduser().resolve()
+        if executable_override is not None else solver_executable(kind)
+    )
+    if not executable.is_file():
+        raise FileNotFoundError(f"{kind.upper()} solver executable is missing: {executable}")
+    executable_sha256 = _sha256(executable)
     environment = os.environ.copy()
     environment["OMP_NUM_THREADS"] = str(int(cores))
     command, timing_flavor = _external_time_command(executable)
@@ -1267,6 +1327,7 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
         stderr=subprocess.PIPE,
     )
     wall_s = time.perf_counter() - started
+    executable_sha256_after = _sha256(executable)
     (working_directory / "solver.log").write_text(result.stdout)
     (working_directory / "solver_time.log").write_text(result.stderr)
     resource_metrics = _parse_external_time(result.stderr, timing_flavor)
@@ -1274,7 +1335,8 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
         "format": 1,
         "solver_kind": kind,
         "executable": str(executable),
-        "executable_sha256": _sha256(executable),
+        "executable_sha256": executable_sha256,
+        "executable_sha256_after": executable_sha256_after,
         "command": command,
         "timing_flavor": timing_flavor,
         "started_local": started_local,
@@ -1298,8 +1360,14 @@ def run_solver(kind: str, working_directory: Path, cores: int = 1) -> dict[str, 
         or "ERROR: hydraulic boundary" in combined_output
         or "ERROR: total-discharge boundary" in combined_output
     )
-    if result.returncode != 0 or solver_error:
+    executable_changed = executable_sha256_after != executable_sha256
+    if result.returncode != 0 or solver_error or executable_changed:
         tail = "\n".join(combined_output.splitlines()[-30:])
+        if executable_changed:
+            tail = (
+                "solver executable changed during execution: "
+                f"{executable_sha256} -> {executable_sha256_after}\n" + tail
+            )
         raise RuntimeError(
             f"{kind} solver failed with exit code {result.returncode}:\n{tail}"
         )

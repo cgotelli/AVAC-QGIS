@@ -19,9 +19,17 @@ PARAMETER_PATHS = (
     "rheology.model", "rheology.mu", "rheology.xi", "rheology.C", "rheology.rho", "rheology.u_cr", "rheology.beta",
     "computation.t_max", "computation.nb_simul", "computation.cfl_target", "computation.cfl_max",
     "computation.refinement", "computation.cell_size", "computation.boundary", "computation.limiter",
+    "computation.state_momentum_regularization_depth",
     "output.output_format", "output.delta_t", "output.verbosity",
     "animation.variable", "animation.n_out",
 )
+
+# Added after the complete-configuration schema was already public.  Loading
+# an older saved case must not fail merely because these explicit numerical
+# controls were previously implicit solver defaults.
+OPTIONAL_CONTROL_DEFAULTS: dict[str, Any] = {
+    "computation.state_momentum_regularization_depth": 0.05,
+}
 
 
 # These defaults are the established AVAC initial-condition defaults.  Keep
@@ -110,7 +118,15 @@ def value_at(payload: dict[str, Any], path: str) -> Any:
 
 
 def controlled_values(payload: dict[str, Any]) -> dict[str, Any]:
-    values = {path: value_at(payload, path) for path in PARAMETER_PATHS}
+    values: dict[str, Any] = {}
+    for path in PARAMETER_PATHS:
+        group, key = path.split(".", 1)
+        if key in payload[group]:
+            values[path] = payload[group][key]
+        elif path in OPTIONAL_CONTROL_DEFAULTS:
+            values[path] = OPTIONAL_CONTROL_DEFAULTS[path]
+        else:
+            values[path] = value_at(payload, path)
     # ``z_breaks`` is intentionally optional for backwards-compatible
     # one-zone configurations.  Normalise it here so all callers can use one
     # configuration contract.
@@ -136,6 +152,20 @@ def apply_controlled_values(template: dict[str, Any], values: dict[str, Any]) ->
     return result
 
 
+def restore_controlled_values(
+    template: dict[str, Any], saved_values: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Merge a saved plugin Case over deterministic current defaults.
+
+    Version-1 Case files can legitimately omit controls introduced later.
+    Starting from the referenced complete template prevents those omissions
+    from inheriting unrelated values left in a live GUI session.
+    """
+    values = controlled_values(template)
+    values.update(saved_values)
+    return values
+
+
 def validate_controlled_values(values: dict[str, Any]) -> list[str]:
     """Only enforce constraints established by the standalone controls/code."""
     issues: list[str] = []
@@ -159,6 +189,11 @@ def validate_controlled_values(values: dict[str, Any]) -> list[str]:
             issues.append("Simulation end time must be positive.")
         if float(values["computation.cell_size"]) <= 0:
             issues.append("Computational cell size must be positive.")
+        state_depth = float(values["computation.state_momentum_regularization_depth"])
+        if not np.isfinite(state_depth) or state_depth < 0:
+            issues.append(
+                "State momentum regularization depth must be a non-negative finite number."
+            )
         if int(values["computation.nb_simul"]) < 1 or int(values["animation.n_out"]) < 1:
             issues.append("Solver and temporal output counts must each be at least one.")
         if float(values["computation.cfl_target"]) > float(values["computation.cfl_max"]):
@@ -192,11 +227,15 @@ def validate_grid_contract(configuration: dict[str, Any], source_cell_size: floa
     ``dem_extent`` and ``computation.cell_size`` define the Clawpack domain;
     the selected source DEM is only the terrain sampling grid.  AVAC's
     real-world setup supports equal or finer terrain sampling, with an integer
-    ratio, but not silently coarser terrain or fractional regridding.
+    ratio, but not silently coarser terrain or fractional regridding. The
+    minimum domain dimensions also reflect the two-cell Water and five-cell
+    granular ghost stencils.
     """
     issues: list[str] = []
     try:
         dem, computation = configuration["dem_extent"], configuration["computation"]
+        model = str(configuration.get("rheology", {}).get("model", "")).strip()
+        minimum_cells = 4 if model == "Water" else 10
         cell_size = float(computation["cell_size"])
         if cell_size <= 0:
             return ["Computational cell size must be positive."]
@@ -208,9 +247,10 @@ def validate_grid_contract(configuration: dict[str, Any], source_cell_size: floa
                     f"Computational {axis}-domain span must be a whole number of {cell_size:g} m cells. "
                     "Choose a compatible computational cell size or domain template."
                 )
-            elif int(round(cells)) < 2:
+            elif int(round(cells)) < minimum_cells:
                 issues.append(
-                    f"Computational {axis}-domain needs at least two cells for GeoClaw FGmax and QGIS raster results."
+                    f"Computational {axis}-domain needs at least {minimum_cells} cells "
+                    f"for the {model or 'granular'} solver stencil and QGIS raster results."
                 )
         if source_cell_size is not None:
             source = float(source_cell_size)

@@ -361,8 +361,11 @@ def main(
     report = [
         "# AVAC4QGIS ISeeSnow peer comparison", "",
         "This is a direct comparison with the official ISeeSnow 1.0 model outputs. "
-        "No reference output was used to configure AVAC, and no raster was shifted, clipped, "
-        "padded, or resampled. All metrics use the complete supplied 5 m grid.", "",
+        "The prescribed physical parameters were not calibrated. For CoulombOnly, Minmod was "
+        "selected in a disclosed, in-sample numerical-scheme sweep using PFT agreement with all "
+        "exactly aligned peers; PFV was retained as a secondary audit. The two Voellmy cases "
+        "retain their prior van Leer default and were not part of that sweep. No raster was shifted, "
+        "clipped, padded, or resampled. All metrics use the complete supplied 5 m grid.", "",
         "`pft` is peak flow thickness normal to terrain. `pfv` is peak flow velocity. "
         "The field integral is a grid-cell sum (not an independently reconstructed volume).", "",
         "## Velocity formulation audited in this rerun", "",
@@ -412,15 +415,32 @@ def main(
                 summary = json.loads(summary_path.read_text(encoding="utf-8"))
                 initial_volume = float(summary["initial_volume_m3"])
                 final_volume = float(summary["final_volume_m3"])
+                sustained_schema = "practical_rest_sustained_from_seconds" in summary
                 run_diagnostic_rows.append({
                     "case": case,
                     "initial_volume_m3": initial_volume,
                     "final_volume_m3": final_volume,
                     "relative_volume_change": (final_volume - initial_volume) / initial_volume if initial_volume else math.nan,
-                    "practical_rest_time_s": summary.get("flow_stopped_at_seconds") or "not reached",
+                    "rest_sustained_from_s": (
+                        summary.get("practical_rest_sustained_from_seconds")
+                        if sustained_schema and summary.get("practical_rest_sustained_from_seconds") is not None
+                        else "not reached" if sustained_schema else "not recorded (legacy)"
+                    ),
+                    "rest_confirmed_s": (
+                        summary.get("flow_stopped_at_seconds")
+                        if sustained_schema and summary.get("flow_stopped_at_seconds") is not None
+                        else "not reached" if sustained_schema else "not recorded (legacy)"
+                    ),
+                    "legacy_three_frame_rest_s": (
+                        summary.get("flow_stopped_at_seconds", "not reached")
+                        if not sustained_schema else ""
+                    ),
                     "simulation_ceiling_s": summary.get("simulation_end_ceiling_seconds", ""),
                     "spatial_order": summary.get("spatial_order", ""),
                     "limiter": summary.get("limiter", ""),
+                    "state_regularization_depth_m": summary.get(
+                        "state_momentum_regularization_depth_m", ""
+                    ),
                     "cfl_target": summary.get("cfl_target", ""),
                     "speed_limit_mps": summary.get("speed_limit_mps", ""),
                     "plugin_version": summary.get("plugin_version", ""),
@@ -511,12 +531,15 @@ def main(
     report.append("")
     report.extend([
         "## Native mass and completion diagnostics", "",
-        "Volumes are summed from native level-one GeoClaw state cells, rather than from interpolated map outputs. "
-        "The practical rest time requires moving volume at or below 1% of the initial release for three consecutive 10 s outputs; it is not inferred from a single residual cell's speed.", "",
+        "Volumes are summed from a non-overlapping native GeoClaw AMR hierarchy, rather than from interpolated map outputs. "
+        "The practical rest condition requires moving volume at or below 1% of the initial release for at least three consecutive 10 s outputs and no later violation through the simulation ceiling. "
+        "The table distinguishes the start of that sustained interval from the third-frame confirmation time; neither is inferred from a single residual cell's speed.", "",
     ])
     report.extend(table(run_diagnostic_rows, [
         "case", "initial_volume_m3", "final_volume_m3", "relative_volume_change",
-        "practical_rest_time_s", "simulation_ceiling_s", "spatial_order", "limiter", "cfl_target", "speed_limit_mps",
+        "rest_sustained_from_s", "rest_confirmed_s", "legacy_three_frame_rest_s",
+        "simulation_ceiling_s", "spatial_order", "limiter",
+        "state_regularization_depth_m", "cfl_target", "speed_limit_mps",
         "plugin_version", "solver_sha256",
     ]))
     report.append("")

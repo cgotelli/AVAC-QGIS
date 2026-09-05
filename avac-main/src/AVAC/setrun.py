@@ -139,13 +139,51 @@ def setrun(claw_pkg='geoclaw'):
         clawdata.num_cells[0] = nx
         clawdata.num_cells[1] = ny
 
-    # GeoClaw FGmax ``point_style = 2`` derives its spacing from n-1, and the
-    # QGIS reader needs two centres to reconstruct a raster envelope.  Fail
-    # before writing an invalid fixed-grid setup for hand-authored YAML too.
-    if nx < 2 or ny < 2:
+    # Each base-grid axis must span at least twice the active ghost width.
+    # The quasi-1D analytical regression drivers explicitly request their
+    # historical two-ghost compatibility path; ordinary granular runs cannot
+    # use that escape hatch.  This also leaves enough cells for FGmax
+    # ``point_style = 2`` and makes hand-authored YAML fail here instead of
+    # deep inside AMRClaw.
+    uses_positivity_relimit = str(Rheol["model"]).strip() != "Water"
+    analytical_ghost_cells = Param.get("analytical_validation_ghost_cells")
+    if analytical_ghost_cells is not None:
+        try:
+            analytical_ghost_cells_value = float(analytical_ghost_cells)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "analytical_validation_ghost_cells must be the exact value 2."
+            ) from exc
+        if (not np.isfinite(analytical_ghost_cells_value)
+                or analytical_ghost_cells_value != 2.0
+                or str(Rheol["model"]).strip() != "Coulomb"
+                or topo_source != "synthetic_validation"):
+            raise ValueError(
+                "analytical_validation_ghost_cells=2 is reserved for "
+                "synthetic Coulomb regression cases."
+            )
+        active_ghost_cells = 2
+    else:
+        active_ghost_cells = 5 if uses_positivity_relimit else 2
+    try:
+        state_momentum_regularization_depth = float(
+            Param.get("state_momentum_regularization_depth", 0.05)
+        )
+    except (TypeError, ValueError) as exc:
         raise ValueError(
-            "AVAC fixed-grid results require at least two computational cells "
-            "along both x and y."
+            "state_momentum_regularization_depth must be a non-negative finite number."
+        ) from exc
+    if (not np.isfinite(state_momentum_regularization_depth)
+            or state_momentum_regularization_depth < 0.0):
+        raise ValueError(
+            "state_momentum_regularization_depth must be a non-negative finite number."
+        )
+    minimum_cells = 2 * active_ghost_cells
+    if nx < minimum_cells or ny < minimum_cells:
+        raise ValueError(
+            f"AVAC {Rheol['model']} runs require at least {minimum_cells} "
+            "computational cells along both x and y for the solver ghost "
+            "stencil and fixed-grid results."
         )
     print(f"* computational domain x = [{clawdata.lower[0]:.2f}, {clawdata.upper[0]:.2f}] m, nx = {nx}")
     print(f"* computational domain y = [{clawdata.lower[1]:.2f}, {clawdata.upper[1]:.2f}] m, ny = {ny}")
@@ -278,16 +316,12 @@ def setrun(claw_pkg='geoclaw'):
     # --------------------
     # Boundary conditions:
     # --------------------
-    # Five cells close AVAC's second-order f-wave/static-yield stencil at
-    # same-level patch interfaces.  Water and multilevel AMR retain the
-    # established two-cell GeoClaw path because their relimiter is disabled.
-    # AMRClaw consequently requires both base-grid axes to contain at least
-    # ten cells for a single-level granular run.
-    uses_positivity_relimit = (
-        str(Rheol["model"]).strip() != "Water"
-        and int(Param["refinement"]) == 1
-    )
-    clawdata.num_ghost = 5 if uses_positivity_relimit else 2
+    # Five cells close AVAC's second-order f-wave/static-yield stencil on both
+    # same-level and coarse/fine interfaces.  Water retains GeoClaw's
+    # established two-cell path because its relimiter is disabled.  AMRClaw
+    # therefore requires both base-grid axes to contain at least ten cells
+    # for every granular run.
+    clawdata.num_ghost = active_ghost_cells
 
     # Choice of BCs at xlower and xupper:
     #   0 => user specified (must modify bcN.f to use this option)
@@ -609,6 +643,9 @@ def setrun(claw_pkg='geoclaw'):
     probdata.add_param('velocity_depth_threshold',
                        Param.get("velocity_depth_threshold", 0.05),
                        'minimum depth for a reported velocity (m)')
+    probdata.add_param('state_momentum_regularization_depth',
+                       state_momentum_regularization_depth,
+                       'Coulomb shallow-state momentum regularization depth (m)')
     probdata.add_param('n_zones', n_zones,               'number of altitude rheology zones')
     for k, z in enumerate(z_breaks):
         probdata.add_param(f'z_break_{k}', float(z),

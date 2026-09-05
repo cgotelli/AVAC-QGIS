@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+validation_runtime = importlib.import_module("avac4qgis_validation.runtime")
 
 
 def _setrun_whole_cell_count():
@@ -63,6 +65,24 @@ def test_avac_runtime_disables_the_shared_solver_velocity_cap():
     )
 
     assert "geo_data.speed_limit         = 1.0e99" in setrun
+
+
+def test_analytical_coulomb_amr_compatibility_retains_two_ghosts(
+    tmp_path: Path,
+) -> None:
+    work = tmp_path / "AVAC"
+    work.mkdir()
+    (work / "claw.data").write_text(
+        "5                    =: num_ghost\n", encoding="utf-8"
+    )
+
+    controls = validation_runtime.configure_analytical_coulomb_amr_compatibility(
+        work
+    )
+
+    assert (work / "claw.data").read_text(encoding="utf-8").startswith("2 ")
+    assert controls["analytical_validation_ghost_cells"] == 2
+    assert controls["fwave_positivity_relimiter"] is False
 
 
 def test_setrun_preserves_valid_float_domains_and_rejects_partial_cells():

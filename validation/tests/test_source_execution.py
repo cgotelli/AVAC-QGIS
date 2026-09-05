@@ -81,6 +81,109 @@ def test_run_setrun_suppresses_pyclaw_import_file_logging(
     assert logging.config.fileConfig is fake_file_config
 
 
+def test_run_setrun_override_does_not_build(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    source = tmp_path / "explicit source"
+    source.mkdir()
+    (source / "setrun.py").write_text(
+        "from pathlib import Path\n"
+        "class RunData:\n"
+        "    def write(self):\n"
+        "        Path('explicit.data').write_text('selected source\\n')\n"
+        "def setrun():\n"
+        "    return RunData()\n",
+        encoding="utf-8",
+    )
+    case = tmp_path / "case"
+    (case / "AVAC").mkdir(parents=True)
+
+    def unexpected_build(kind: str) -> Path:
+        raise AssertionError(f"explicit source unexpectedly built {kind}")
+
+    monkeypatch.setattr(RUNTIME, "runtime", unexpected_build)
+    monkeypatch.setattr(RUNTIME, "_activate_packaged_clawpack", lambda root: None)
+
+    RUNTIME._run_setrun(
+        "avac", case, qinit=False, source_override=source,
+    )
+
+    assert (case / "AVAC" / "explicit.data").read_text() == "selected source\n"
+
+
+def test_run_solver_override_does_not_build_and_records_exact_binary(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    solver = tmp_path / "frozen solver" / "xgeoclaw.exe"
+    solver.parent.mkdir()
+    solver.write_bytes(b"frozen executable")
+    work = tmp_path / "case" / "AVAC"
+    work.mkdir(parents=True)
+    observed: dict[str, object] = {}
+
+    def unexpected_build(kind: str) -> Path:
+        raise AssertionError(f"explicit executable unexpectedly built {kind}")
+
+    def fake_run(command, *, cwd, env, text, stdout, stderr):
+        observed.update(command=command, cwd=cwd, threads=env["OMP_NUM_THREADS"])
+        return RUNTIME.subprocess.CompletedProcess(command, 0, "solver output\n", "")
+
+    monkeypatch.setattr(RUNTIME, "solver_executable", unexpected_build)
+    monkeypatch.setattr(
+        RUNTIME, "_external_time_command",
+        lambda executable: ([str(executable)], "wall_clock_only"),
+    )
+    monkeypatch.setattr(RUNTIME.subprocess, "run", fake_run)
+
+    metrics = RUNTIME.run_solver(
+        "avac", work, cores=1, executable_override=solver,
+    )
+
+    assert observed == {
+        "command": [str(solver.resolve())],
+        "cwd": work,
+        "threads": "1",
+    }
+    assert metrics["executable"] == str(solver.resolve())
+    assert metrics["executable_sha256"] == RUNTIME._sha256(solver)
+    assert metrics["executable_sha256_after"] == RUNTIME._sha256(solver)
+    assert (work / "solver.log").read_text() == "solver output\n"
+
+
+def test_run_solver_override_still_rejects_unknown_solver_kind(
+    tmp_path: Path,
+) -> None:
+    solver = tmp_path / "xgeoclaw.exe"
+    solver.write_bytes(b"frozen executable")
+
+    with pytest.raises(ValueError, match="Unknown runtime kind"):
+        RUNTIME.run_solver(
+            "unknown", tmp_path, executable_override=solver,
+        )
+
+
+def test_run_solver_rejects_an_executable_replaced_during_execution(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    solver = tmp_path / "xgeoclaw.exe"
+    solver.write_bytes(b"first build")
+    work = tmp_path / "AVAC"
+    work.mkdir()
+
+    def fake_run(command, *, cwd, env, text, stdout, stderr):
+        solver.write_bytes(b"replacement build")
+        return RUNTIME.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(
+        RUNTIME, "_external_time_command",
+        lambda executable: ([str(executable)], "wall_clock_only"),
+    )
+    monkeypatch.setattr(RUNTIME.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="changed during execution"):
+        RUNTIME.run_solver("avac", work, executable_override=solver)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Unix make invocation")
 def test_unix_source_build_forces_the_executable_target(
     tmp_path: Path, monkeypatch,
@@ -205,6 +308,37 @@ def test_source_execution_does_not_require_a_packaged_runtime(
 
     assert (output / "claw.data").read_text(encoding="utf-8") == "source setup\n"
     assert not (tmp_path / "runtime-manifest.json").exists()
+
+
+def test_source_execution_override_does_not_build(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    source = tmp_path / "explicit-source"
+    source.mkdir()
+    backend = source / "setrun.py"
+    backend.write_text(
+        "from pathlib import Path\n"
+        "Path('claw.data').write_text('explicit source\\n')\n",
+        encoding="utf-8",
+    )
+    work = tmp_path / "Run" / "AVAC"
+    topo = work.parent / "Topo"
+    work.mkdir(parents=True)
+    topo.mkdir()
+    (work / "AVAC_configuration.yaml").write_text("{}\n", encoding="utf-8")
+    (work / "init.xyz").write_text("0 0 1\n", encoding="utf-8")
+    (topo / "topography.asc").write_text("test\n", encoding="utf-8")
+
+    def unexpected_build(kind: str) -> Path:
+        raise AssertionError(f"explicit source unexpectedly built {kind}")
+
+    monkeypatch.setattr(RUNTIME, "runtime", unexpected_build)
+
+    output = RUNTIME.prepare_source_execution(
+        "avac", work, source_override=source,
+    )
+
+    assert (output / "claw.data").read_text(encoding="utf-8") == "explicit source\n"
 
 
 def test_packaged_clawpack_activation_exposes_the_repository_plugin(

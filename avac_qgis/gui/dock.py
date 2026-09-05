@@ -36,7 +36,7 @@ from ..core.runtime_assets import default_template_path, ensure_bundled_runtime,
 from ..core.runtime_execution import prepare_runtime_execution, runtime_solver
 from ..core.wave_execution import prepare_wave_boundary_conditions, prepare_wave_runtime_execution, validate_wave_runtime_dependencies
 from ..core.export import animation_frames, animation_provenance, frame_filename, locate_ffmpeg
-from ..core.configuration import apply_controlled_values, controlled_values, load_complete_configuration, validate_controlled_values, validate_grid_contract
+from ..core.configuration import apply_controlled_values, controlled_values, load_complete_configuration, restore_controlled_values, validate_controlled_values, validate_grid_contract
 from ..core.runner import AvacRunner, output_summary
 from ..core.preprocessing import (
     configuration_for_raster, initial_snow_surface_elevation, read_avac_topography,
@@ -2033,6 +2033,19 @@ class AvacDockWidget(QDockWidget):
             control = QDoubleSpinBox(); control.setRange(minimum, maximum); control.setSingleStep(.05); control.setValue(value); form.addRow(label, self._parameter_control(path, control))
         computational_cell = QDoubleSpinBox(); computational_cell.setDecimals(6); computational_cell.setRange(.01, 10000.0); computational_cell.setValue(1.0); computational_cell.setSuffix(" m")
         form.addRow("Computational cell size", self._parameter_control("computation.cell_size", computational_cell))
+        state_regularization = QDoubleSpinBox()
+        state_regularization.setDecimals(6)
+        state_regularization.setRange(0.0, 10.0)
+        state_regularization.setSingleStep(.01)
+        state_regularization.setValue(.05)
+        state_regularization.setSuffix(" m")
+        form.addRow(
+            "Coulomb state regularization depth",
+            self._parameter_control(
+                "computation.state_momentum_regularization_depth",
+                state_regularization,
+            ),
+        )
         limiter = QComboBox(); limiter.addItems(["none", "minmod", "superbee", "mc", "vanleer"]); limiter.setCurrentText("superbee")
         form.addRow("Limiter", self._parameter_control("computation.limiter", limiter))
         page.setLayout(form); return page
@@ -2570,7 +2583,13 @@ class AvacDockWidget(QDockWidget):
                 raise ValueError("Complete configuration has no AVAC configuration template path.")
             self.workspace_root.setText(str(payload.get("working_directory", "")).strip())
             self.configuration_template.setText(template)
-            self._set_controlled_parameters(parameters)
+            # Version-1 Case files may predate newly explicit controls. Start
+            # from deterministic template/default values, then apply the
+            # parameters actually saved in the Case.
+            restored_parameters = restore_controlled_values(
+                load_complete_configuration(template), parameters
+            )
+            self._set_controlled_parameters(restored_parameters)
             self.dem_layer.setLayer(self._restore_saved_layer(inputs.get("dem"), QgsRasterLayer, "AVAC DEM raster layer"))
             self.release_layer.setLayer(self._restore_saved_layer(inputs.get("release"), QgsVectorLayer, "AVAC release polygon layer"))
             self.prepared_avac_dir = None

@@ -11,6 +11,7 @@ computation:
   cfl_target: 0.5
   dry_limit: 0.0001
   velocity_depth_threshold: 0.05
+  state_momentum_regularization_depth: 0.05
   force_stop: false
   initial_mass: true
   limiter: superbee

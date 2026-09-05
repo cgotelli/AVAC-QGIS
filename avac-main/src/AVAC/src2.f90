@@ -45,7 +45,7 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     double precision, intent(inout) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
 
     ! Locals
-    integer :: i, j, nman
+    integer :: i, j, ii, jj, nman
     real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio, h_eps
     real(kind=8) :: dzdx, dzdy, d2zdx2, d2zdxdy, d2zdy2, theta_local
     real(kind=8) :: tau_driving_rho, tau_static_rho
@@ -166,12 +166,12 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
         ! in a very shallow cell.  On non-planar terrain that unresolved seed
         ! may subsequently be transported into resolved flow and appear as a
         ! spurious peak velocity.  Apply the standard Kurganov--Petrova
-        ! desingularization only in granular modes, below a mesh-dependent
+        ! desingularization only in Coulomb mode, below an explicit physical
         ! shallow-depth scale, and only where the local bed is not affine.
         ! Depth and momentum direction are preserved.  In particular, flat
         ! and constant-slope analytical Coulomb cells receive no
         ! regularization update.
-        if (imodel_rh >= 1) then
+        if (imodel_rh == 1) then
             ! First classify the patch from stencils wholly inside it.  Ghost
             ! topography at a physical or AMR boundary is a boundary closure,
             ! not evidence of terrain curvature; using it for this decision
@@ -194,18 +194,27 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
             end if
 
             if (patch_nonplanar) then
+                ! Use an explicit physical depth rather than coupling this
+                ! state-changing update to output diagnostics or grid size.
+                ! Constant-slope and flat beds never enter this branch.
                 h_eps = max(dry_tolerance, &
-                            min(2.d0*velocity_depth_threshold_rh, &
-                                0.02d0*min(dx,dy)))
+                            state_momentum_regularization_depth_rh)
                 do j = 1, my
                     do i = 1, mx
                         h = q(1,i,j)
+                        ! Extend the nearest wholly interior geometry stencil
+                        ! to a patch-edge state.  This nearest-interior
+                        ! classification is extrapolated across the one-cell
+                        ! rim and never treats physical/AMR ghost closure
+                        ! values as terrain evidence.
+                        ii = max(2, min(mx-1, i))
+                        jj = max(2, min(my-1, j))
                         if (h > dry_tolerance .and. h < h_eps .and. &
-                            locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
-                                                  aux(1,i+1,j), aux(1,i,j-1), &
-                                                  aux(1,i,j+1), aux(1,i-1,j-1), &
-                                                  aux(1,i+1,j-1), aux(1,i-1,j+1), &
-                                                  aux(1,i+1,j+1))) then
+                            locally_nonplanar_bed(aux(1,ii,jj), aux(1,ii-1,jj), &
+                                                  aux(1,ii+1,jj), aux(1,ii,jj-1), &
+                                                  aux(1,ii,jj+1), aux(1,ii-1,jj-1), &
+                                                  aux(1,ii+1,jj-1), aux(1,ii-1,jj+1), &
+                                                  aux(1,ii+1,jj+1))) then
                             call regularized_velocity(h, q(2,i,j), q(3,i,j), &
                                                       h_eps, u, v)
                             q(2,i,j) = h*u

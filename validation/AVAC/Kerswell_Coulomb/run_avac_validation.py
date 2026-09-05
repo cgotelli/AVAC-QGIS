@@ -19,9 +19,12 @@ from scipy.optimize import brentq
 
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[2]
+AVAC_SOURCE = ROOT / "avac-main" / "src" / "AVAC"
 
 from avac4qgis_validation.runtime import (
     GRAVITY,
+    configure_analytical_coulomb_amr_compatibility,
     configure_front_amr,
     fgout_centerline,
     fgout_times,
@@ -46,6 +49,8 @@ X0 = H0 / MU
 T0 = np.sqrt(H0 / GRAVITY) / MU
 U0 = np.sqrt(GRAVITY * H0)
 TRANSVERSE_CELLS = 5
+DEFAULT_T_FINAL_S = 10.0
+DEFAULT_OUTPUT_COUNT = 200
 
 
 def sha256(path: Path) -> str:
@@ -90,8 +95,36 @@ def read_centerline(work: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
     return np.asarray(times), x, np.asarray(depth_rows), np.asarray(velocity_rows)
 
 
-def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+def require_complete_output_schedule(
+    times: np.ndarray, requested_final_time_s: float, output_count: int,
+) -> None:
+    """Reject partial or off-cadence fgout before computing verification metrics."""
+    expected = np.linspace(0.0, requested_final_time_s, output_count)
+    # GeoClaw serializes FGout times with eight digits after the decimal in
+    # scientific notation.  Accept only that round-trip loss; larger cadence
+    # changes are still rejected.
+    tolerance = 1.0e-8 * max(1.0, requested_final_time_s)
+    if len(times) != len(expected) or not np.allclose(
+        times, expected, rtol=0.0, atol=tolerance,
+    ):
+        last = float(times[-1]) if len(times) else float("nan")
+        raise RuntimeError(
+            "Kerswell output is incomplete or off cadence: "
+            f"expected {len(expected)} frames through {requested_final_time_s:g} s, "
+            f"found {len(times)} through {last:g} s."
+        )
+
+
+def extract(
+    work: Path,
+    controls: dict[str, object],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
     times, x, depth, velocity = read_centerline(work)
+    require_complete_output_schedule(
+        times,
+        float(controls.get("requested_t_final_s", DEFAULT_T_FINAL_S)),
+        int(controls.get("outputs", DEFAULT_OUTPUT_COUNT)),
+    )
     dx = float(np.median(np.diff(x)))
     front = np.full(times.shape, np.nan)
     rear = np.full(times.shape, np.nan)
@@ -109,11 +142,11 @@ def extract(work: Path, controls: dict[str, object]) -> tuple[np.ndarray, np.nda
     moving_front = times <= 2.0 * T0
     moving_rear = times <= 1.529654 * T0
     summary = {
-        "solver": str(solver_executable("avac")),
-        "solver_sha256": sha256(solver_executable("avac")),
-        "diagnostic_dx_m": dx,
-        "width_base_cells": TRANSVERSE_CELLS,
         **controls,
+        "diagnostic_dx_m": dx,
+        "width_base_cells": int(
+            controls.get("width_base_cells", TRANSVERSE_CELLS)
+        ),
         "maximum_amr_level_seen": maximum_written_amr_level(work),
         "final_amr_level": maximum_written_amr_level(work, final_only=True),
         "t_final_s": float(times[-1]),
@@ -277,27 +310,45 @@ def plot(times: np.ndarray, x: np.ndarray, depth: np.ndarray, velocity: np.ndarr
 
 
 def main() -> None:
+    global TRANSVERSE_CELLS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dx", type=float, default=0.01, help="base-grid spacing in m")
-    parser.add_argument("--t-final", type=float, default=10.0)
-    parser.add_argument("--nout", type=int, default=200)
+    parser.add_argument("--t-final", type=float, default=DEFAULT_T_FINAL_S)
+    parser.add_argument("--nout", type=int, default=DEFAULT_OUTPUT_COUNT)
     parser.add_argument("--cores", type=int, default=8)
+    parser.add_argument(
+        "--ny", type=int, default=TRANSVERSE_CELLS,
+        help="number of uniform transverse cells in the quasi-1D strip",
+    )
     parser.add_argument("--case-name", default="publication_amr")
     parser.add_argument("--amr-levels", type=int, default=3)
     parser.add_argument("--amr-ratio", type=int, default=2)
     parser.add_argument("--speed-tolerance", type=float, default=0.02)
     parser.add_argument("--max1d", type=int, default=1000)
     parser.add_argument(
+        "--solver", type=Path,
+        help="exact AVAC executable to run; requires --solver-source",
+    )
+    parser.add_argument(
+        "--solver-source", type=Path,
+        help="source directory containing the setrun.py paired with --solver",
+    )
+    parser.add_argument(
         "--postprocess-only",
         action="store_true",
         help="recompute diagnostics and figures from the completed fixed-grid output",
     )
     args = parser.parse_args()
+    if (args.solver is None) != (args.solver_source is None):
+        raise SystemExit("--solver and --solver-source must be supplied together")
     if (args.dx <= 0 or args.t_final <= 0 or args.nout < 3 or args.cores < 1
+            or args.ny < 1
             or args.amr_levels < 2 or args.amr_ratio < 2 or args.speed_tolerance <= 0):
-        raise ValueError("dx, t-final, cores, speed-tolerance, and nout>=3 must be positive; AMR needs levels>=2 and ratio>=2")
+        raise ValueError("dx, t-final, cores, ny, speed-tolerance, and nout>=3 must be positive; AMR needs levels>=2 and ratio>=2")
     if not np.isclose((XUPPER - XLOWER) / args.dx, round((XUPPER - XLOWER) / args.dx)):
         raise ValueError("dx must divide the 40 m domain exactly")
+
+    TRANSVERSE_CELLS = int(args.ny)
 
     case_root = HERE / args.case_name
     figures = case_root / "figures"
@@ -309,14 +360,40 @@ def main() -> None:
                 f"Completed case not found for post-processing: {case_root}"
             )
         controls = json.loads(controls_path.read_text(encoding="utf-8"))
+        TRANSVERSE_CELLS = int(
+            controls.get("width_base_cells", TRANSVERSE_CELLS)
+        )
+        # Legacy controls predate these explicit schedule fields.  In that
+        # case, the post-processing CLI values remain the disclosed contract.
+        controls.setdefault("requested_t_final_s", float(args.t_final))
+        controls.setdefault("outputs", int(args.nout))
+        controls.setdefault("width_base_cells", TRANSVERSE_CELLS)
     else:
+        solver = (
+            args.solver.expanduser().resolve()
+            if args.solver is not None else solver_executable("avac")
+        )
+        solver_source = (
+            args.solver_source.expanduser().resolve()
+            if args.solver_source is not None else AVAC_SOURCE.resolve()
+        )
+        if not solver.is_file():
+            raise FileNotFoundError(f"AVAC solver executable is missing: {solver}")
+        setrun_backend = solver_source / "setrun.py"
+        if not setrun_backend.is_file():
+            raise FileNotFoundError(f"AVAC setrun backend is missing: {setrun_backend}")
+        setrun_backend_sha256 = sha256(setrun_backend)
+        solver_sha256 = sha256(solver)
         work = prepare_avac_coulomb_case(
             case_root, xlower=XLOWER, xupper=XUPPER, ylower=0.0,
             yupper=TRANSVERSE_CELLS * args.dx,
             dx=args.dx, t_final=args.t_final, nout=args.nout, mu=MU,
             depth=lambda X, Y: np.where((X >= XLOWER) & (X <= 0.0), H0, 0.0),
             refinement=args.amr_levels,
+            source_override=solver_source,
+            analytical_validation_ghost_cells=2,
         )
+        compatibility = configure_analytical_coulomb_amr_compatibility(work)
         corridor_interval = 0.05
         corridor_margin = 0.15
         corridors = moving_front_corridors(
@@ -332,9 +409,29 @@ def main() -> None:
             levels=args.amr_levels, ratio=args.amr_ratio,
             speed_tolerance=args.speed_tolerance, output_ny=1, max1d=args.max1d,
             forced_regions=corridors,
-        ) | {"corridor_interval_s": corridor_interval, "corridor_margin_m": corridor_margin}
+        ) | compatibility | {
+            "corridor_interval_s": corridor_interval,
+            "corridor_margin_m": corridor_margin,
+            "solver": str(solver),
+            "solver_sha256": solver_sha256,
+            "source_setrun": str(setrun_backend),
+            "source_setrun_sha256": setrun_backend_sha256,
+            "requested_t_final_s": float(args.t_final),
+            "outputs": int(args.nout),
+            "width_base_cells": TRANSVERSE_CELLS,
+        }
         (case_root / "controls.json").write_text(json.dumps(controls, indent=2) + "\n")
-        run_solver("avac", work, cores=args.cores)
+        if sha256(setrun_backend) != setrun_backend_sha256:
+            raise RuntimeError("AVAC setrun backend changed during setup")
+        if sha256(solver) != controls["solver_sha256"]:
+            raise RuntimeError("AVAC solver executable changed between setup and launch")
+        run_solver(
+            "avac", work, cores=args.cores, executable_override=solver,
+        )
+        if sha256(solver) != controls["solver_sha256"]:
+            raise RuntimeError("AVAC solver executable changed during validation")
+        if sha256(setrun_backend) != controls["source_setrun_sha256"]:
+            raise RuntimeError("AVAC setrun backend changed during validation")
 
     times, x, depth, velocity, summary = extract(work, controls)
     front = np.asarray(summary.pop("_front"))

@@ -71,16 +71,22 @@ CASE_SPECIFICATIONS: dict[str, dict[str, Any]] = {
         "dem": "DEM_IdealizedTopo.asc", "release": "release1HS.shp",
         "release_name": "release1HS", "simulation_id": "01IdealizedTopo",
         "model": "Voellmy", "mu": 0.4, "xi": 2000.0,
+        "default_limiter": "vanleer",
+        "default_cfl_target": 0.5,
     },
     "RealTopo": {
         "dem": "DEM_RealTopo.asc", "release": "relWog.shp",
         "release_name": "relWog", "simulation_id": "02RealTopo",
         "model": "Voellmy", "mu": 0.2, "xi": 2000.0,
+        "default_limiter": "vanleer",
+        "default_cfl_target": 0.5,
     },
     "CoulombOnly": {
         "dem": "DEM_CoulombOnly.asc", "release": "release1HS.shp",
         "release_name": "release1HS", "simulation_id": "03CoulombOnly",
         "model": "Coulomb", "mu": 0.4, "xi": 1.0e12,
+        "default_limiter": "minmod",
+        "default_cfl_target": 0.25,
     },
 }
 MODEL_TYPE = "AVAC4QGIS"
@@ -96,17 +102,55 @@ SIMULATION_END_S = 1200.0
 OUTPUT_INTERVAL_S = 10.0
 VELOCITY_FLOW_THRESHOLD_MPS = 0.01
 VELOCITY_DEPTH_THRESHOLD_M = 0.05
+NATIVE_DRY_TOLERANCE_M = 1.0e-4
+STATE_MOMENTUM_REGULARIZATION_DEPTH_M = 0.05
 REST_CONSECUTIVE_OUTPUTS = 3
 # A strict pointwise velocity criterion is not useful at a dry front: a tiny
 # residual cell can retain an unrepresentative speed long after the avalanche
 # deposit is effectively at rest.  "Stopped" therefore means less than 1% of
 # the initial release volume is moving faster than the stated threshold for
-# three consecutive output times.  Both values remain in the mass history.
+# at least three output times and remains below it through the run ceiling.
+# Both values remain in the mass history.
 REST_MOVING_VOLUME_FRACTION = 0.01
+# The first band audits motion inside the shallow state-regularization range
+# with the raw terrain-tangent momentum/depth speed.  Practical rest and PFV
+# deliberately use the reported-velocity depth threshold; the deeper bands
+# make that rest volume distribution visible instead of reducing it to one
+# percentage.
+MOVING_DEPTH_BANDS_M = (
+    ("dry_to_0p05", NATIVE_DRY_TOLERANCE_M, 0.05),
+    ("0p05_to_0p10", 0.05, 0.10),
+    ("0p10_to_0p20", 0.10, 0.20),
+    ("0p20_to_0p50", 0.20, 0.50),
+    ("ge_0p50", 0.50, np.inf),
+)
+
+
+def selected_limiter(case_name: str, limiter: str | None = None) -> str:
+    """Return an explicit limiter or the disclosed case-specific baseline."""
+    if limiter is not None:
+        return limiter
+    return str(CASE_SPECIFICATIONS[case_name]["default_limiter"])
+
+
+def selected_cfl_target(case_name: str, cfl_target: float | None = None) -> float:
+    """Return an explicit CFL target or the disclosed case-specific baseline."""
+    if cfl_target is not None:
+        return float(cfl_target)
+    return float(CASE_SPECIFICATIONS[case_name]["default_cfl_target"])
+
+
 # GeoClaw's historical default was 50 m/s.  It rescales momentum in b4step2,
 # changing the solution.  Use a finite value that is safely beyond any
 # representable physical avalanche speed instead of relying on that limiter.
 DISABLED_SPEED_LIMIT_MPS = 1.0e99
+SOLVER_FATAL_MARKERS = (
+    "SOLUTION ERROR",
+    "Error ***",
+    "Too many dt reductions",
+    "Stopping calculation",
+    "set_fgout: ERROR",
+)
 # IdealizedTopo and CoulombOnly are supplied in a Cartesian metric grid without
 # an EPSG authority. This valid QGIS local CRS is deliberately non-geographic.
 LOCAL_CARTESIAN_CRS_WKT = (
@@ -115,13 +159,14 @@ LOCAL_CARTESIAN_CRS_WKT = (
 )
 
 
-def fixed_grid_output_frame_count(simulation_end_s: float, output_interval_s: float) -> int:
-    """Return an exact valid ISeeSnow fixed-grid frame count.
+def output_interval_count(simulation_end_s: float, output_interval_s: float) -> int:
+    """Return the exact number of requested equal output intervals.
 
-    GeoClaw accepts a final time and a number of frames, not an independent
-    output interval.  Rounding a nonintegral ratio would silently change the
-    requested cadence, so validation runs require an exact whole number of
-    intervals and at least two frames for the fixed-grid machinery.
+    Native GeoClaw output uses a number of intervals after its initial frame,
+    while ``FGoutGrid.nout`` counts both endpoints.  Rounding a nonintegral
+    ratio would silently change cadence, so validation runs require an exact
+    whole number of intervals and at least three frames for the sustained-rest
+    diagnostic.
     """
     simulation_end_s = float(simulation_end_s)
     output_interval_s = float(output_interval_s)
@@ -131,11 +176,11 @@ def fixed_grid_output_frame_count(simulation_end_s: float, output_interval_s: fl
     rounded = round(ratio)
     if not np.isclose(ratio, rounded, rtol=1.0e-10, atol=1.0e-10):
         raise ValueError(
-            "ISeeSnow simulation end time must be an exact multiple of the fixed-grid output interval."
+            "ISeeSnow simulation end time must be an exact multiple of the output interval."
         )
     if rounded < 2:
         raise ValueError(
-            "ISeeSnow validation needs at least two fixed-grid output frames; "
+            "ISeeSnow validation needs at least three output frames; "
             "increase --simulation-end or decrease --output-interval."
         )
     return int(rounded)
@@ -226,14 +271,60 @@ def copy_inputs(case_name: str, case_root: Path) -> dict[str, Path]:
     for source_file in source.iterdir():
         if source_file.is_file():
             target = destination / source_file.name
-            if not target.exists():
-                shutil.copy2(source_file, target)
+            # Refresh every official file on each run.  In particular, an
+            # --overwrite rerun must not combine a new solver result with a
+            # stale/tampered DEM or shapefile sidecar from an older run.
+            shutil.copy2(source_file, target)
     specification = CASE_SPECIFICATIONS[case_name]
+    parameter_sources = sorted(source.glob("simulationParameterValues_*.csv"))
+    if len(parameter_sources) != 1:
+        raise RuntimeError(
+            f"Expected one official parameter file for {case_name}, found "
+            f"{len(parameter_sources)}."
+        )
     return {
         "dem": destination / specification["dem"],
         "release": destination / specification["release"],
-        "parameters": next(destination.glob("simulationParameterValues_*.csv")),
+        "parameters": destination / parameter_sources[0].name,
     }
+
+
+def capture_official_input_manifest(
+    case_name: str, case_root: Path,
+) -> list[dict[str, str]]:
+    """Hash every official input copied for this case before it is consumed."""
+    source = BENCHMARK_ROOT / "data" / case_name / "Inputs"
+    destination = case_root / "Inputs"
+    records: list[dict[str, str]] = []
+    for source_file in sorted(source.iterdir(), key=lambda path: path.name):
+        if not source_file.is_file():
+            continue
+        copied = (destination / source_file.name).resolve()
+        if not copied.is_file():
+            raise FileNotFoundError(f"Copied official input is missing: {copied}")
+        records.append(
+            {
+                "name": source_file.name,
+                "path": str(copied),
+                "sha256": sha256(copied),
+            }
+        )
+    if not records:
+        raise RuntimeError(f"No official input files found for {case_name}")
+    return records
+
+
+def require_input_manifest_unchanged(
+    manifest: list[dict[str, str]],
+) -> None:
+    """Reject replacement of a DEM, shapefile sidecar, or parameter file."""
+    for record in manifest:
+        path = Path(record["path"])
+        if not path.is_file() or sha256(path) != record["sha256"]:
+            raise RuntimeError(
+                "Official ISeeSnow input changed during the validation run: "
+                f"{record['name']}."
+            )
 
 
 def read_polygon_rings(shapefile: Path) -> list[tuple[np.ndarray, list[np.ndarray]]]:
@@ -395,20 +486,33 @@ def configure_template(
     case_root: Path,
     simulation_end_s: float = SIMULATION_END_S,
     output_interval_s: float = OUTPUT_INTERVAL_S,
-    limiter: str = "vanleer",
-    cfl_target: float = 0.5,
+    limiter: str | None = None,
+    cfl_target: float | None = None,
     diagnostic_gauge: tuple[float, float] | None = None,
     refinement_levels: int = 1,
+    state_momentum_regularization_depth_m: float = STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
 ) -> Path:
     specification = CASE_SPECIFICATIONS[case_name]
-    output_frames = fixed_grid_output_frame_count(simulation_end_s, output_interval_s)
+    limiter = selected_limiter(case_name, limiter)
+    cfl_target = selected_cfl_target(case_name, cfl_target)
+    state_depth = float(state_momentum_regularization_depth_m)
+    if not np.isfinite(state_depth) or state_depth < 0.0:
+        raise ValueError(
+            "State momentum regularization depth must be non-negative and finite."
+        )
+    output_intervals = output_interval_count(simulation_end_s, output_interval_s)
     template = yaml.safe_load((PLUGIN_ROOT / "resources" / "AVAC_configuration100.yaml").read_text(encoding="utf-8"))
     template["computation"].update({
         "cell_size": CELL_SIZE_M, "refinement": int(refinement_levels), "t_max": simulation_end_s,
-        "nb_simul": output_frames, "boundary": "extrap",
+        "nb_simul": output_intervals, "boundary": "extrap",
         "limiter": limiter, "cfl_target": cfl_target,
+        "dry_limit": NATIVE_DRY_TOLERANCE_M,
+        "velocity_depth_threshold": VELOCITY_DEPTH_THRESHOLD_M,
+        "state_momentum_regularization_depth": state_depth,
     })
-    template["animation"]["n_out"] = output_frames
+    # FGout counts both t=0 and t=end; native output counts intervals after
+    # its initial frame.  The +1 keeps both products on the requested cadence.
+    template["animation"]["n_out"] = output_intervals + 1
     template["output"].update({"delta_t": output_interval_s, "output_format": "binary32", "verbosity": 0})
     template["release"].update({
         "d0": NORMAL_RELEASE_THICKNESS_M, "correction_slope": False,
@@ -500,9 +604,36 @@ def launch_solver(solver: Path, output_dir: Path, log_path: Path, workers: int) 
         # Windows has no POSIX child-resource counter.  Keep the report schema
         # stable with a wall-clock estimate instead of failing before a run.
         cpu_seconds = wall_seconds
-    if result.returncode != 0:
-        raise RuntimeError(f"xgeoclaw exited with {result.returncode}; inspect {log_path}")
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    fatal_markers = [marker for marker in SOLVER_FATAL_MARKERS if marker in log_text]
+    if result.returncode != 0 or fatal_markers:
+        reason = (
+            f"exit code {result.returncode}"
+            if result.returncode != 0
+            else "fatal marker(s): " + ", ".join(fatal_markers)
+        )
+        raise RuntimeError(f"xgeoclaw failed with {reason}; inspect {log_path}")
     return wall_seconds, cpu_seconds
+
+
+def require_solver_unchanged(solver: Path, expected_sha256: str) -> None:
+    """Reject a run whose shared executable was replaced while it executed."""
+    actual_sha256 = sha256(solver)
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            "AVAC solver executable changed during the validation run: "
+            f"started with {expected_sha256}, ended with {actual_sha256}."
+        )
+
+
+def require_file_unchanged(path: Path, expected_sha256: str, label: str) -> None:
+    """Reject provenance inputs replaced between setup and completed output."""
+    actual_sha256 = sha256(path)
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(
+            f"{label} changed during the validation run: started with "
+            f"{expected_sha256}, ended with {actual_sha256}."
+        )
 
 
 def disable_speed_limit(geoclaw_data: Path) -> float:
@@ -599,6 +730,8 @@ def fgmax_fields(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nda
     raw = np.atleast_2d(np.loadtxt(path, dtype=float))
     if raw.shape[1] < 6:
         raise ValueError(f"Unexpected AVAC fgmax layout in {path}")
+    if not np.all(np.isfinite(raw[:, (0, 1, 4, 5)])):
+        raise RuntimeError(f"AVAC fgmax contains non-finite coordinates or peak fields: {path}")
     x, y = np.unique(raw[:, 0]), np.unique(raw[:, 1])
     if raw.shape[0] != x.size * y.size:
         raise ValueError("AVAC fgmax samples do not form a regular rectangle.")
@@ -646,6 +779,69 @@ def _active_amr_mask(state, states) -> np.ndarray:
     return mask
 
 
+def _native_bed_slopes(state, dx: float, dy: float) -> tuple[np.ndarray, np.ndarray]:
+    """Approximate map-coordinate bed derivatives from the saved native aux field."""
+    if state.aux is None or state.aux.shape[0] < 1:
+        raise RuntimeError("Native AVAC frames do not contain the bed auxiliary field.")
+    bed = np.asarray(state.aux[0], dtype=float)
+    bx = (
+        np.gradient(bed, dx, axis=0, edge_order=1)
+        if bed.shape[0] > 1 else np.zeros_like(bed)
+    )
+    by = (
+        np.gradient(bed, dy, axis=1, edge_order=1)
+        if bed.shape[1] > 1 else np.zeros_like(bed)
+    )
+    return bx, by
+
+
+def _native_motion_statistics(
+    positive: np.ndarray,
+    hu: np.ndarray,
+    hv: np.ndarray,
+    bx: np.ndarray,
+    by: np.ndarray,
+    active: np.ndarray,
+    area: float,
+) -> tuple[float, dict[str, float], float]:
+    """Separate raw shallow-motion auditing from PFV/practical-rest motion."""
+    for label, field in (
+        ("depth", positive), ("x momentum", hu), ("y momentum", hv),
+        ("x bed slope", bx), ("y bed slope", by),
+    ):
+        if not np.all(np.isfinite(field[active])):
+            raise RuntimeError(f"Native AVAC state contains non-finite {label} values.")
+    state_wet = active & (positive > NATIVE_DRY_TOLERANCE_M)
+    reported_wet = active & (positive >= VELOCITY_DEPTH_THRESHOLD_M)
+    horizontal_u = np.zeros_like(positive)
+    horizontal_v = np.zeros_like(positive)
+    horizontal_u[state_wet] = hu[state_wet] / positive[state_wet]
+    horizontal_v[state_wet] = hv[state_wet] / positive[state_wet]
+    vertical_velocity = horizontal_u * bx + horizontal_v * by
+    with np.errstate(over="ignore", invalid="ignore"):
+        raw_speed = np.sqrt(
+            horizontal_u**2 + horizontal_v**2 + vertical_velocity**2
+        )
+    if not np.all(np.isfinite(raw_speed[state_wet])):
+        raise RuntimeError("Native AVAC terrain-tangent speed is non-finite.")
+    reported_speed = np.where(reported_wet, raw_speed, 0.0)
+    moving = reported_wet & (reported_speed > VELOCITY_FLOW_THRESHOLD_MPS)
+    moving_volume = float(np.sum(positive[moving]) * area)
+    band_volumes: dict[str, float] = {}
+    for label, lower, upper in MOVING_DEPTH_BANDS_M:
+        in_band = (
+            active
+            & (raw_speed > VELOCITY_FLOW_THRESHOLD_MPS)
+            & (positive >= lower)
+            & (positive < upper)
+        )
+        band_volumes[f"moving_volume_vertical_h_{label}_m3"] = float(
+            np.sum(positive[in_band]) * area
+        )
+    max_speed = float(np.max(reported_speed[active])) if np.any(active) else 0.0
+    return moving_volume, band_volumes, max_speed
+
+
 def native_state_statistics(clawpack_source: Path, output_dir: Path) -> list[dict[str, float]]:
     """Read mass and motion directly from native GeoClaw state frames.
 
@@ -670,8 +866,12 @@ def native_state_statistics(clawpack_source: Path, output_dir: Path) -> list[dic
     rows: list[dict[str, float]] = []
     for frame_id in frame_ids:
         solution = pyclaw.Solution()
-        solution.read(frame_id, path=str(output_dir), file_format="binary", read_aux=False)
+        solution.read(frame_id, path=str(output_dir), file_format="binary", read_aux=True)
         signed_volume = positive_volume = moving_volume = 0.0
+        band_volumes = {
+            f"moving_volume_vertical_h_{label}_m3": 0.0
+            for label, _, _ in MOVING_DEPTH_BANDS_M
+        }
         max_speed = 0.0
         for state in solution.states:
             dx, dy = (float(value) for value in state.grid.delta)
@@ -680,19 +880,21 @@ def native_state_statistics(clawpack_source: Path, output_dir: Path) -> list[dic
             hu = np.asarray(state.q[1], dtype=float)
             hv = np.asarray(state.q[2], dtype=float)
             active = _active_amr_mask(state, solution.states)
+            if not np.all(np.isfinite(h[active])):
+                raise RuntimeError("Native AVAC state contains non-finite depth values.")
             finite_h = np.where(np.isfinite(h), h, 0.0)
             signed_volume += float(np.sum(finite_h[active]) * area)
             positive = np.maximum(finite_h, 0.0)
             positive_volume += float(np.sum(positive[active]) * area)
-            wet = active & (positive >= VELOCITY_DEPTH_THRESHOLD_M)
-            speed = np.zeros_like(positive)
-            speed[wet] = np.hypot(hu[wet], hv[wet]) / positive[wet]
-            speed = np.where(np.isfinite(speed), speed, 0.0)
-            moving = active & (speed > VELOCITY_FLOW_THRESHOLD_MPS)
-            moving_volume += float(np.sum(positive[moving]) * area)
-            if np.any(active):
-                max_speed = max(max_speed, float(np.max(speed[active])))
-        rows.append({
+            bx, by = _native_bed_slopes(state, dx, dy)
+            patch_moving, patch_bands, patch_max_speed = _native_motion_statistics(
+                positive, hu, hv, bx, by, active, area,
+            )
+            moving_volume += patch_moving
+            for field, volume in patch_bands.items():
+                band_volumes[field] += volume
+            max_speed = max(max_speed, patch_max_speed)
+        row = {
             "frame": float(frame_id), "time_seconds": float(solution.t),
             "signed_volume_m3": signed_volume,
             "positive_volume_m3": positive_volume,
@@ -701,26 +903,72 @@ def native_state_statistics(clawpack_source: Path, output_dir: Path) -> list[dic
             "moving_volume_fraction": 0.0,  # completed relative to t=0 below
             "max_speed_mps": max_speed,
             "maximum_level": float(max(state.patch.level for state in solution.states)),
-        })
+        }
+        row.update(band_volumes)
+        rows.append(row)
     initial = rows[0]["positive_volume_m3"]
     if initial <= 0.0:
         raise RuntimeError("The initial native AVAC state contains no positive volume.")
     for row in rows:
         row["moving_volume_fraction"] = row["moving_volume_m3"] / initial
+        for label, _, _ in MOVING_DEPTH_BANDS_M:
+            field = f"moving_volume_vertical_h_{label}_m3"
+            row[f"moving_volume_vertical_h_{label}_fraction_initial"] = row[field] / initial
     return rows
 
 
+def require_complete_native_history(
+    rows: list[dict[str, float]],
+    simulation_end_s: float,
+    output_interval_s: float,
+) -> None:
+    """Reject missing, truncated, or off-cadence frames before rest reporting."""
+    intervals = output_interval_count(simulation_end_s, output_interval_s)
+    expected_frames = np.arange(intervals + 1, dtype=float)
+    expected_times = expected_frames * float(output_interval_s)
+    frames = np.asarray([row["frame"] for row in rows], dtype=float)
+    times = np.asarray([row["time_seconds"] for row in rows], dtype=float)
+    if not np.array_equal(frames, expected_frames):
+        raise RuntimeError(
+            "Native AVAC state history is incomplete or non-contiguous; "
+            f"expected frames 0..{intervals}, found {frames.tolist()}."
+        )
+    if not np.allclose(times, expected_times, rtol=0.0, atol=1.0e-8):
+        raise RuntimeError(
+            "Native AVAC state history does not reach the configured ceiling "
+            "on the requested output cadence."
+        )
+
+
+def sustained_rest_times(
+    rows: list[dict[str, float]],
+) -> tuple[float | None, float | None]:
+    """Return rest start and confirmation times with no later rebound.
+
+    A candidate must remain below the moving-volume threshold through every
+    later saved state and contain enough outputs to confirm the criterion.
+    This is deliberately retrospective: it prevents an early three-frame dip
+    from being reported as rest when motion subsequently resumes.
+    """
+    below = [
+        row["moving_volume_fraction"] <= REST_MOVING_VOLUME_FRACTION
+        for row in rows
+    ]
+    for start in range(len(rows)):
+        if len(rows) - start < REST_CONSECUTIVE_OUTPUTS:
+            break
+        if all(below[start:]):
+            confirmation = start + REST_CONSECUTIVE_OUTPUTS - 1
+            return (
+                float(rows[start]["time_seconds"]),
+                float(rows[confirmation]["time_seconds"]),
+            )
+    return None, None
+
+
 def rest_time(rows: list[dict[str, float]]) -> float | None:
-    """Return the first time with three practically motion-free outputs."""
-    consecutive = 0
-    for row in rows:
-        if row["moving_volume_fraction"] <= REST_MOVING_VOLUME_FRACTION:
-            consecutive += 1
-            if consecutive >= REST_CONSECUTIVE_OUTPUTS:
-                return float(row["time_seconds"])
-        else:
-            consecutive = 0
-    return None
+    """Return the sustained-rest confirmation time for table compatibility."""
+    return sustained_rest_times(rows)[1]
 
 
 def write_mass_history(path: Path, rows: list[dict[str, float]]) -> None:
@@ -729,6 +977,11 @@ def write_mass_history(path: Path, rows: list[dict[str, float]]) -> None:
         "negative_volume_m3", "moving_volume_m3", "moving_volume_fraction",
         "max_speed_mps", "maximum_level",
     ]
+    for label, _, _ in MOVING_DEPTH_BANDS_M:
+        fields.extend((
+            f"moving_volume_vertical_h_{label}_m3",
+            f"moving_volume_vertical_h_{label}_fraction_initial",
+        ))
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
@@ -742,37 +995,126 @@ def submission_paths(case_name: str, case_root: Path) -> tuple[Path, Path, Path]
     return output / f"{stem}_pft.asc", output / f"{stem}_pfv.asc", output / f"{stem}.txt"
 
 
+def pending_artifact_path(path: Path) -> Path:
+    """Return the same-directory staging path used for atomic publication."""
+    return path.with_name(f".{path.name}.pending")
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Publish JSON atomically so readers never observe a partial summary."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending = pending_artifact_path(path)
+    pending.write_text(
+        json.dumps(payload, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(pending, path)
+
+
+def prepare_case_transaction(
+    case_name: str, case_root: Path, overwrite: bool,
+) -> tuple[Path, Path, Path, Path, Path]:
+    """Invalidate an old result before an explicitly requested replacement.
+
+    A completed summary is the publication marker.  Removing it first means a
+    failed rerun cannot pair old provenance with partly replaced fields.
+    Only exact, case-local generated paths are removed.
+    """
+    case_root = case_root.expanduser().resolve()
+    case_root.mkdir(parents=True, exist_ok=True)
+    run_root = (case_root / "Run").resolve()
+    try:
+        run_root.relative_to(case_root)
+    except ValueError as exc:
+        raise RuntimeError(f"Unsafe ISeeSnow run directory: {run_root}") from exc
+    pft_path, pfv_path, configuration_path = submission_paths(case_name, case_root)
+    summary_path = case_root / "run_summary.json"
+    mass_history_path = case_root / "native_mass_history.csv"
+    completion_markers = (
+        run_root, summary_path, pft_path, pfv_path, configuration_path,
+    )
+    existing = [path for path in completion_markers if path.exists()]
+    if existing and not overwrite:
+        raise FileExistsError(
+            f"{existing[0]} already exists; use --overwrite only to discard this case run."
+        )
+    if overwrite:
+        # Invalidate the old provenance marker before touching any product.
+        summary_path.unlink(missing_ok=True)
+        generated_files = (
+            pft_path, pfv_path, configuration_path, mass_history_path,
+            case_root / "solver.log",
+        )
+        for path in generated_files:
+            path.unlink(missing_ok=True)
+        for path in (*generated_files, summary_path):
+            pending_artifact_path(path).unlink(missing_ok=True)
+        if run_root.exists():
+            shutil.rmtree(run_root)
+    return run_root, pft_path, pfv_path, configuration_path, mass_history_path
+
+
 def write_configuration_record(
     case_name: str,
     path: Path,
     runtime: Path,
     run_root: Path,
     inputs: dict[str, Path],
+    official_input_manifest: list[dict[str, str]],
     cpu_s: float,
     wall_s: float,
     state_rows: list[dict[str, float]],
+    sustained_rest_start_s: float | None,
     stopped_time_s: float | None,
     spatial_order: int,
     solver: Path,
+    solver_sha256: str,
+    solver_origin: str,
+    execution_mode: str,
+    setrun_backend: Path,
+    setrun_backend_sha256: str,
+    submission_pft_sha256: str,
+    submission_pfv_sha256: str,
     simulation_end_s: float,
     output_interval_s: float,
     limiter: str,
     cfl_target: float,
     refinement_levels: int,
     refinement_ratio: int,
+    state_momentum_regularization_depth_m: float,
 ) -> None:
     specification = CASE_SPECIFICATIONS[case_name]
+    input_hashes = {
+        record["name"]: record["sha256"] for record in official_input_manifest
+    }
+    if specification["model"] == "Coulomb":
+        state_regularization_description = (
+            "Kurganov-Petrova momentum projection below the configured "
+            "vertical-depth scale on locally non-planar terrain only; flat "
+            "and affine beds are excluded; applied once per source step, so "
+            "CFL sensitivity is audited separately"
+        )
+    else:
+        state_regularization_description = (
+            "not applied; the configured depth is Coulomb-only and Voellmy "
+            "retains its established state update"
+        )
     lines = [
         "AVAC4QGIS ISeeSnow benchmark configuration",
         f"case = {case_name}",
         f"plugin_version = {plugin_version()}",
         f"solver_source = {runtime}",
-        "runtime_manifest_sha256 = not applicable (validation uses the current source tree)",
+        f"execution_mode = {execution_mode}",
+        "runtime_manifest_sha256 = not applicable (the executable and setrun backend are hashed directly)",
         f"clawpack_source = {CLAWPACK_SOURCE}",
         f"clawpack_source_init_sha256 = {sha256(CLAWPACK_SOURCE / 'clawpack' / '__init__.py')}",
-        "solver_origin = current repository source, compiled locally and explicitly recorded",
+        f"solver_origin = {solver_origin}",
         f"solver = {solver}",
-        f"solver_sha256 = {sha256(solver)}",
+        f"solver_sha256 = {solver_sha256}",
+        f"setrun_backend = {setrun_backend}",
+        f"setrun_backend_sha256 = {setrun_backend_sha256}",
+        f"submission_pft_sha256 = {submission_pft_sha256}",
+        f"submission_pfv_sha256 = {submission_pfv_sha256}",
         "numerical_model = depth-integrated GeoClaw/AVAC with AVAC source terms",
         f"rheology = {specification['model']}",
         f"mu = {specification['mu']}",
@@ -782,14 +1124,23 @@ def write_configuration_record(
         f"refinement_ratio = {refinement_ratio}",
         f"finest_effective_cell_size_m = {CELL_SIZE_M / refinement_ratio**(refinement_levels - 1):.12g}",
         f"simulation_end_ceiling_s = {simulation_end_s}",
+        f"native_state_output_interval_s = {output_interval_s}",
         f"fixed_grid_output_interval_s = {output_interval_s}",
+        f"fixed_grid_output_frame_count = {output_interval_count(simulation_end_s, output_interval_s) + 1}",
         f"limiter = {limiter}",
         f"cfl_target = {cfl_target}",
         f"rest_speed_threshold_mps = {VELOCITY_FLOW_THRESHOLD_MPS}",
+        "rest_speed_definition = native terrain-tangent speed reconstructed from horizontal momentum and saved bed slopes",
+        f"native_dry_tolerance_m = {NATIVE_DRY_TOLERANCE_M}",
         f"reported_velocity_depth_threshold_m = {VELOCITY_DEPTH_THRESHOLD_M}",
+        "practical_rest_minimum_depth_m = reported_velocity_depth_threshold_m",
+        "subthreshold_motion_audit = raw terrain-tangent momentum/depth speed is reported separately from practical rest for dry_tolerance < h < reported_velocity_depth_threshold",
+        f"state_momentum_regularization_depth_m = {state_momentum_regularization_depth_m}",
         f"rest_moving_volume_fraction = {REST_MOVING_VOLUME_FRACTION}",
         f"rest_consecutive_output_frames = {REST_CONSECUTIVE_OUTPUTS}",
-        f"practical_rest_condition_first_met_s = {stopped_time_s if stopped_time_s is not None else 'not reached by ceiling'}",
+        "rest_requires_no_later_violation_before_ceiling = true",
+        f"practical_rest_condition_sustained_from_s = {sustained_rest_start_s if sustained_rest_start_s is not None else 'not reached by ceiling'}",
+        f"practical_rest_condition_confirmed_s = {stopped_time_s if stopped_time_s is not None else 'not reached by ceiling'}",
         f"native_initial_volume_m3 = {state_rows[0]['positive_volume_m3']:.12g}",
         f"native_final_signed_volume_m3 = {state_rows[-1]['signed_volume_m3']:.12g}",
         f"native_final_positive_volume_m3 = {state_rows[-1]['positive_volume_m3']:.12g}",
@@ -800,13 +1151,14 @@ def write_configuration_record(
             if spatial_order == 1 else
             "second-order GeoClaw update (native mass history retained; no volume correction)"
         ),
-        f"release_polygon_sha256 = {sha256(inputs['release'])}",
-        f"dem_sha256 = {sha256(inputs['dem'])}",
+        f"release_polygon_sha256 = {input_hashes[inputs['release'].name]}",
+        f"dem_sha256 = {input_hashes[inputs['dem'].name]}",
         f"release_thickness_normal_m = {NORMAL_RELEASE_THICKNESS_M}",
         "initialization = h_vertical = h_normal / cos(local DEM slope) inside supplied release polygon",
         "submitted_pft = maximum AVAC vertical h multiplied by cos(local DEM slope)",
         "submitted_pfv = AVAC native peak terrain-tangent speed sqrt(u^2 + v^2 + (u*Bx + v*By)^2) where h > 0.05 m",
-        "velocity_diagnostic = zero for h <= 0.05 m; Kurganov-Petrova momentum/depth desingularization for 0.05 m < h < 0.20 m; exact momentum/depth for h >= 0.20 m; fgmax output only, with no state modification, velocity cap, or field clipping",
+        "velocity_diagnostic = zero for h <= 0.05 m; Kurganov-Petrova momentum/depth desingularization for 0.05 m < h < 0.20 m; exact momentum/depth for h >= 0.20 m; fgmax output only, with no velocity cap or field clipping",
+        f"state_regularization = {state_regularization_description}",
         "release_elevation_correction = false",
         "release_slope_correction = false",
         "benchmark_grid_contract = GeoClaw cell centres and fixed-grid points equal supplied ISeeSnow cell centres",
@@ -814,6 +1166,16 @@ def write_configuration_record(
         f"solver_cpu_seconds = {cpu_s:.6f}",
         f"run_root = {run_root}",
     ]
+    for record in official_input_manifest:
+        lines.append(
+            f"official_input_sha256[{record['name']}] = {record['sha256']}"
+        )
+    for label, lower, upper in MOVING_DEPTH_BANDS_M:
+        interval = f"[{lower:g}, {upper:g})" if np.isfinite(upper) else f"[{lower:g}, infinity)"
+        lines.append(
+            f"native_final_moving_volume_vertical_h_{label}_m3 = "
+            f"{state_rows[-1][f'moving_volume_vertical_h_{label}_m3']:.12g}  # AVAC vertical h in {interval} m"
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -847,15 +1209,33 @@ def run_case(
     spatial_order: int,
     simulation_end_s: float = SIMULATION_END_S,
     output_interval_s: float = OUTPUT_INTERVAL_S,
-    limiter: str = "vanleer",
-    cfl_target: float = 0.5,
+    limiter: str | None = None,
+    cfl_target: float | None = None,
     diagnostic_gauge: tuple[float, float] | None = None,
     refinement_levels: int = 1,
     refinement_ratio: int = 2,
     solver_override: Path | None = None,
+    solver_source_override: Path | None = None,
+    state_momentum_regularization_depth_m: float = STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
 ) -> dict[str, Any]:
-    case_root = RESULTS_ROOT / case_name
+    if (solver_override is None) != (solver_source_override is None):
+        raise ValueError(
+            "An explicit solver and its matching source directory must be supplied together."
+        )
+    limiter = selected_limiter(case_name, limiter)
+    cfl_target = selected_cfl_target(case_name, cfl_target)
+    case_root = (RESULTS_ROOT / case_name).expanduser().resolve()
+    (
+        run_root,
+        pft_path,
+        pfv_path,
+        configuration_path,
+        mass_history_path,
+    ) = prepare_case_transaction(case_name, case_root, overwrite)
     inputs = copy_inputs(case_name, case_root)
+    official_input_manifest = capture_official_input_manifest(
+        case_name, case_root
+    )
     dem = parse_esri_ascii(inputs["dem"])
     crs = "EPSG:31287" if case_name == "RealTopo" else ""
     raster = benchmark_raster(dem, crs_authid=crs)
@@ -863,24 +1243,35 @@ def run_case(
     template = configure_template(
         case_name, case_root, simulation_end_s, output_interval_s, limiter,
         cfl_target, diagnostic_gauge, refinement_levels,
+        state_momentum_regularization_depth_m,
     )
     plugin_case = write_plugin_case_configuration(case_name, case_root, inputs, template)
-    run_root = case_root / "Run"
-    if run_root.exists():
-        if not overwrite:
-            raise FileExistsError(f"{run_root} already exists; use --overwrite only to discard this case run.")
-        shutil.rmtree(run_root)
-    runtime = source_runtime("avac").resolve()
-    solver = (
-        Path(solver_override).expanduser().resolve()
-        if solver_override is not None else current_source_solver()
-    )
+    if solver_override is None:
+        solver = current_source_solver()
+        runtime = source_runtime("avac").resolve()
+        solver_origin = "current repository source, compiled locally and explicitly recorded"
+        execution_mode = "current_source"
+    else:
+        # Treat the executable and source backend as one provenance choice.
+        # Both files used by the run are hash-checked across execution below.
+        solver = Path(solver_override).expanduser().resolve()
+        runtime = Path(solver_source_override).expanduser().resolve()
+        solver_origin = "explicit executable override paired with an explicit source backend"
+        execution_mode = "explicit_solver_source_snapshot"
     if not solver.is_file():
         raise FileNotFoundError(f"AVAC solver executable is unavailable: {solver}")
+    if not runtime.is_dir():
+        raise FileNotFoundError(f"AVAC solver source directory is unavailable: {runtime}")
+    setrun_backend = runtime / "setrun.py"
+    if not setrun_backend.is_file():
+        raise FileNotFoundError(
+            f"AVAC solver source has no setrun.py backend: {setrun_backend}"
+        )
+    setrun_backend_sha256 = sha256(setrun_backend)
     prepared = prepare_isolated_runtime_run(
         run_root, runtime, raster, rings, template, {},
         {"benchmark": "ISeeSnow", "case": case_name, "dem_crs": crs,
-         "solver_source": str(runtime), "execution_mode": "current_source"},
+         "solver_source": str(runtime), "execution_mode": execution_mode},
     )
     set_benchmark_computational_extent(prepared.configuration_path, dem)
     enable_validation_gauge(prepared.configuration_path, diagnostic_gauge)
@@ -896,46 +1287,79 @@ def run_case(
     output_dir = prepare_source_execution(
         "avac",
         prepared.avac_dir,
-        setrun_override=PROJECT_ROOT / "avac-main" / "src" / "AVAC" / "setrun.py",
+        setrun_override=setrun_backend,
+        source_override=runtime,
     )
     configured_speed_limit = disable_speed_limit(output_dir / "geoclaw.data")
     spatial_order = set_spatial_order(output_dir / "claw.data", spatial_order)
     finest_cell_size = set_amr_resolution(
         output_dir, refinement_levels, refinement_ratio,
     )
+    solver_sha256 = sha256(solver)
     wall_s, cpu_s = launch_solver(solver, output_dir, case_root / "solver.log", workers)
-    update_run_status(prepared.avac_dir, "completed", solver_wall_seconds=wall_s, solver_cpu_seconds=cpu_s)
+    require_solver_unchanged(solver, solver_sha256)
+    require_file_unchanged(setrun_backend, setrun_backend_sha256, "AVAC setrun backend")
 
     x, y, peak_depth, peak_velocity = fgmax_fields(output_dir / "fgmax0001.txt")
     require_benchmark_alignment(x, y, dem)
     # Include the specified release at t=0 explicitly.  All three arrays are
     # south-to-north here; only the ESRI writer conversion below flips rows.
     normal_peak_depth = normal_peak_thickness(peak_depth, vertical_depth, cosine_slope)
-    pft_path, pfv_path, configuration_path = submission_paths(case_name, case_root)
-    write_esri_ascii(pft_path, dem, np.flipud(normal_peak_depth))
-    write_esri_ascii(pfv_path, dem, np.flipud(peak_velocity))
     state_rows = native_state_statistics(CLAWPACK_SOURCE, output_dir)
-    write_mass_history(case_root / "native_mass_history.csv", state_rows)
-    stopped_time = rest_time(state_rows)
+    require_complete_native_history(state_rows, simulation_end_s, output_interval_s)
+    require_input_manifest_unchanged(official_input_manifest)
+    pending_pft = pending_artifact_path(pft_path)
+    pending_pfv = pending_artifact_path(pfv_path)
+    pending_configuration = pending_artifact_path(configuration_path)
+    pending_mass_history = pending_artifact_path(mass_history_path)
+    write_esri_ascii(pending_pft, dem, np.flipud(normal_peak_depth))
+    write_esri_ascii(pending_pfv, dem, np.flipud(peak_velocity))
+    write_mass_history(pending_mass_history, state_rows)
+    submission_pft_sha256 = sha256(pending_pft)
+    submission_pfv_sha256 = sha256(pending_pfv)
+    sustained_rest_start, stopped_time = sustained_rest_times(state_rows)
     # Use mass from native state arrays, not interpolated fixed-grid results.
     # Those are the control volumes updated by the solver.
     initial_volume = state_rows[0]["positive_volume_m3"]
     final_volume = state_rows[-1]["positive_volume_m3"]
     write_configuration_record(
-        case_name, configuration_path, runtime, run_root, inputs, cpu_s, wall_s,
-        state_rows, stopped_time, spatial_order, solver, simulation_end_s,
+        case_name, pending_configuration, runtime, run_root, inputs,
+        official_input_manifest, cpu_s, wall_s,
+        state_rows, sustained_rest_start, stopped_time, spatial_order, solver,
+        solver_sha256, solver_origin, execution_mode, setrun_backend,
+        setrun_backend_sha256, submission_pft_sha256,
+        submission_pfv_sha256, simulation_end_s,
         output_interval_s, limiter, cfl_target, refinement_levels,
-        refinement_ratio,
+        refinement_ratio, state_momentum_regularization_depth_m,
     )
+    for pending, destination in (
+        (pending_pft, pft_path),
+        (pending_pfv, pfv_path),
+        (pending_configuration, configuration_path),
+        (pending_mass_history, mass_history_path),
+    ):
+        os.replace(pending, destination)
     record = {
         "case": case_name, "cpu_seconds": cpu_s, "wall_seconds": wall_s,
         "simulation_end_ceiling_seconds": simulation_end_s,
+        "native_state_output_interval_seconds": output_interval_s,
+        "fixed_grid_output_interval_seconds": output_interval_s,
+        "fixed_grid_output_frame_count": output_interval_count(
+            simulation_end_s, output_interval_s,
+        ) + 1,
+        "practical_rest_sustained_from_seconds": sustained_rest_start,
         "flow_stopped_at_seconds": stopped_time,
-        "flow_stopped_before_ceiling": stopped_time is not None,
+        "flow_rest_confirmed_by_ceiling": stopped_time is not None,
+        "flow_stopped_before_ceiling": (
+            stopped_time is not None and stopped_time < simulation_end_s
+        ),
         "final_max_speed_mps": state_rows[-1]["max_speed_mps"],
         "speed_limit_mps": configured_speed_limit,
         "spatial_order": spatial_order,
         "limiter": limiter,
+        "native_dry_tolerance_m": NATIVE_DRY_TOLERANCE_M,
+        "practical_rest_minimum_depth_m": VELOCITY_DEPTH_THRESHOLD_M,
+        "state_momentum_regularization_depth_m": state_momentum_regularization_depth_m,
         "cfl_target": cfl_target,
         "diagnostic_gauge": diagnostic_gauge,
         "refinement_levels": refinement_levels,
@@ -944,17 +1368,37 @@ def run_case(
         "maximum_amr_level": int(max(row["maximum_level"] for row in state_rows)),
         "plugin_version": plugin_version(),
         "solver": str(solver),
-        "solver_sha256": sha256(solver),
+        "solver_sha256": solver_sha256,
+        "solver_origin": solver_origin,
+        "execution_mode": execution_mode,
+        "setrun_backend": str(setrun_backend),
+        "setrun_backend_sha256": setrun_backend_sha256,
+        "official_input_manifest": official_input_manifest,
+        "submission_pft_sha256": submission_pft_sha256,
+        "submission_pfv_sha256": submission_pfv_sha256,
         "initial_volume_m3": initial_volume, "final_volume_m3": final_volume,
         "signed_final_volume_m3": state_rows[-1]["signed_volume_m3"],
         "relative_volume_change": (final_volume - initial_volume) / initial_volume,
-        "native_mass_history": str(case_root / "native_mass_history.csv"),
+        "final_moving_volume_by_vertical_depth_band_m3": {
+            label: state_rows[-1][f"moving_volume_vertical_h_{label}_m3"]
+            for label, _, _ in MOVING_DEPTH_BANDS_M
+        },
+        "native_mass_history": str(mass_history_path),
         "pft": str(pft_path), "pfv": str(pfv_path), "configuration": str(configuration_path),
         "plugin_case": str(plugin_case),
     }
     if not retain_raw_frames:
         record["transient_frame_cleanup"] = prune_transient_frames(output_dir)
-    (case_root / "run_summary.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    require_input_manifest_unchanged(official_input_manifest)
+    update_run_status(
+        prepared.avac_dir,
+        "completed",
+        solver_wall_seconds=wall_s,
+        solver_cpu_seconds=cpu_s,
+    )
+    # This is deliberately last: the ranker treats the summary as the only
+    # completion marker and cross-checks its recorded submission hashes.
+    atomic_write_json(case_root / "run_summary.json", record)
     return record
 
 
@@ -997,10 +1441,21 @@ def main() -> None:
                         help="Integration ceiling in seconds (default: 1200; shorter values are intended only for diagnostics).")
     parser.add_argument("--output-interval", type=float, default=OUTPUT_INTERVAL_S,
                         help="Native/fixed-grid output interval in seconds (default: 10).")
-    parser.add_argument("--limiter", choices=("minmod", "superbee", "vanleer", "mc"), default="vanleer",
-                        help="Second-order wave limiter (default: van Leer).")
-    parser.add_argument("--cfl-target", type=float, default=0.5,
-                        help="Desired variable-step Courant number (default: 0.5).")
+    parser.add_argument(
+        "--limiter", choices=("minmod", "superbee", "vanleer", "mc"),
+        help=("Override the second-order wave limiter for every selected case "
+              "(defaults: minmod for CoulombOnly; van Leer for IdealizedTopo and RealTopo)."),
+    )
+    parser.add_argument(
+        "--state-regularization-depth", type=float,
+        default=STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
+        help="Physical shallow-state momentum regularization depth in metres (default: 0.05).",
+    )
+    parser.add_argument(
+        "--cfl-target", type=float,
+        help=("Override the desired variable-step Courant number (defaults: "
+              "0.25 for CoulombOnly; 0.5 for the two Voellmy cases)."),
+    )
     parser.add_argument("--write-table-only", action="store_true", help="Write the three-case ISeeSnow result table from completed summaries without running AVAC.")
     parser.add_argument(
         "--results-root", type=Path, default=VALIDATION_ROOT,
@@ -1020,7 +1475,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--solver", type=Path,
-        help="Explicit AVAC executable for an isolated mechanism diagnostic.",
+        help="Explicit AVAC executable for an isolated mechanism diagnostic; requires --solver-source.",
+    )
+    parser.add_argument(
+        "--solver-source", type=Path,
+        help="Source directory containing the setrun.py that matches --solver.",
     )
     args = parser.parse_args()
     RESULTS_ROOT = args.results_root.expanduser().resolve()
@@ -1036,13 +1495,17 @@ def main() -> None:
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
     try:
-        fixed_grid_output_frame_count(args.simulation_end, args.output_interval)
+        output_interval_count(args.simulation_end, args.output_interval)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    if not 0 < args.cfl_target <= 1:
+    if args.cfl_target is not None and not 0 < args.cfl_target <= 1:
         raise SystemExit("--cfl-target must lie in (0, 1]")
     if args.refinement_ratio < 2:
         raise SystemExit("--refinement-ratio must be at least two")
+    if not np.isfinite(args.state_regularization_depth) or args.state_regularization_depth < 0:
+        raise SystemExit("--state-regularization-depth must be a non-negative finite value")
+    if (args.solver is None) != (args.solver_source is None):
+        raise SystemExit("--solver and --solver-source must be supplied together")
     cases = list(CASE_SPECIFICATIONS) if args.case == "all" else [args.case]
     diagnostic_gauge = tuple(args.diagnostic_gauge) if args.diagnostic_gauge else None
     ensure_plugin_case_configurations(cases)
@@ -1050,8 +1513,10 @@ def main() -> None:
         run_case(
             case_name, args.workers, args.overwrite, args.retain_raw_frames,
             args.spatial_order, args.simulation_end, args.output_interval,
-            args.limiter, args.cfl_target, diagnostic_gauge,
+            selected_limiter(case_name, args.limiter),
+            selected_cfl_target(case_name, args.cfl_target), diagnostic_gauge,
             args.refinement_levels, args.refinement_ratio, args.solver,
+            args.solver_source, args.state_regularization_depth,
         )
         for case_name in cases
     ]

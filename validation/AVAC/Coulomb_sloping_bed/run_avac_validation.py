@@ -32,6 +32,7 @@ from avac4qgis_validation.kerswell import (
     undisturbed_rear_position,
 )
 from avac4qgis_validation.runtime import (
+    configure_analytical_coulomb_amr_compatibility,
     configure_front_amr,
     maximum_written_amr_level,
     moving_front_corridors,
@@ -43,7 +44,6 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 AVAC_SOURCE = ROOT / "avac-main" / "src" / "AVAC"
 CLAW_SOURCE = ROOT / "avac-main" / "clawpack-v5.14.0"
-SOLVER = solver_executable("avac")
 
 G = 9.81
 H0 = 1.0
@@ -149,7 +149,7 @@ def avac_configuration(dx: float, amr_levels: int) -> dict[str, object]:
             "max_iter": 2_000_000, "nb_simul": NOUT, "output_directory": "_output",
             "refinement": amr_levels, "t_max": T_FINAL, "topo_dir": "", "track_mass": False,
             "xlower": XLOWER, "xupper": XUPPER, "ylower": ylower, "yupper": yupper,
-            "dx": dx, "dy": dx,
+            "dx": dx, "dy": dx, "analytical_validation_ghost_cells": 2,
         },
         "dem_extent": {
             "cell_size": dx, "nbx": nx, "nby": NY, "nodata_value": -9999.0,
@@ -187,7 +187,8 @@ def activate_clawpack() -> None:
 
 
 def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
-            amr_levels: int, amr_ratio: int, speed_tolerance: float) -> Path:
+            amr_levels: int, amr_ratio: int, speed_tolerance: float,
+            solver: Path, solver_source: Path) -> Path:
     if case.exists():
         if not replace:
             raise FileExistsError(f"{case} exists; use --replace to regenerate this exact case")
@@ -200,16 +201,23 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
     )
 
     activate_clawpack()
-    source = (AVAC_SOURCE / "setrun.py").read_text(encoding="utf-8")
+    backend = solver_source / "setrun.py"
+    if not backend.is_file():
+        raise FileNotFoundError(f"AVAC setrun backend is missing: {backend}")
+    backend_sha256 = sha256(backend)
+    source = backend.read_text(encoding="utf-8")
     previous = Path.cwd()
     try:
         os.chdir(work)
         namespace = {"__name__": "validation_backend", "__file__": str(work / "setrun.py")}
-        exec(compile(source, str(AVAC_SOURCE / "setrun.py"), "exec"), namespace)
+        exec(compile(source, str(backend), "exec"), namespace)
         namespace["setrun"]().write()
     finally:
         os.chdir(previous)
+    if sha256(backend) != backend_sha256:
+        raise RuntimeError("AVAC setrun backend changed during setup")
 
+    compatibility = configure_analytical_coulomb_amr_compatibility(work)
     replace_data_value(work / "geoclaw.data", "manning_coefficient", "0.0")
     # Chapter 8 overrides GeoClaw's default explicitly; this very small value
     # is part of the reference problem and must not be inferred from defaults.
@@ -239,9 +247,9 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
         levels=amr_levels, ratio=amr_ratio,
         speed_tolerance=speed_tolerance, output_ny=1,
         max1d=patch_maximum, forced_regions=corridors,
-    ) | {
-        "solver": str(SOLVER), "solver_sha256": sha256(SOLVER),
-        "source_setrun": str(AVAC_SOURCE / "setrun.py"),
+    ) | compatibility | {
+        "solver": str(solver), "solver_sha256": sha256(solver),
+        "source_setrun": str(backend), "source_setrun_sha256": backend_sha256,
         "clawpack_source": str(CLAW_SOURCE), "dx_m": dx, "dy_m": dx, "ny": NY,
         "xlower_m": XLOWER, "xupper_m": XUPPER, "slope_degrees": float(np.rad2deg(SLOPE)),
         "mu": MU, "gravity_m_s2": G, "initial_depth_m": H0,
@@ -255,17 +263,48 @@ def prepare(case: Path, dx: float, replace: bool, max1d: int | None,
     return work
 
 
-def run(work: Path, cores: int) -> None:
-    if not SOLVER.is_file():
-        raise FileNotFoundError(f"Build the current AVAC source first: {SOLVER}")
+def run(work: Path, cores: int, solver: Path) -> None:
+    if not solver.is_file():
+        raise FileNotFoundError(f"AVAC solver executable is missing: {solver}")
+    solver_sha256 = sha256(solver)
     environment = os.environ.copy()
     environment["OMP_NUM_THREADS"] = str(cores)
-    result = subprocess.run([str(SOLVER)], cwd=work, env=environment, text=True,
+    result = subprocess.run([str(solver)], cwd=work, env=environment, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (work / "solver.log").write_text(result.stdout, encoding="utf-8")
-    if result.returncode != 0 or "SOLUTION ERROR" in result.stdout or "Error ***" in result.stdout:
+    solver_sha256_after = sha256(solver)
+    if solver_sha256_after != solver_sha256:
+        raise RuntimeError(
+            "AVAC solver executable changed during validation: "
+            f"{solver_sha256} -> {solver_sha256_after}"
+        )
+    failure_markers = (
+        "SOLUTION ERROR", "Error ***", "Too many dt reductions",
+        "Stopping calculation",
+    )
+    if result.returncode != 0 or any(marker in result.stdout for marker in failure_markers):
         tail = "\n".join(result.stdout.splitlines()[-40:])
         raise RuntimeError(f"AVAC failed:\n{tail}")
+
+
+def require_complete_output_schedule(
+    times: np.ndarray, requested_final_time_s: float, output_count: int,
+) -> None:
+    """Reject partial or off-cadence fgout before computing validation metrics."""
+    expected = np.linspace(0.0, requested_final_time_s, output_count)
+    # GeoClaw serializes FGout times with eight digits after the decimal in
+    # scientific notation.  Accept only that round-trip loss; larger cadence
+    # changes are still rejected.
+    tolerance = 1.0e-8 * max(1.0, requested_final_time_s)
+    if len(times) != len(expected) or not np.allclose(
+        times, expected, rtol=0.0, atol=tolerance,
+    ):
+        last = float(times[-1]) if len(times) else float("nan")
+        raise RuntimeError(
+            "Coulomb sloping-bed output is incomplete or off cadence: "
+            f"expected {len(expected)} frames through {requested_final_time_s:g} s, "
+            f"found {len(times)} through {last:g} s."
+        )
 
 
 def read_frames(work: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -393,6 +432,7 @@ def kerswell_profile(tau: float, step: float = 0.01) -> tuple[np.ndarray, np.nda
 def extract(case: Path) -> tuple[dict[str, object], Path]:
     work = case / "AVAC"
     times, x, bed, depth, velocity = read_frames(work)
+    require_complete_output_schedule(times, T_FINAL, NOUT)
     dx = float(np.median(np.diff(x)))
     dry_tolerance = read_data_value(work / "geoclaw.data", "dry_tolerance")
     numerical_energy_speed = FRONT_ENERGY_SPEED_THRESHOLD_M32_S
@@ -669,6 +709,14 @@ def main() -> None:
         "--max1d", type=int, default=250,
         help="maximum base-patch dimension of the established AVAC setup",
     )
+    parser.add_argument(
+        "--solver", type=Path,
+        help="exact AVAC executable to run; requires --solver-source",
+    )
+    parser.add_argument(
+        "--solver-source", type=Path,
+        help="source directory containing the setrun.py paired with --solver",
+    )
     parser.add_argument("--replace", action="store_true", help="replace only the named generated case")
     parser.add_argument(
         "--postprocess-only",
@@ -676,6 +724,8 @@ def main() -> None:
         help="recompute diagnostics and figures from the completed fixed-grid output",
     )
     args = parser.parse_args()
+    if (args.solver is None) != (args.solver_source is None):
+        raise SystemExit("--solver and --solver-source must be supplied together")
     if (args.dx <= 0.0 or args.cores < 1 or args.ny < 1
             or args.amr_levels < 2 or args.amr_ratio < 2
             or args.speed_tolerance <= 0.0
@@ -700,11 +750,31 @@ def main() -> None:
         NOUT = int(controls.get("outputs", NOUT))
         NY = int(controls.get("ny", NY))
     else:
+        solver = (
+            args.solver.expanduser().resolve()
+            if args.solver is not None else solver_executable("avac")
+        )
+        solver_source = (
+            args.solver_source.expanduser().resolve()
+            if args.solver_source is not None else AVAC_SOURCE.resolve()
+        )
+        if not solver.is_file():
+            raise FileNotFoundError(f"AVAC solver executable is missing: {solver}")
+        setrun_backend = solver_source / "setrun.py"
+        if not setrun_backend.is_file():
+            raise FileNotFoundError(f"AVAC setrun backend is missing: {setrun_backend}")
         work = prepare(
             case, args.dx, args.replace, args.max1d, args.amr_levels,
-            args.amr_ratio, args.speed_tolerance,
+            args.amr_ratio, args.speed_tolerance, solver, solver_source,
         )
-        run(work, args.cores)
+        controls = json.loads((case / "controls.json").read_text(encoding="utf-8"))
+        if sha256(solver) != controls["solver_sha256"]:
+            raise RuntimeError("AVAC solver executable changed between setup and launch")
+        run(work, args.cores, solver)
+        if sha256(solver) != controls["solver_sha256"]:
+            raise RuntimeError("AVAC solver executable changed during validation")
+        if sha256(setrun_backend) != controls["source_setrun_sha256"]:
+            raise RuntimeError("AVAC setrun backend changed during validation")
     summary, _results = extract(case)
     plot(case)
     print(json.dumps(summary, indent=2))

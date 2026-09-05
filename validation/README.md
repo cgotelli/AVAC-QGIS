@@ -30,8 +30,13 @@ the case definition and recreates the quantities it presents.
 - [2008 WRR dry-bottom sloping bed](AVAC/2008_WRR_sloping_bed/WRR_sloping_bed.ipynb)
 - [Kerswell horizontal Coulomb dam break](AVAC/Kerswell_Coulomb/Kerswell_Coulomb.ipynb)
 - [Coulomb dam break on a sloping bed](AVAC/Coulomb_sloping_bed/Coulomb_sloping_bed.ipynb)
-- [Curvature contribution to normal stress](AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb)
+- [Curvature normal stress and circular-coordinate transport](AVAC/Curvature_normal_stress/Curvature_normal_stress.ipynb)
 - [Section 4 AVAC verification figures](AVAC/Paper_figures/AVAC_verification_figures.ipynb)
+
+The curvature notebook keeps its compiled frozen-cell source check separate
+from a terrain-following circular-track diagnostic. The latter locks the flat
+and constant-slope Coulomb controls, exposes the changing-basis discrepancy on
+a concave transition, and deliberately does not prescribe a production fix.
 
 ## WAVE water verification
 
@@ -70,9 +75,13 @@ notebook has run.
 - [Three-case manuscript figure](ISeeSnow/paper_figures/ISeeSnow_intercomparison_figures.ipynb)
 
 These notebooks download the official ISeeSnow 1.0 repository, use its
-prescribed inputs without calibration, create standard-format AVAC submissions,
-and compare only peer rasters whose grids match exactly. No peer output is used
-to tune the AVAC run.
+prescribed physical inputs without calibration, create standard-format AVAC
+submissions, and compare only peer rasters whose grids match exactly. Minmod is
+selected for the Coulomb-only case in a disclosed, in-sample PFT candidate
+sweep, with target CFL 0.25 selected by the corresponding PFT timestep study;
+PFV remains a secondary audit. The two Voellmy cases retain their prior van
+Leer and target-CFL 0.5 defaults and were not part of that sweep. Explicit CLI
+overrides remain available.
 
 ## Complete notebook run order
 

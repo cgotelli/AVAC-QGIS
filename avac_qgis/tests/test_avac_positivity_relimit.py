@@ -1,4 +1,4 @@
-"""Contracts for AVAC's same-level wet/dry positivity limiter."""
+"""Contracts for AVAC's wet/dry positivity limiter."""
 
 from __future__ import annotations
 
@@ -32,9 +32,9 @@ def test_positivity_relimit_is_avac_only_and_uses_a_complete_halo():
     makefile = _source(GEOCLAW / "Makefile.geoclaw")
 
     assert "logical :: use_fwave_positivity_limiter = .false." in module
-    assert "use_fwave_positivity_limiter = imodel_rh >= 1 .and. mxnest == 1" in setprob
+    assert "use_fwave_positivity_limiter = imodel_rh >= 1 .and. nghost >= 5" in setprob
     assert "use_fwave_positivity_limiter" not in wave_setprob
-    assert "nghost < 5" in setprob
+    assert "analytical-validation compatibility run" in setprob
     assert "mbc < 5" in step2
     assert "relimit => use_fwave_positivity_limiter" in step2
     assert "relimit => use_fwave_positivity_limiter" in flux2
@@ -51,10 +51,47 @@ def test_generated_avac_and_wave_ghost_widths_remain_separate():
     wave_setrun = _source(WAVE / "setrun.py")
     runtime = _source(ROOT / "validation" / "avac4qgis_validation" / "runtime.py")
 
-    assert "clawdata.num_ghost = 5 if uses_positivity_relimit else 2" in avac_setrun
+    assert "active_ghost_cells = 5 if uses_positivity_relimit else 2" in avac_setrun
+    assert "clawdata.num_ghost = active_ghost_cells" in avac_setrun
     assert "avac_ghost_cells = 5" in runtime
     assert "geoclaw_ghost_cells = 2" in runtime
     assert "clawdata.num_ghost = 2" in wave_setrun
+
+
+def test_multilevel_avac_relimits_before_recording_amr_fluxes():
+    """Granular AMR must use the same conservative limiter as level one."""
+    setprob = _source(AVAC / "setprob.f90")
+    avac_setrun = _source(AVAC / "setrun.py")
+    advanc = _source(GEOCLAW / "advanc.f")
+
+    limiter_assignment = next(
+        line.strip()
+        for line in setprob.splitlines()
+        if line.strip().startswith("use_fwave_positivity_limiter =")
+    )
+    assert limiter_assignment == (
+        "use_fwave_positivity_limiter = imodel_rh >= 1 .and. nghost >= 5"
+    )
+    assert "positivity limiter disabled for multilevel amr" not in setprob
+
+    ghost_block_start = avac_setrun.index("uses_positivity_relimit =")
+    ghost_block_end = avac_setrun.index("# choice of bcs", ghost_block_start)
+    ghost_block = avac_setrun[ghost_block_start:ghost_block_end]
+    assert 'str(rheol["model"]).strip() != "water"' in ghost_block
+    assert "param[\"refinement\"]" not in ghost_block
+    assert "active_ghost_cells = 5 if uses_positivity_relimit else 2" in ghost_block
+    assert "clawdata.num_ghost = active_ghost_cells" in ghost_block
+    assert 'str(rheol["model"]).strip() != "coulomb"' in ghost_block
+    assert 'topo_source != "synthetic_validation"' in ghost_block
+
+    # stepgrid computes and relimits fm/fp/gm/gp.  AMRClaw then saves those
+    # same arrays in both the coarse and fine flux registers used by reflux.
+    step = advanc.index("call stepgrid")
+    save_coarse = advanc.index("call fluxsv", step)
+    save_fine = advanc.index("call fluxad", save_coarse)
+    assert step < save_coarse < save_fine
+    assert "call fluxsv(mptr,fm,fp,gm,gp" in advanc
+    assert "call fluxad(fm,fp,gm,gp" in advanc
 
 
 def test_extended_limiter_populates_only_the_requested_outer_faces(tmp_path: Path):

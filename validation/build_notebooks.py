@@ -236,6 +236,60 @@ def avac_notebooks() -> None:
     write(f"AVAC/{name}/AVAC_verification_figures.ipynb", cells)
 
 
+def curvature_notebook() -> None:
+    name = "Curvature_normal_stress"
+    cells = [
+        markdown(
+            "# Curvature-dependent normal stress - AVAC\n\n"
+            "This notebook verifies the Fischer et al. (2012) centripetal "
+            "correction to Coulomb normal stress for planar, concave-circular, "
+            "and convex-circular tracks. It then isolates the changing-basis "
+            "term that a terrain-following material point acquires on a curved "
+            "track but AVAC's deliberately reduced local Cartesian source omits.\n"
+        ),
+        *environment("AVAC", name),
+        markdown(
+            "## Controlled source definition\n\n"
+            "The first suite places a one-metre-deep material element moving at "
+            "8 m s$^{-1}$ at each track nadir. With radius 40 m and $\\mu=0.30$, "
+            "the compiled Fortran source is compared with "
+            "$\\mathrm{d}u/\\mathrm{d}t=-\\mu(g+\\kappa u^2)$ for "
+            "$\\kappa=0$, $+1/R$, and $-1/R$. The convex case remains below "
+            "loss of contact, and one source step is compared with eight "
+            "substeps. A frozen 30-degree tangent with zero applied force also "
+            "checks that the reduced scalar source does not invent map-plane "
+            "acceleration.\n"
+        ),
+        code("case.run('run_curvature_validation.py')\n"),
+        markdown("## Curvature-source agreement\n"),
+        code("source_summary = case.json('results/summary.json')\nsource_summary\n"),
+        code("case.show('figures/curvature_source_verification.png')\n"),
+        markdown(
+            "## Terrain-following circular-track diagnostic\n\n"
+            "The frozen-cell check above is not a terrain-following transport "
+            "test. This second executable integrates squared surface speed "
+            "$w=v_s^2$ along a circular transition of radius 400 m from a "
+            "34-degree slope to horizontal. It compares constrained "
+            "terrain-following point dynamics with the surface-speed equation "
+            "implied by AVAC's reduced horizontal-velocity projection. Flat and "
+            "constant-slope Coulomb tracks are exact controls; a zero-force "
+            "circle isolates the changing projection analytically. The exercise "
+            "excludes depth and pressure evolution, so it documents a coordinate "
+            "discrepancy and does not prescribe a production source correction.\n"
+        ),
+        code("case.run('run_circular_track_verification.py')\n"),
+        code(
+            "circular_summary = "
+            "case.json('results/circular_track_summary.json')\n"
+            "circular_summary\n"
+        ),
+        code(
+            "case.show('figures/circular_track_coordinate_verification.png')\n"
+        ),
+    ]
+    write(f"AVAC/{name}/Curvature_normal_stress.ipynb", cells)
+
+
 def wave_notebooks() -> None:
     cases = [
         ("01_transcritical_shock", "transcritical_shock", "Transcritical flow with shock", None,
@@ -432,10 +486,17 @@ def iseesnow_notebooks() -> None:
         ),
     }
     for folder, (title, description) in descriptions.items():
+        limiter_note = (
+            "For the second-order calculation, Minmod is selected in a "
+            "disclosed, in-sample numerical-scheme sweep using PFT agreement "
+            "with the complete exactly aligned peer set; PFV is an audit only."
+            if folder == "CoulombOnly"
+            else "The second-order calculation retains the prior van Leer default; this Voellmy case was not part of the CoulombOnly limiter sweep."
+        )
         cells = [
             markdown(
                 f"# ISeeSnow: {title} — AVAC\n\n"
-                "This notebook runs one official ISeeSnow case without calibration, writes the required peak-flow-thickness and peak-flow-velocity rasters, and compares them on the supplied grid with participating-model submissions.\n"
+                "This notebook runs one official ISeeSnow case without physical-parameter calibration, writes the required peak-flow-thickness and peak-flow-velocity rasters, and compares them on the supplied grid with participating-model submissions.\n"
             ),
             *environment(
                 "ISeeSnow", folder,
@@ -446,7 +507,14 @@ def iseesnow_notebooks() -> None:
                 ),
             ),
             code("from avac4qgis_validation.datasets import ensure_iseesnow\nbenchmark = ensure_iseesnow()\nbenchmark\n"),
-            markdown("## Prescribed benchmark configuration\n\n" + description + " No peer-model result is used to select an AVAC parameter. The simulation ceiling is 1200 s and the native state is checked for practical arrest.\n"),
+            markdown(
+                "## Prescribed benchmark configuration\n\n"
+                + description
+                + " The prescribed physical parameters are not calibrated. "
+                + limiter_note
+                + " The simulation ceiling is 1200 s and the native "
+                "state is checked for sustained practical arrest.\n"
+            ),
             code(
                 f"CASE_NAME = '{folder}'\n"
                 "RESULTS_ROOT = Path(os.environ.get('AVAC_ISEESNOW_RESULTS_ROOT', case.path.parent)).expanduser().resolve()\n"
@@ -514,6 +582,7 @@ def iseesnow_notebooks() -> None:
 
 def main() -> None:
     avac_notebooks()
+    curvature_notebook()
     wave_notebooks()
     coupling_notebook()
     iseesnow_notebooks()
