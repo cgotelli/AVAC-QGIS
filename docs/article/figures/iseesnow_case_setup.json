@@ -1,0 +1,38 @@
+{
+  "IdealizedTopo": {
+    "dem": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\DEM_IdealizedTopo.asc",
+    "release": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\IdealizedTopo\\Inputs\\release1HS.shp",
+    "release_thickness_normal_m": 1.5,
+    "parameters": "$\\mu=0.4$, $\\xi=2000$ m s$^{-2}$",
+    "hillshade": {
+      "azimuth_degrees": 315,
+      "altitude_degrees": 35,
+      "vertical_exaggeration": 1.0,
+      "overlay_alpha": 0.24
+    }
+  },
+  "RealTopo": {
+    "dem": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\DEM_RealTopo.asc",
+    "release": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\RealTopo\\Inputs\\relWog.shp",
+    "release_thickness_normal_m": 1.5,
+    "parameters": "$\\mu=0.2$, $\\xi=2000$ m s$^{-2}$",
+    "hillshade": {
+      "azimuth_degrees": 315,
+      "altitude_degrees": 35,
+      "vertical_exaggeration": 1.0,
+      "overlay_alpha": 0.24
+    }
+  },
+  "CoulombOnly": {
+    "dem": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\DEM_CoulombOnly.asc",
+    "release": "C:\\Users\\STREEM\\Desktop\\AVAC-QGIS-validation-runs\\iseesnow-investigation\\publication-final-1200s-76844b9\\CoulombOnly\\Inputs\\release1HS.shp",
+    "release_thickness_normal_m": 1.5,
+    "parameters": "$\\mu=0.4$, no velocity drag",
+    "hillshade": {
+      "azimuth_degrees": 315,
+      "altitude_degrees": 35,
+      "vertical_exaggeration": 1.0,
+      "overlay_alpha": 0.24
+    }
+  }
+}
