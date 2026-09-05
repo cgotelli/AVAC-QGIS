@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -80,9 +81,9 @@ def copy_plugin(
     runtime_archive: Path,
     runtime_version: str,
     runtime_manifest_payload: dict,
-    wave_runtime_archive: Path | None = None,
-    wave_runtime_version: str | None = None,
-    wave_manifest_payload: dict | None = None,
+    wave_runtime_archive: Path,
+    wave_runtime_version: str,
+    wave_manifest_payload: dict,
 ) -> Path:
     destination = staging / "avac_qgis"
     def ignore(directory: str, names: list[str]) -> set[str]:
@@ -101,35 +102,36 @@ def copy_plugin(
         documentation / "AVAC4QGIS_TUTORIAL.pdf",
     )
     resources = destination / "resources"
-    for old in resources.glob("avac-runtime-*.tar.gz"):
-        old.unlink()
-    for old in resources.glob("runtime-release*.json"):
-        old.unlink()
+    # Source checkouts retain descriptors for published releases.  Always
+    # clear both products before staging the complete AVAC+WAVE package.
+    for pattern in (
+        "avac-runtime-*.tar.gz",
+        "wave-runtime-*.tar.gz",
+        "runtime-release*.json",
+        "wave-runtime-release*.json",
+    ):
+        for old in resources.glob(pattern):
+            old.unlink()
     archive_name = f"avac-runtime-macos-arm64-{runtime_version}.tar.gz"
     shutil.copy2(runtime_archive, resources / archive_name)
     (resources / "runtime-release.json").write_text(
         json.dumps({
             "runtime_version": runtime_version,
+            "platform": "macos-arm64",
             "archive": archive_name,
             "runtime_manifest_sha256": manifest_digest(runtime_manifest_payload),
         }, indent=2) + "\n", encoding="utf-8"
     )
-    if wave_runtime_archive is not None and wave_runtime_version is not None:
-        if wave_manifest_payload is None:
-            raise ValueError("Wave runtime manifest is required when packaging a Wave runtime.")
-        for old in resources.glob("wave-runtime-*.tar.gz"):
-            old.unlink()
-        for old in resources.glob("wave-runtime-release*.json"):
-            old.unlink()
-        wave_name = f"wave-runtime-macos-arm64-{wave_runtime_version}.tar.gz"
-        shutil.copy2(wave_runtime_archive, resources / wave_name)
-        (resources / "wave-runtime-release.json").write_text(
-            json.dumps({
-                "runtime_version": wave_runtime_version,
-                "archive": wave_name,
-                "runtime_manifest_sha256": manifest_digest(wave_manifest_payload),
-            }, indent=2) + "\n", encoding="utf-8"
-        )
+    wave_name = f"wave-runtime-macos-arm64-{wave_runtime_version}.tar.gz"
+    shutil.copy2(wave_runtime_archive, resources / wave_name)
+    (resources / "wave-runtime-release.json").write_text(
+        json.dumps({
+            "runtime_version": wave_runtime_version,
+            "platform": "macos-arm64",
+            "archive": wave_name,
+            "runtime_manifest_sha256": manifest_digest(wave_manifest_payload),
+        }, indent=2) + "\n", encoding="utf-8"
+    )
     return destination
 
 
@@ -149,8 +151,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-archive", type=Path, required=True)
     parser.add_argument("--runtime-version", required=True)
-    parser.add_argument("--wave-runtime-archive", type=Path)
-    parser.add_argument("--wave-runtime-version")
+    parser.add_argument("--wave-runtime-archive", type=Path, required=True)
+    parser.add_argument("--wave-runtime-version", required=True)
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     version = metadata_version()
@@ -158,14 +160,10 @@ def main() -> None:
     if not archive.is_file():
         raise SystemExit(f"runtime archive not found: {archive}")
     manifest = runtime_manifest(archive, args.runtime_version)
-    if bool(args.wave_runtime_archive) != bool(args.wave_runtime_version):
-        raise SystemExit("--wave-runtime-archive and --wave-runtime-version must be provided together")
-    wave_archive = args.wave_runtime_archive.resolve() if args.wave_runtime_archive else None
-    wave_manifest = None
-    if wave_archive is not None:
-        if not wave_archive.is_file():
-            raise SystemExit(f"Wave runtime archive not found: {wave_archive}")
-        wave_manifest = runtime_manifest(wave_archive, args.wave_runtime_version)
+    wave_archive = args.wave_runtime_archive.resolve()
+    if not wave_archive.is_file():
+        raise SystemExit(f"Wave runtime archive not found: {wave_archive}")
+    wave_manifest = runtime_manifest(wave_archive, args.wave_runtime_version)
     dist = args.dist.resolve(); dist.mkdir(parents=True, exist_ok=True)
     filename = f"avac_qgis-{version}-macos-arm64.zip"
     output = dist / filename
@@ -191,16 +189,31 @@ def main() -> None:
         "runtime_archive_sha256": digest(archive), "plugin_zip_sha256": package_hash,
         "build_timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
-    if wave_archive is not None and wave_manifest is not None:
-        release.update({
-            "wave_runtime_version": args.wave_runtime_version,
-            "wave_runtime_manifest_sha256": manifest_digest(wave_manifest),
-            "wave_clawpack_version": wave_manifest["clawpack"]["version"],
-            "wave_solver_sha256": wave_manifest["solver"]["sha256"],
-            "wave_solver_source_sha256": wave_manifest["solver"]["source_sha256"],
-            "wave_runtime_archive_sha256": digest(wave_archive),
-        })
+    release.update({
+        "wave_runtime_version": args.wave_runtime_version,
+        "wave_runtime_manifest_sha256": manifest_digest(wave_manifest),
+        "wave_clawpack_version": wave_manifest["clawpack"]["version"],
+        "wave_solver_sha256": wave_manifest["solver"]["sha256"],
+        "wave_solver_source_sha256": wave_manifest["solver"]["source_sha256"],
+        "wave_runtime_archive_sha256": digest(wave_archive),
+    })
     (dist / "RELEASE_MANIFEST.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # A package is not a release artifact until both nested runtimes pass the
+    # same closed-manifest checks used by the Windows release pipeline.
+    subprocess.run(
+        (
+            sys.executable,
+            "-u",
+            str(ROOT / "tools" / "validate_release.py"),
+            "--dist",
+            str(dist),
+            "--package",
+            str(output),
+            "--platform",
+            "macos-arm64",
+        ),
+        check=True,
+    )
     print(f"package: {output}\nsha256: {package_hash}\nfiles: {len(contents)}\nbytes: {output.stat().st_size}")
 
 

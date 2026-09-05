@@ -29,6 +29,8 @@ GEOCLAW = (
     / "2d"
     / "shallow"
 )
+STEP2 = GEOCLAW / "step2.f90"
+FLUX2 = GEOCLAW / "flux2fw.f"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(VALIDATION))
 RUNTIME = importlib.import_module("avac4qgis_validation.runtime")
@@ -71,6 +73,11 @@ def _code(source: str) -> str:
     return "\n".join(lines)
 
 
+def _compact_code(source: str) -> str:
+    """Normalize free/fixed-form continuations for structural comparisons."""
+    return re.sub(r"\s+", "", _code(source)).replace("&", "")
+
+
 def _fortran_float(value: str) -> float:
     return float(value.replace("d", "e").replace("D", "E"))
 
@@ -91,6 +98,7 @@ def test_tick_prepares_and_selects_cfl_before_committing_a_step() -> None:
     assert select < nextchk < advance
     assert advance < tlevel
     assert advance < icheck
+    assert tick.count("call advanc_prepared") == 1
     assert tick.count("nextout = nextout + 1") == 1
     assert tick.count("nextchk = nextchk + 1") == 1
     assert "dumpout = .false." in tick[select:advance]
@@ -124,7 +132,7 @@ def test_retry_rechecks_the_whole_level_and_preserves_parent_landing() -> None:
     assert selector.count("d25.17") >= 5
 
 
-def test_preflight_uses_private_scratch_and_a_whole_level_maximum() -> None:
+def test_preflight_uses_private_cfl_only_scratch_and_a_whole_level_maximum() -> None:
     source = _source(GEOCLAW / "advanc.f")
     prepare = _code(_subroutine(source, "prepare_advanc"))
     whole_level = _code(_subroutine(source, "cfl_preflight"))
@@ -138,16 +146,89 @@ def test_preflight_uses_private_scratch_and_a_whole_level_maximum() -> None:
     assert "cfl_trial = dmax1(cfl_trial,cfl_patch)" in whole_level
     assert "cfl_patch = huge(1.d0)" in whole_level
 
-    for allocation in ("qwork", "auxwork", "fm", "fp", "gm", "gp"):
+    for allocation in ("qwork", "auxwork"):
         assert allocation in patch
     assert "allocate(qwork(nvar,mitot,mjtot))" in patch
     assert "allocate(auxwork(max(1,naux),mitot,mjtot))" in patch
     assert "qwork(m,ii,jj) = alloc(locnew+idx-1)" in patch
     assert "auxwork(m,ii,jj) = alloc(locaux+idx-1)" in patch
     before_step = patch.index("call b4step2")
-    step = patch.index("call step2")
-    assert before_step < step
-    assert ".true.)" in patch[before_step:step]
+    cfl_probe = patch.index("call step2_cfl")
+    assert before_step < cfl_probe
+    assert ".true.)" in patch[before_step:cfl_probe]
+
+    # A trial still needs the exact state preparation used by the accepted
+    # step, but never constructs the four full-patch flux arrays or executes
+    # a complete normal/transverse update merely to obtain its CFL.
+    for allocation in ("fm", "fp", "gm", "gp"):
+        assert f"allocate({allocation}" not in patch
+    assert re.search(r"\b(?:fm|fp|gm|gp)\b", patch) is None
+    assert "call step2(" not in patch
+    assert "call rpt2" not in patch
+    assert "external rpn2" in patch
+    assert "external rpn2,rpt2" not in patch
+
+
+def test_cfl_only_kernel_matches_production_riemann_ranges_and_reduction() -> None:
+    step2 = _compact_code(_subroutine(_source(STEP2), "step2"))
+    flux2_source = _source(FLUX2)
+    kernel = _compact_code(_subroutine(flux2_source, "step2_cfl"))
+    reduction = _compact_code(_subroutine(flux2_source, "cfl_from_speeds"))
+    flux2 = _compact_code(_subroutine(flux2_source, "flux2"))
+
+    # The probe expands step2's two calls to flux2, but retains its exact
+    # normal Riemann inputs, sweep bounds, capacity scaling, and per-interface
+    # CFL reduction.  Only correction fluxes and transverse solves are elided.
+    for contract in (
+        "sweep_lo=0",
+        "sweep_pad=1",
+        "sweep_lo=-1",
+        "sweep_pad=2",
+        "doj=sweep_lo,my+sweep_pad",
+        "doi=sweep_lo,mx+sweep_pad",
+    ):
+        assert contract in step2
+        assert contract in kernel
+
+    for slice_contract in (
+        "q1d(:,1-mbc:mx+mbc)=qold(:,1-mbc:mx+mbc,j)",
+        "aux2(:,1-mbc:mx+mbc)=aux(:,1-mbc:mx+mbc,j)",
+        "q1d(:,1-mbc:my+mbc)=qold(:,i,1-mbc:my+mbc)",
+        "aux2(:,1-mbc:my+mbc)=aux(:,i,1-mbc:my+mbc)",
+    ):
+        assert slice_contract in step2
+        assert slice_contract in kernel
+
+    assert (
+        "callrpn2(1,maxm,meqn,mwaves,maux,mbc,mx,q1d,q1d,"
+        "aux2,aux2,fwave,s,amdq,apdq)"
+    ) in kernel
+    assert (
+        "callrpn2(2,maxm,meqn,mwaves,maux,mbc,my,q1d,q1d,"
+        "aux2,aux2,fwave,s,amdq,apdq)"
+    ) in kernel
+    assert kernel.count("callrpn2(") == 2
+    assert "callrpt2(" not in kernel
+    assert "callflux2(" not in kernel
+
+    shared_reduction = (
+        "cfl1d=dmax1(cfl1d,dtdx1d(i)*s(mw,i),"
+        "-dtdx1d(i-1)*s(mw,i))"
+    )
+    assert "callcfl_from_speeds(maxm,mwaves,mbc,mx,dtdx1d,s,cfl1d)" in flux2
+    assert "callcfl_from_speeds(maxm,mwaves,mbc,mx,dtdx1d,s,cfl1d)" in kernel
+    assert "callcfl_from_speeds(maxm,mwaves,mbc,my,dtdx1d,s,cfl1d)" in kernel
+    assert kernel.count("callcfl_from_speeds(") == 2
+    assert shared_reduction in reduction
+    assert "domw=1,mwaves" in reduction
+    assert "doi=1,mx+1" in reduction
+
+    for capacity_contract in (
+        "dtdx/aux(mcapa,1-mbc:mx+mbc,j)",
+        "dtdy/aux(mcapa,i,1-mbc:my+mbc)",
+    ):
+        assert capacity_contract in step2
+        assert capacity_contract in kernel
 
 
 def test_preflight_cannot_commit_observations_fluxes_or_patch_time() -> None:
@@ -181,6 +262,8 @@ def test_preflight_cannot_commit_observations_fluxes_or_patch_time() -> None:
         "rnode(timemult,mptr)  =",
     ):
         assert operation in accepted
+    assert accepted.count("call b4step2") == 1
+    assert accepted.count("call stepgrid") == 1
 
 
 def _prepare_boundary_impulse(root: Path, initial_dt: float) -> Path:

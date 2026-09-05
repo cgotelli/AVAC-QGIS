@@ -22,6 +22,12 @@ EXCLUDED_DIRS = {"__pycache__", ".pytest_cache", ".git", ".github", "tests"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
 
 
+def replace_once(text: str, old: str, new: str, *, label: str) -> str:
+    if text.count(old) != 1:
+        raise ValueError(f"could not identify one {label} in the package template")
+    return text.replace(old, new, 1)
+
+
 def digest(path: Path) -> str:
     value = hashlib.sha256()
     with path.open("rb") as stream:
@@ -79,6 +85,7 @@ def copy_plugin(
     wave_archive: Path,
     wave_version: str,
     wave_manifest_payload: dict,
+    tested_qgis: str,
 ) -> Path:
     destination = staging / "avac_qgis"
     def ignore(_: str, names: list[str]) -> set[str]:
@@ -115,12 +122,30 @@ def copy_plugin(
         "runtime_manifest_sha256": manifest_digest(wave_manifest_payload),
     }}}, indent=2) + "\n", encoding="utf-8")
     metadata = (destination / "metadata.txt").read_text(encoding="utf-8")
-    metadata = metadata.replace("description=AVAC avalanche simulation integration for QGIS with managed native runtimes.", "description=AVAC avalanche simulation integration for QGIS (Windows AMD64).")
-    metadata = metadata.replace("about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using a bundled platform-specific runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS.", "about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using the bundled Windows AMD64 runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS on Windows.")
+    metadata = replace_once(
+        metadata,
+        "description=AVAC avalanche simulation integration for QGIS with managed native runtimes.",
+        "description=AVAC avalanche simulation integration for QGIS (Windows AMD64).",
+        label="plugin description",
+    )
+    metadata = replace_once(
+        metadata,
+        "about=Prepare, run, and analyse AVAC avalanche simulations in QGIS using a bundled platform-specific runtime. Includes an opt-in Lake-Wave setup workflow. Tested with QGIS 3.44 LTS.",
+        "about=Prepare, run, and analyse AVAC avalanche simulations in QGIS "
+        "using the bundled Windows AMD64 runtime. Includes an opt-in Lake-Wave "
+        f"setup workflow. Tested with QGIS {tested_qgis} on Windows.",
+        label="plugin about text",
+    )
     (destination / "metadata.txt").write_text(metadata, encoding="utf-8")
     readme = (destination / "README.md").read_text(encoding="utf-8")
-    readme = readme.replace("Install the ZIP matching your operating system. Each platform package has been tested with **QGIS 3.44 LTS** and contains its own managed runtime.", "This package is for **64-bit Windows (AMD64)** on both AMD and Intel processors, and has been tested with **QGIS 3.44 LTS**.")
-    readme = readme.replace("The managed runtime installs in the operating system's application-data area and is reused by later runs.", "The managed runtime installs under the Windows application-data area and is reused by later runs.")
+    plugin_version = metadata_version()
+    readme = replace_once(
+        readme,
+        f"The current release is **{plugin_version}** and targets **QGIS 3.44 LTS**.",
+        f"The current release is **{plugin_version}**, supports **QGIS 3.40 or newer**, "
+        f"and this Windows package was exercised with **QGIS {tested_qgis}**.",
+        label="QGIS support statement",
+    )
     (destination / "README.md").write_text(readme, encoding="utf-8")
     return destination
 
@@ -142,8 +167,16 @@ def main() -> None:
     parser.add_argument("--runtime-version", required=True)
     parser.add_argument("--wave-runtime-archive", type=Path, required=True)
     parser.add_argument("--wave-runtime-version", required=True)
+    parser.add_argument(
+        "--tested-qgis",
+        required=True,
+        help="Exact QGIS version used for the packaged-plugin workflow test",
+    )
     parser.add_argument("--dist", type=Path, default=ROOT / "releases" / metadata_version() / TARGET)
     args = parser.parse_args()
+    tested_qgis = args.tested_qgis.strip()
+    if not tested_qgis or any(character in tested_qgis for character in "\r\n"):
+        raise SystemExit("--tested-qgis must be a non-empty, single-line version label")
     version = metadata_version(); archive = args.runtime_archive.resolve(); wave_archive = args.wave_runtime_archive.resolve()
     if not archive.is_file() or not wave_archive.is_file(): raise SystemExit("runtime archive not found")
     manifest = runtime_manifest(archive, args.runtime_version); wave_manifest = runtime_manifest(wave_archive, args.wave_runtime_version)
@@ -154,12 +187,13 @@ def main() -> None:
         staged = copy_plugin(
             Path(temporary), archive, args.runtime_version, manifest,
             wave_archive, args.wave_runtime_version, wave_manifest,
+            tested_qgis,
         )
         assert_no_forbidden(staged); contents = write_zip(staged, output)
     package_hash = digest(output)
     (dist / f"{filename}.sha256").write_text(f"{package_hash}  {filename}\n", encoding="utf-8")
     (dist / "PACKAGE_CONTENTS.json").write_text(json.dumps(contents, indent=2) + "\n", encoding="utf-8")
-    release = {"plugin_version": version, "minimum_qgis": "3.40", "runtime_version": args.runtime_version, "runtime_format": manifest["format"], "runtime_manifest_sha256": manifest_digest(manifest), "supported_os": "Windows", "supported_architecture": "AMD64", "supported_platform": TARGET, "tested_qgis": "3.44 LTS", "clawpack_version": manifest["clawpack"]["version"], "solver_sha256": manifest["solver"]["sha256"], "runtime_archive_sha256": digest(archive), "wave_runtime_version": args.wave_runtime_version, "wave_runtime_manifest_sha256": manifest_digest(wave_manifest), "wave_clawpack_version": wave_manifest["clawpack"]["version"], "wave_solver_sha256": wave_manifest["solver"]["sha256"], "wave_runtime_archive_sha256": digest(wave_archive), "plugin_zip_sha256": package_hash, "build_timestamp_utc": datetime.now(timezone.utc).isoformat()}
+    release = {"plugin_version": version, "minimum_qgis": "3.40", "runtime_version": args.runtime_version, "runtime_format": manifest["format"], "runtime_manifest_sha256": manifest_digest(manifest), "supported_os": "Windows", "supported_architecture": "AMD64", "supported_platform": TARGET, "tested_qgis": tested_qgis, "clawpack_version": manifest["clawpack"]["version"], "solver_sha256": manifest["solver"]["sha256"], "runtime_archive_sha256": digest(archive), "wave_runtime_version": args.wave_runtime_version, "wave_runtime_manifest_sha256": manifest_digest(wave_manifest), "wave_clawpack_version": wave_manifest["clawpack"]["version"], "wave_solver_sha256": wave_manifest["solver"]["sha256"], "wave_runtime_archive_sha256": digest(wave_archive), "plugin_zip_sha256": package_hash, "build_timestamp_utc": datetime.now(timezone.utc).isoformat()}
     (dist / "RELEASE_MANIFEST.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"package: {output}\nsha256: {package_hash}\nfiles: {len(contents)}\nbytes: {output.stat().st_size}")
 

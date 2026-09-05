@@ -169,15 +169,9 @@ c   # Set fadd for the donor-cell upwind method (Godunov)
    40       continue
 c
 c     # compute maximum wave speed for checking Courant number:
-      cfl1d = 0.d0
-      do 50 mw=1,mwaves
-         do 50 i=1,mx+1
-c          # if s>0 use dtdx1d(i) to compute CFL,
-c          # if s<0 use dtdx1d(i-1) to compute CFL:
-            cfl1d = dmax1(cfl1d, dtdx1d(i)*s(mw,i),
-     &                          -dtdx1d(i-1)*s(mw,i))
-
-   50       continue
+c     Keep this reduction shared with step2_cfl so the transactional probe
+c     and the accepted physical update cannot drift apart.
+      call cfl_from_speeds(maxm,mwaves,mbc,mx,dtdx1d,s,cfl1d)
 c
       if (method(2).eq.1) go to 130
 c
@@ -268,5 +262,138 @@ c
   180          continue
 c
   999 continue
+      return
+      end
+c
+c     =====================================================
+      subroutine step2_cfl(maxm,meqn,maux,mbc,mx,my,
+     &                     qold,aux,dx,dy,dt,cflgrid,rpn2)
+c     =====================================================
+c
+c     Compute exactly the CFL number that step2 would report, without
+c     constructing flux corrections or performing transverse solves.
+c
+c     flux2 computes cfl1d immediately from the wave speeds returned by
+c     rpn2.  Limiters, transverse propagation, positivity relimiting,
+c     and flux accumulation occur later and cannot change
+c     the CFL.  The same sweep bounds, slices, capacity scaling, Riemann
+c     call, and reduction therefore preserve the acceptance decision.
+c
+c     qold and aux are private b4step2-prepared copies.
+c     This routine has no observation, flux-register, solution,
+c     patch-clock, or global CFL side effects.  It lives with flux2fw
+c     because ordinary, multilayer, and Boussinesq builds use different
+c     step2 files
+c     while sharing this normal-flux implementation.
+c
+      use geoclaw_module, only:
+     &     relimit => use_fwave_positivity_limiter
+      use amr_module, only: mwaves, mcapa
+
+      implicit double precision (a-h,o-z)
+
+      external rpn2
+      dimension qold(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
+      dimension aux(max(1,maux),1-mbc:mx+mbc,
+     &              1-mbc:my+mbc)
+      dimension q1d(meqn,1-mbc:maxm+mbc)
+      dimension aux2(max(1,maux),1-mbc:maxm+mbc)
+      dimension dtdx1d(1-mbc:maxm+mbc)
+      dimension fwave(meqn,mwaves,1-mbc:maxm+mbc)
+      dimension s(mwaves,1-mbc:maxm+mbc)
+      dimension amdq(meqn,1-mbc:maxm+mbc)
+      dimension apdq(meqn,1-mbc:maxm+mbc)
+      integer sweep_lo,sweep_pad,icom,jcom
+
+      cflgrid = 0.d0
+      dtdx = dt/dx
+      dtdy = dt/dy
+
+      sweep_lo = 0
+      sweep_pad = 1
+      if (relimit) then
+         sweep_lo = -1
+         sweep_pad = 2
+      endif
+
+c     Match the normal x-sweeps in step2 and the reduction in flux2.
+      do j = sweep_lo,my+sweep_pad
+         q1d(:,1-mbc:mx+mbc) = qold(:,1-mbc:mx+mbc,j)
+
+         if (mcapa .gt. 0) then
+            dtdx1d(1-mbc:mx+mbc) =
+     &          dtdx/aux(mcapa,1-mbc:mx+mbc,j)
+         else
+            dtdx1d = dtdx
+         endif
+
+         if (maux .gt. 0) then
+            aux2(:,1-mbc:mx+mbc) = aux(:,1-mbc:mx+mbc,j)
+         endif
+
+         jcom = j
+         call rpn2(1,maxm,meqn,mwaves,maux,mbc,mx,q1d,q1d,
+     &             aux2,aux2,fwave,s,amdq,apdq)
+
+         call cfl_from_speeds(maxm,mwaves,mbc,mx,
+     &                        dtdx1d,s,cfl1d)
+         cflgrid = dmax1(cflgrid,cfl1d)
+      enddo
+
+c     Match the normal y-sweeps in step2 and the reduction in flux2.
+      do i = sweep_lo,mx+sweep_pad
+         q1d(:,1-mbc:my+mbc) = qold(:,i,1-mbc:my+mbc)
+
+         if (mcapa .gt. 0) then
+            dtdx1d(1-mbc:my+mbc) =
+     &          dtdy/aux(mcapa,i,1-mbc:my+mbc)
+         else
+            dtdx1d = dtdy
+         endif
+
+         if (maux .gt. 0) then
+            aux2(:,1-mbc:my+mbc) = aux(:,i,1-mbc:my+mbc)
+         endif
+
+         icom = i
+         call rpn2(2,maxm,meqn,mwaves,maux,mbc,my,q1d,q1d,
+     &             aux2,aux2,fwave,s,amdq,apdq)
+
+         call cfl_from_speeds(maxm,mwaves,mbc,my,
+     &                        dtdx1d,s,cfl1d)
+         cflgrid = dmax1(cflgrid,cfl1d)
+      enddo
+
+      return
+      end
+c
+c     =====================================================
+      subroutine cfl_from_speeds(maxm,mwaves,mbc,mx,
+     &                           dtdx1d,s,cfl1d)
+c     =====================================================
+c
+c     Reduce normal Riemann wave speeds with Clawpack's signed,
+c     capacity-aware CFL definition.  Both flux2 and the transactional
+c     CFL-only probe call this routine, so the acceptance criteria share
+c     one implementation rather than two formulas that can drift.
+c
+c     Keep this helper here: the multilayer build supplies its own
+c     step2 but uses this same flux file.
+c
+      implicit double precision (a-h,o-z)
+
+      dimension dtdx1d(1-mbc:maxm+mbc)
+      dimension s(mwaves,1-mbc:maxm+mbc)
+
+      cfl1d = 0.d0
+      do mw=1,mwaves
+         do i=1,mx+1
+c           # A right-going wave uses the capacity of the cell on its
+c           # right; a left-going wave uses the cell on its left.
+            cfl1d = dmax1(cfl1d,dtdx1d(i)*s(mw,i),
+     &                          -dtdx1d(i-1)*s(mw,i))
+         enddo
+      enddo
+
       return
       end

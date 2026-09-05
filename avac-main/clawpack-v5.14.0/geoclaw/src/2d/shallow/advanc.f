@@ -167,7 +167,8 @@ c
 
 c  Compute the maximum CFL for one prepared AMR level without committing a
 c  physical step.  Each patch is copied to private scratch storage; b4step2
-c  and step2 may alter only those copies and temporary fluxes.
+c  and the normal Riemann sweeps may alter only those private copies and
+c  temporary wave arrays.
 c
 c  In particular, this deliberately does not touch gauges, fixed-grid
 c  observations, flux registers, patch clocks, cflmax, cfl_level, or the
@@ -210,11 +211,9 @@ c
 
       implicit double precision (a-h,o-z)
 
-      external rpn2,rpt2
+      external rpn2
       double precision cfl_patch
       double precision, allocatable :: qwork(:,:,:),auxwork(:,:,:)
-      double precision, allocatable :: fm(:,:,:),fp(:,:,:)
-      double precision, allocatable :: gm(:,:,:),gp(:,:,:)
 
       level = node(nestlevel,mptr)
       hx    = hxposs(level)
@@ -232,8 +231,6 @@ c     several OpenMP workers otherwise exceed the small default Windows
 c     thread stack.
       allocate(qwork(nvar,mitot,mjtot))
       allocate(auxwork(max(1,naux),mitot,mjtot))
-      allocate(fm(nvar,mitot,mjtot),fp(nvar,mitot,mjtot))
-      allocate(gm(nvar,mitot,mjtot),gp(nvar,mitot,mjtot))
 
       auxwork = 0.d0
       do jj = 1,mjtot
@@ -256,11 +253,10 @@ c     subsequently accepted call.
      &             rnode(cornxlo,mptr),rnode(cornylo,mptr),hx,hy,
      &             time,delt,naux,auxwork,.true.)
 
-      call step2(maxm,nvar,naux,nghost,nx,ny,
-     &           qwork,auxwork,hx,hy,delt,cfl_patch,
-     &           fm,fp,gm,gp,rpn2,rpt2)
+      call step2_cfl(maxm,nvar,naux,nghost,nx,ny,
+     &               qwork,auxwork,hx,hy,delt,cfl_patch,rpn2)
 
-      deallocate(qwork,auxwork,fm,fp,gm,gp)
+      deallocate(qwork,auxwork)
       return
       end
 c

@@ -195,7 +195,8 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
             subprocess.run(("codesign", "--force", "--sign", "-", str(artifact)), check=True)
             subprocess.run(("codesign", "--verify", "--strict", str(artifact)), check=True)
 
-        copy_clawpack_source(claw_root, python_dir / "clawpack-src")
+        packaged_clawpack = python_dir / "clawpack-src"
+        copy_clawpack_source(claw_root, packaged_clawpack)
         backend_records = copy_backend(backend, staging / "backend" / args.backend_name, args.backend_name)
         for name in ("COPYING", "COPYING.LIB", "COPYING.RUNTIME"):
             candidate = args.gcc_prefix / name
@@ -209,6 +210,7 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
         manifest = {
             "format": 1,
             "runtime_version": args.version,
+            "platform": "macos-arm64",
             "architecture": "arm64",
             "build_timestamp_utc": datetime.now(timezone.utc).isoformat(),
             # The archive must not disclose or depend on the builder's local
@@ -217,7 +219,21 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
             "toolchain": {"platform": platform.platform(), "python": sys.version.split()[0]},
             "solver": {"path": "bin/xgeoclaw", "sha256": sha256(copied_solver), "source_sha256": sha256(solver)},
             "native_libraries": [{"path": f"lib/{name}", "sha256": sha256(lib_dir / name), "otool": relative_otool(lib_dir / name)} for name in RUNTIME_LIBRARIES],
-            "clawpack": {"version": clawpack_version(claw_root), "root": "python/clawpack-src", "source_sha256": sha256(claw_root / "clawpack" / "__init__.py")},
+            "clawpack": {
+                "version": clawpack_version(claw_root),
+                "root": "python/clawpack-src",
+                "source_sha256": sha256(
+                    packaged_clawpack / "clawpack" / "__init__.py"
+                ),
+                "files": [
+                    {
+                        "path": path.relative_to(staging).as_posix(),
+                        "sha256": sha256(path),
+                    }
+                    for path in sorted(packaged_clawpack.rglob("*"))
+                    if path.is_file()
+                ],
+            },
             "backend": backend_records,
             "licenses": [path.name for path in sorted(licenses.iterdir())],
         }
@@ -239,7 +255,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--solver", type=Path, required=True)
     parser.add_argument("--backend", type=Path, help="AVAC directory containing the direct runtime backend (defaults to solver parent)")
-    parser.add_argument("--backend-name", default="AVAC", help="Runtime backend directory name (AVAC or Wave)")
+    parser.add_argument(
+        "--backend-name", default="AVAC",
+        help="Runtime backend directory name (AVAC or WAVE)",
+    )
     parser.add_argument("--archive-prefix", default="avac", help="Archive filename prefix")
     parser.add_argument("--claw-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

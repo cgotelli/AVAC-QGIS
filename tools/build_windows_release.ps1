@@ -2,12 +2,17 @@
 param(
     [string]$MingwBin = $env:AVAC_MINGW_BIN,
     [string]$Python = "python",
-    [string]$Dist = ""
+    [string]$Dist = "",
+    [string]$TestedQgis = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 Set-Location $root
+
+if (-not $TestedQgis.Trim()) {
+    throw "Pass -TestedQgis with the exact QGIS version used for release testing."
+}
 
 if (-not $MingwBin) {
     $MingwBin = "C:\Strawberry\c\bin"
@@ -87,13 +92,14 @@ function Build-Runtime([string]$Solver, [string]$Backend, [string]$BackendName, 
 }
 
 Build-Runtime "avac-main/src/AVAC/xgeoclaw.exe" "avac-main/src/AVAC" "AVAC" "avac-runtime-windows-amd64-$version.tar.gz"
-Build-Runtime "avac-main/src/WAVE/xgeoclaw.exe" "avac-main/src/WAVE" "Wave" "wave-runtime-windows-amd64-$version.tar.gz"
+Build-Runtime "avac-main/src/WAVE/xgeoclaw.exe" "avac-main/src/WAVE" "WAVE" "wave-runtime-windows-amd64-$version.tar.gz"
 
 & $Python -u tools/build_windows_plugin_package.py `
     --runtime-archive (Join-Path $Dist "avac-runtime-windows-amd64-$version.tar.gz") `
     --runtime-version $version `
     --wave-runtime-archive (Join-Path $Dist "wave-runtime-windows-amd64-$version.tar.gz") `
     --wave-runtime-version $version `
+    --tested-qgis $TestedQgis `
     --dist $Dist
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -71,6 +71,15 @@ exactly once. This is pre-step acceptance, not post-step rollback or an
 individual-patch retry. The supported bundled configurations disable
 Richardson flagging, which is outside this validated preflight contract.
 
+The preflight is a shared solver kernel, not an ISeeSnow case adjustment. It
+calls each configured normal Riemann solver over the same x/y sweep ranges,
+state and auxiliary slices, and capacity scaling as the production flux path.
+Both paths call one signed CFL reduction routine. Because the CFL is fixed by
+those normal wave speeds, the probe does not construct correction fluxes, run
+transverse Riemann solves, apply limiters, or accumulate fluxes. The resulting
+source is compiled into both plugin-bundled AVAC and WAVE executables and is
+used for every case prepared by the plugin.
+
 The forced two-level acceptance regression rejected CFL
 `1.2995227220576577`, selected retry `dt = 0.00048094580371044085`, and kept
 the maximum accepted CFL at `0.50`. One- and four-thread executions and a
@@ -242,11 +251,28 @@ conclusion is that the CFL-corrected package preserves the flat-bed analytical
 verification with sub-grid changes; historical byte identity is intentionally
 not claimed.
 
-The one-thread package run took 336.95 s versus 182.91 s for the frozen lock,
-an 84.2% increase. Instrumented physical integration time did not increase;
-source inspection instead attributes the extra time to the private full-step
-CFL preflight that precedes every accepted step. This is a performance
-regression to optimize separately without weakening transactional acceptance.
+The first transactional package used a private full physical step for every
+CFL probe. Its one-thread run took 336.95 s versus 182.91 s for the unsafe-CFL
+frozen lock, an 84.2% increase. Replacing only that throw-away work with the
+exact normal-wave CFL kernel reduced the final packaged run to 284.51 s, a
+15.6% improvement, without weakening transactional acceptance. It remains
+55.5% slower than the historical solver because every accepted step still
+requires a separate normal Riemann sweep before the committed update. Caching
+an entire accepted flux transaction could remove more of that cost, but would
+also have to defer and atomically commit patch solution, auxiliary state,
+flux-register, observation, and clock side effects; it is not justified by
+the present equivalence evidence and is left as a separate optimization.
+
+The final optimized build reproduced
+all 40 Kerswell FGout solution files and 40 time files, plus all 41 native
+solution files and 41 time files, byte-for-byte relative to the full-preflight
+build. It also selected the identical three rejected CFL trials (0.591130, 0.512734,
+and 0.747984), accepted no over-limit step, and left every reported analytical
+metric unchanged. On the common idealized curved DEM, 20 s packaged-runtime
+smoke runs reproduced the established PFT, PFV, mass-history, and all three
+state-frame hashes exactly for Coulomb/Minmod at target CFL 0.25 and
+Voellmy/van Leer at target CFL 0.5. Their maximum accepted CFL values remained
+0.29 and 0.63 respectively.
 
 In the paired constant-slope check, both the old and current executables stop
 near 2.430 s with `Too many dt reductions` instead of reaching the configured

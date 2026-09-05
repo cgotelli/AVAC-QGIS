@@ -67,12 +67,32 @@ exactly once. This is a pre-step acceptance procedure, not a post-step
 rollback. Coulomb retains its selected target CFL 0.25 and Voellmy its target
 CFL 0.5; the supported bundled configurations disable Richardson flagging.
 
+The scratch preflight uses the normal Riemann wave speeds and the same signed,
+capacity-aware CFL reduction as the physical flux routine. Flux corrections,
+limiters, transverse solves, and flux accumulation occur after that reduction
+and are therefore not repeated merely to decide whether a trial timestep is
+acceptable. This is implemented in the shared GeoClaw integration source that
+is compiled into both packaged AVAC and WAVE executables, so it applies to all
+plugin-created cases rather than to these validation drivers only.
+
 A forced two-level regression rejected CFL `1.2995227220576577`, retried with
 `dt = 0.00048094580371044085`, and kept the maximum accepted CFL at `0.50`.
 One- and four-thread runs and direct replay produced bitwise-identical output
 artifacts. A safe `dt = 2e-4` control was also bitwise identical between the
 pre-change and current solvers. Publication runs still reject any legacy
 accepted-step CFL warning.
+
+The optimized packaged solver retained the same three Kerswell rejection
+decisions and byte-identical native and FGout solution/time files relative to
+the original transactional implementation. The final packaged Kerswell run
+was 15.6% faster than that implementation. Twenty-second curved-terrain smoke
+runs also reproduced the established Coulomb/Minmod and Voellmy/van-Leer PFT,
+PFV, mass-history, and state-frame hashes exactly, with no accepted CFL
+violation. A packaged WAVE forced-retry run likewise reproduced every native
+and FGout solution/time file exactly across one-thread retry, four-thread
+retry, and direct-start executions. The Windows release validator opens both
+embedded runtime archives and verifies their complete manifested solver,
+library, backend, and Clawpack payloads before a plugin ZIP can pass.
 
 The Windows plugin package includes the compiled AVAC and WAVE solvers and
 their runtime dependencies. The plugin installs its managed runtime
