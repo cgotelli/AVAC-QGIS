@@ -6,9 +6,9 @@ The selection rule is deliberately fixed before the candidate sweep:
 * use peak-flow thickness (PFT) only;
 * scale each candidate-to-peer RMSE by that peer's median RMSE to the other
   peers, so one intrinsically unusual peer cannot dominate the result;
-* aggregate the seven scaled errors with a median;
-* require the leading candidate to beat the runner-up for at least six of the
-  seven peers and to remain first in all seven leave-one-peer-out rankings.
+* aggregate the eight scaled errors with a median;
+* require the leading candidate to beat the runner-up for at least seven of the
+  eight peers and to remain first in all eight leave-one-peer-out rankings.
 
 Support IoU and active-field correlation are deterministic secondary keys.
 They are never blended into the primary score with fitted weights.  No raster
@@ -64,9 +64,11 @@ EXPECTED_PEERS = (
     "minVoellmyv2",
     "TRENT2D",
     "03CoulombOnly_faSavageHutterFoamGamma",
+    "MoT-Voellmy",
 )
+PEER_POPULATION_VERSION = "aligned-eight-including-native-mot-v2"
 PFT_SUPPORT_THRESHOLD_M = 0.01
-PAIRED_WINS_REQUIRED = 6
+PAIRED_WINS_REQUIRED = len(EXPECTED_PEERS) - 1
 LOO_FIRSTS_REQUIRED = len(EXPECTED_PEERS)
 FLOAT_TIE_ATOL = 1.0e-14
 EXPECTED_STATE_REGULARIZATION_DEPTH_M = 0.05
@@ -175,7 +177,7 @@ def validated_candidate_pft(values: np.ndarray, name: str) -> np.ndarray:
 
 
 def official_peer_fields() -> tuple[Any, dict[str, np.ndarray], dict[str, Any]]:
-    """Load exactly the seven official PFT rasters aligned to the input DEM."""
+    """Load all eight official PFT rasters aligned to the input DEM."""
     case_root = ensure_iseesnow() / "data" / "CoulombOnly"
     target_path = case_root / "Inputs" / "DEM_CoulombOnly.asc"
     target = ascii_grid(target_path)
@@ -742,6 +744,7 @@ def build_report(
             "raster_operations": "complete official grid; no shift, clip, pad, or resample",
         },
         "peers": list(EXPECTED_PEERS),
+        "peer_population_version": PEER_POPULATION_VERSION,
         "ranking": ranking,
         "candidate_peer_metrics": peer_rows,
         "leave_one_out": loo_rows,

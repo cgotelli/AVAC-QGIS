@@ -80,6 +80,7 @@ avac_qgis/resources/runtime/
 !/validation/ISeeSnow/paper_figures/iseesnow_table_c1_core.csv
 !/validation/ISeeSnow/paper_figures/make_iseesnow_case_figure.py
 !/validation/ISeeSnow/paper_figures/make_iseesnow_figures.py
+!/validation/ISeeSnow/paper_figures/make_coulomb_runout_diagnosis.py
 /validation/vendor/SWASHES-1.05.01/bin/
 /validation/vendor/SWASHES-1.05.01/build/
 /resources/

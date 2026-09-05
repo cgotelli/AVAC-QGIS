@@ -110,17 +110,35 @@ def model_name(stem: str) -> str:
 def output_pairs(output_dir: Path) -> tuple[list[tuple[str, Path, Path]], list[dict[str, str]]]:
     pairs: list[tuple[str, Path, Path]] = []
     exclusions: list[dict[str, str]] = []
-    files = set(output_dir.glob("*_pft")) | set(output_dir.glob("*_pft.asc")) | set(output_dir.glob("*_pft.tif")) | set(output_dir.glob("*_pft.tiff"))
-    for pft in sorted(files):
-        suffix = pft.suffix
-        name_without_suffix = pft.name[:-len(suffix)] if suffix else pft.name
-        stem = re.sub(r"_pft$", "", name_without_suffix, flags=re.IGNORECASE)
-        alternatives = [pft.with_name(f"{stem}_pfv{extension}") for extension in ("", ".asc", ".tif", ".tiff")]
-        pfv = next((item for item in alternatives if item.is_file()), None)
-        if pfv is None:
-            exclusions.append({"case": output_dir.parent.name, "model": model_name(stem), "reason": "pft exists but matching pfv is absent"})
-        else:
-            pairs.append((model_name(stem), pft, pfv))
+    # The official MoT-Voellmy submissions retain native h_max/s_max names:
+    # h is terrain-normal flow thickness and s is physical tangent speed.
+    # Treat these as filename aliases only; read_grid and same_grid still
+    # authenticate the unchanged raster coordinates and numerical values.
+    # Standard pft/pfv exports take precedence if both names are available,
+    # so a renamed native submission never receives extra statistical weight.
+    extensions = ("", ".asc", ".tif", ".tiff")
+    for thickness_suffix, speed_suffix in (("pft", "pfv"), ("h_max", "s_max")):
+        files = {
+            path for extension in extensions
+            for path in output_dir.glob(f"*_{thickness_suffix}{extension}")
+            if path.is_file()
+        }
+        for pft in sorted(files):
+            suffix = pft.suffix
+            name_without_suffix = pft.name[:-len(suffix)] if suffix else pft.name
+            stem = name_without_suffix[:-(len(thickness_suffix) + 1)]
+            name = model_name(stem)
+            if thickness_suffix == "h_max" and any(item[0] == name for item in pairs):
+                exclusions.append({"case": output_dir.parent.name, "model": name,
+                                   "reason": "alternate h_max/s_max export omitted because this model already has a paired export"})
+                continue
+            alternatives = [pft.with_name(f"{stem}_{speed_suffix}{extension}") for extension in extensions]
+            pfv = next((item for item in alternatives if item.is_file()), None)
+            if pfv is None:
+                exclusions.append({"case": output_dir.parent.name, "model": name,
+                                   "reason": f"{thickness_suffix} exists but matching {speed_suffix} is absent"})
+            else:
+                pairs.append((name, pft, pfv))
     return pairs, exclusions
 
 

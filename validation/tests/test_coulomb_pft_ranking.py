@@ -78,44 +78,44 @@ def _loo(firsts: list[str]) -> list[dict[str, object]]:
     ]
 
 
-def test_decision_requires_six_paired_wins_and_all_leave_one_out_firsts() -> None:
-    peer_rows = _peer_rows([1.0] * 7, [2.0] * 7)
-    loo_rows = _loo(["left"] * 7)
+def test_decision_requires_seven_paired_wins_and_all_leave_one_out_firsts() -> None:
+    peer_rows = _peer_rows([1.0] * 8, [2.0] * 8)
+    loo_rows = _loo(["left"] * 8)
 
     decision = RANKING.selection_decision(_ranking(), peer_rows, loo_rows)
 
     assert decision["status"] == "selected"
     assert decision["candidate"] == "left"
-    assert decision["leader_paired_wins"] == 7
-    assert decision["leader_loo_firsts"] == 7
+    assert decision["leader_paired_wins"] == 8
+    assert decision["leader_loo_firsts"] == 8
 
 
 def test_decision_refuses_a_primary_leader_without_peer_consensus() -> None:
-    # The aggregate ranking can lead while only five individual peers agree.
+    # Retain the all-but-one consensus rule after adding the omitted eighth peer.
     peer_rows = _peer_rows(
-        [1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0],
-        [2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0],
+        [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0],
     )
 
     decision = RANKING.selection_decision(
-        _ranking(), peer_rows, _loo(["left"] * 7)
+        _ranking(), peer_rows, _loo(["left"] * 8)
     )
 
     assert decision["status"] == "no_decision"
     assert decision["candidate"] is None
-    assert decision["leader_paired_wins"] == 5
+    assert decision["leader_paired_wins"] == 6
 
 
 def test_decision_refuses_a_leave_one_out_ranking_flip() -> None:
-    peer_rows = _peer_rows([1.0] * 7, [2.0] * 7)
-    firsts = ["left"] * 6 + ["right"]
+    peer_rows = _peer_rows([1.0] * 8, [2.0] * 8)
+    firsts = ["left"] * 7 + ["right"]
 
     decision = RANKING.selection_decision(
         _ranking(), peer_rows, _loo(firsts)
     )
 
     assert decision["status"] == "no_decision"
-    assert decision["leader_loo_firsts"] == 6
+    assert decision["leader_loo_firsts"] == 7
 
 
 def test_full_report_prefers_the_candidate_nearest_peer_consensus() -> None:
@@ -155,8 +155,9 @@ def test_full_report_prefers_the_candidate_nearest_peer_consensus() -> None:
     assert [row["candidate"] for row in report["ranking"]] == ["near", "far"]
     assert report["decision"]["status"] == "selected"
     assert report["decision"]["candidate"] == "near"
-    assert report["decision"]["leader_paired_wins"] == 7
-    assert report["decision"]["leader_loo_firsts"] == 7
+    assert report["decision"]["leader_paired_wins"] == 8
+    assert report["decision"]["leader_loo_firsts"] == 8
+    assert report["peer_population_version"] == "aligned-eight-including-native-mot-v2"
 
 
 def test_provenance_accepts_only_the_fixed_experiment_and_common_solver() -> None:

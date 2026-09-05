@@ -1,5 +1,12 @@
 # CoulombOnly numerical investigation
 
+This document preserves the historical limiter/CFL selection and its original
+seven-peer score population. The later runout diagnosis and general terrain
+transport correction are documented in
+[`COULOMB_RUNOUT_TRANSPORT.md`](COULOMB_RUNOUT_TRANSPORT.md). That comparison
+also restores a previously undiscovered aligned peer; old scores must not be
+compared directly with the expanded-population scores.
+
 ## Decision
 
 The reproducible CoulombOnly validation configuration is:

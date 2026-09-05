@@ -80,5 +80,6 @@ def test_iseesnow_figure_sources_are_published() -> None:
         "iseesnow_table_c1_core.csv",
         "make_iseesnow_case_figure.py",
         "make_iseesnow_figures.py",
+        "make_coulomb_runout_diagnosis.py",
     }
     assert required == {path.name for path in source_root.iterdir() if path.is_file()}

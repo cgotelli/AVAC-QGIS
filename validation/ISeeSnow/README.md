@@ -6,6 +6,13 @@ idealized Voellmy, real-topography Voellmy, and idealized Coulomb-only flow.
 The official dataset is downloaded on first use and kept outside version
 control.
 
+The general curved-terrain velocity transport correction and its regression
+contract are described in
+[`COULOMB_RUNOUT_TRANSPORT.md`](COULOMB_RUNOUT_TRANSPORT.md). It preserves
+basal curvature friction and affine-bed behavior. Spatial peer discovery now
+also includes native MoT-Voellmy `h_max`/`s_max` exports, giving 9/8/8 aligned
+peers; the seven-peer limiter scores below describe the earlier selection.
+
 Each notebook:
 
 1. uses the supplied DEM, release polygon, 1.5 m normal release thickness, and
@@ -29,12 +36,24 @@ faster than 0.01 m/s stays below 1% of the initial release for at least three
 saved frames and never rebounds before the verified integration ceiling.
 
 For the second-order `CoulombOnly` comparison, Minmod was selected by PFT field
-agreement with the complete set of exactly aligned peer grids; PFV is retained
+agreement with the then-discovered seven exactly aligned peer grids; PFV is retained
 as a secondary audit because it is comparatively insensitive to the limiter.
 The PFT-based timestep study selects target CFL 0.25: it is closer to the
 0.125 result than 0.5, beats 0.125 for all seven peer fields (and 0.5 for five),
 and avoids the greater-than-twofold additional cost of 0.125. The two Voellmy
 cases retain their prior target CFL 0.5.
+Those results are historical: native MoT-Voellmy files named `*_h_max.asc`
+and `*_s_max.asc` were previously omitted by filename discovery. They are now
+included without changing their values or coordinates. The current aligned
+spatial populations are 9/8/8 for IdealizedTopo/RealTopo/CoulombOnly; the two
+Voellmy populations include FLO-2D, whereas Table C1 scalar statistics remain
+core-group only. The Coulomb ranking population is versioned as
+`aligned-eight-including-native-mot-v2`. Selection now requires at least seven
+of eight paired wins and all eight leave-one-peer-out firsts, retaining the
+all-but-one consensus rule. Scores must be recomputed for both alternatives
+on this same eight-peer population; historical seven-peer scores are not
+numerically interchangeable. This discovery correction does not retune Minmod
+or alter the same-executable, backend, numerical-control or CFL gates.
 That peer comparison is an explicitly disclosed, in-sample numerical-scheme
 selection, not independent validation. `IdealizedTopo` and `RealTopo` retain
 their prior van Leer default and were not part of this limiter sweep. An
@@ -50,6 +69,23 @@ five-ghost affine-grid run.
 The selection rule, four-limiter results, timestep and AMR checks, curvature
 finding, and flat-surface regression lock are summarized in
 [`COULOMB_ONLY_INVESTIGATION.md`](COULOMB_ONLY_INVESTIGATION.md).
+
+For regression comparison between different solver versions, run:
+
+```text
+python validation/ISeeSnow/compare_source_runs.py --baseline PATH_TO_BASELINE_RESULTS --candidate PATH_TO_CANDIDATE_RESULTS --output PATH_TO_COMPARISON
+```
+
+The comparison checks recorded executable, backend, submission and complete
+official-input hashes and compares generated release fields and physical and
+numerical controls. Each labelled suite must use one executable/backend pair.
+Both alternatives are scored against the exact same discovered aligned peers.
+PFT is primary; per-peer PFV, runout and conservation/rest diagnostics are
+reported separately. Different durations or controls are rejected by default;
+`--allow-protocol-differences` produces an explicitly unmatched diagnostic for
+preliminary investigations. Direct file-hash authentication supports both
+current-source and explicit source-snapshot/packaged runs; it does not replace
+the article figure's independent packaged-runtime certification.
 
 Generated submissions, copied inputs, reports, plots, and raw solver results
 are intentionally not committed. Historical formulation and wet--dry audits
