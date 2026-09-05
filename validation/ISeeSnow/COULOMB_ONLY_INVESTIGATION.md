@@ -17,8 +17,11 @@ Minmod is now also the AVAC4QGIS default whenever a user selects a new Coulomb
 setup. Limiter choices are model-specific: existing saved values are preserved,
 the packaged Voellmy template remains Superbee, and the two Voellmy ISeeSnow
 cases retain their explicitly validated van Leer protocol. Locked flat-bed
-verification configurations are not migrated, so their reference results do
-not change.
+verification configurations are not migrated to Minmod. The historical
+Kerswell case therefore remains on its explicit Superbee/two-ghost protocol;
+the CFL-corrected package preserves its analytical conclusion and final
+boundaries, although retrying formerly over-limit steps necessarily changes a
+few sub-grid samples.
 Because the same seven PFT fields select and then score the limiter, those
 agreement metrics are in-sample numerical-scheme evidence, not an independent
 validation dataset.
@@ -197,24 +200,53 @@ production source term.
 ## Flat-surface regression lock
 
 Both quasi-1D drivers deliberately use the documented two-ghost compatibility
-path, with the new five-ghost f-wave relimiter disabled. For the completed
-Kerswell control, this locks the historical analytical verification output;
-for the constant-slope case, it isolates the same path for a paired common-stop
-diagnostic. Neither check is evidence that the production five-ghost relimiter
-is bitwise invariant on every affine grid.
+path, with the new five-ghost f-wave relimiter disabled. The Kerswell control
+also retains its historical Superbee limiter (`2 2 2`); it is not migrated to
+the production Minmod default. For the constant-slope case, the same path is
+used for a paired common-stop diagnostic. Neither check is evidence that the
+production five-ghost relimiter is bitwise invariant on every affine grid.
 
-A fresh run with the final frozen executable retained the Kerswell front,
-rear, final-speed, and initial-mass metrics exactly. The front RMSE remained
-0.147534 m, rear RMSE 0.003112 m, final maximum speed 0.000781 m/s, and volume-
-per-unit-width range 0.000615 m2. All front/rear/speed entries in the complete
-40-row boundary report are identical; 18 volume-per-unit-width entries and the
-derived range differ by at most `1.78e-15 m2`. The raw fields are numerically,
-but not byte-for-byte,
-invariant: differences begin only in 14 late-time cells at the arrested
-advancing fringe, with maximum depth and velocity differences of `2.43e-17 m`
-and `1.26e-18 m/s`. Those values are machine-roundoff scale and many orders
-below every diagnostic threshold; the stricter byte-identity claim is
-therefore intentionally not made.
+Before transactional CFL acceptance was added, a fresh frozen-executable run
+matched the preceding Kerswell lock to roundoff. That comparison remains useful
+for isolating the earlier wet/dry and curvature changes, but its lock accepted
+one level-three step at CFL 0.5911 despite `cfl_max = 0.5`. It cannot serve as a
+byte-identity target for the corrected timestep algorithm.
+
+The certified 0.6.1 Windows package was therefore rerun for the complete
+40-frame, 10 s case against that frozen lock. The installed runtime passed its
+full manifest check; the plugin ZIP, runtime identity, solver, and packaged
+`setrun.py` hashes were respectively `5657b5c6...e1577`,
+`4a23d3b5...9e7d`, `ed018949...f358`, and `37b8107b...e970`. The solver
+rejected level-three trial CFL values 0.591130, 0.512734, and 0.747984,
+accepted no over-limit step, reported a maximum accepted CFL of 0.45, and
+completed all 41 native and 40 fixed-grid frames through 10 s.
+
+The corrected result preserves the analytical verification at grid scale,
+not at byte scale. The front RMSE changed from 0.1475344412 to 0.1478650265 m,
+an increase of 0.0003305853 m or 0.132 finest cells. The primary rear RMSE
+remained exactly 0.0031118291 m. Final front and rear positions remained
+exactly 19.83125 and -7.30625 m. Final maximum speed decreased from
+0.0007806818 to 0.0006833584 m/s, initial volume was exact, and the volume
+range decreased by `3.28e-10 m2/m`. Front and primary rear samples moved by at
+most one 0.0025 m cell; the threshold-sensitive exact-state rear moved by at
+most two cells.
+
+Full fields diverge immediately after the first retry and must not be called a
+roundoff match. Depth has maximum absolute difference 0.00246875 m and global
+RMSE `1.05e-4 m`; its largest framewise L1 volume difference is
+`0.00160159 m2/m`, or 0.0160% of the initial volume. The raw 3.477 m/s velocity
+maximum occurs only where one result has depth `1.39e-10 m` and the other is
+dry. On their common `h > 1e-6 m` support, the maximum velocity difference is
+0.001016 m/s, and wet support is identical at `h >= 1e-4 m`. The accurate
+conclusion is that the CFL-corrected package preserves the flat-bed analytical
+verification with sub-grid changes; historical byte identity is intentionally
+not claimed.
+
+The one-thread package run took 336.95 s versus 182.91 s for the frozen lock,
+an 84.2% increase. Instrumented physical integration time did not increase;
+source inspection instead attributes the extra time to the private full-step
+CFL preflight that precedes every accepted step. This is a performance
+regression to optimize separately without weakening transactional acceptance.
 
 In the paired constant-slope check, both the old and current executables stop
 near 2.430 s with `Too many dt reductions` instead of reaching the configured
