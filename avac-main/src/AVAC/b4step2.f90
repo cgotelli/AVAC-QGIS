@@ -39,6 +39,9 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
     ! Store current grid spacings for the D-Claw static yield check in rpn2
     use rheology_module, only: dx_avac, dy_avac, dt_avac, rho_rh, imodel_rh
     use rheology_module, only: get_mu_xi, static_yield_ratio_2d
+    use rheology_module, only: terrain_nonplanarity_mask
+    use rheology_module, only: state_momentum_regularization_depth_rh, &
+                              voellmy_state_momentum_regularization_depth_rh
 
     implicit none
 
@@ -52,7 +55,7 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
 
     ! Local variables
     integer :: i, j
-    real(kind=8) :: h, s, sratio, mu_cell, xi_cell, C_cell
+    real(kind=8) :: h, s, sratio, mu_cell, xi_cell, C_cell, correction_depth
     real(kind=8) :: eta_w, eta_e, eta_s, eta_n
 
     ! Store grid spacings for use in rpn2_geoclaw.f (D-Claw yield check)
@@ -96,6 +99,21 @@ subroutine b4step2(mbc, mx, my, meqn, q, xlower, ylower, dx, dy, t, dt, &
 
     if (actualstep) then
         call set_storm_fields(maux, mbc, mx, my, xlower, ylower, dx, dy, t, aux)
+    end if
+
+    ! Use an explicit scratch field rather than inferring
+    ! two-dimensional curvature from a directional Riemann slice.
+    if (imodel_rh >= 1 .and. coordinate_system == 1) then
+        correction_depth=state_momentum_regularization_depth_rh
+        if (imodel_rh >= 2) correction_depth=voellmy_state_momentum_regularization_depth_rh
+        if (maux < 3 .and. correction_depth > dry_tolerance) then
+            error stop 'AVAC shallow correction-flux limiting requires num_aux=3 for granular runs'
+        end if
+        if (maux >= 3) then
+            call terrain_nonplanarity_mask(mbc,mx,my,aux(1,:,:),xlower,ylower,dx,dy, &
+                                            xlowdomain,xhidomain,ylowdomain,yhidomain, &
+                                            xperdom,yperdom,aux(3,:,:))
+        end if
     end if
 
     ! On AVAC's Cartesian grid aux(2) is a deliberately transient marker

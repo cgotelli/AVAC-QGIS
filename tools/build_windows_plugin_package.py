@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import tarfile
 import tempfile
@@ -26,6 +27,26 @@ def replace_once(text: str, old: str, new: str, *, label: str) -> str:
     if text.count(old) != 1:
         raise ValueError(f"could not identify one {label} in the package template")
     return text.replace(old, new, 1)
+
+
+def windows_readme_support(readme: str, version: str, tested_qgis: str) -> str:
+    """Normalize either supported README template to the tested build label."""
+    new = (
+        f"The current Windows release is **{version}**, supports **QGIS 3.40 or newer**, and\n"
+        f"was tested with **QGIS {tested_qgis}**."
+    )
+    old = f"The current release is **{version}** and targets **QGIS 3.44 LTS**."
+    pattern = (
+        rf"(?m)^The current Windows release is \*\*{re.escape(version)}\*\*, "
+        r"supports \*\*QGIS 3\.40 or newer\*\*, and\n"
+        r"was tested with \*\*QGIS [^\r\n*]+\*\*\.$"
+    )
+    matches = list(re.finditer(pattern, readme))
+    if matches:
+        if len(matches) != 1 or old in readme:
+            raise ValueError("could not identify one QGIS support statement in the package template")
+        return readme[:matches[0].start()] + new + readme[matches[0].end():]
+    return replace_once(readme, old, new, label="QGIS support statement")
 
 
 def digest(path: Path) -> str:
@@ -139,13 +160,7 @@ def copy_plugin(
     (destination / "metadata.txt").write_text(metadata, encoding="utf-8")
     readme = (destination / "README.md").read_text(encoding="utf-8")
     plugin_version = metadata_version()
-    readme = replace_once(
-        readme,
-        f"The current release is **{plugin_version}** and targets **QGIS 3.44 LTS**.",
-        f"The current release is **{plugin_version}**, supports **QGIS 3.40 or newer**, "
-        f"and this Windows package was exercised with **QGIS {tested_qgis}**.",
-        label="QGIS support statement",
-    )
+    readme = windows_readme_support(readme, plugin_version, tested_qgis)
     (destination / "README.md").write_text(readme, encoding="utf-8")
     return destination
 

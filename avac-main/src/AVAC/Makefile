@@ -46,6 +46,7 @@ EXCLUDE_SOURCES = \
   $(GEOLIB)/b4step2.f90 \
   $(GEOLIB)/bc2amr.f90 \
   $(GEOLIB)/fgmax_values.f90 \
+  $(GEOLIB)/flux2fw.f \
 
 # ----------------------------------------
 # List of custom sources for this program:
@@ -73,6 +74,7 @@ SOURCES = \
   ./b4step2.f90 \
   ./bc2amr.f90 \
   ./fgmax_values.f90 \
+  ./flux2fw.f \
   ./rpn2_geoclaw.f \
   $(CLAW)/riemann/src/rpt2_geoclaw.f \
   $(CLAW)/riemann/src/geoclaw_riemann_utils.f \

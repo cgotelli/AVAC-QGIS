@@ -727,7 +727,13 @@ def geoclaw_overlay_topography(raster: AvacRaster) -> AvacRaster:
 
 
 def write_topography(path: Path, raster: AvacRaster, cancelled: Callable[[], bool] | None = None) -> None:
-    """Use the legacy GUI's exact topotype-3 formatting and row order."""
+    """Write topotype-3 terrain without rounding away binary64 precision.
+
+    Seventeen significant digits roundtrip each finite double exactly. This
+    matters for terrain derivatives: shorter decimal output can introduce
+    artificial curvature even when the supplied raster is an affine plane.
+    The legacy header registration, nodata handling and row order are retained.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     m, z = raster.metadata, np.asarray(raster.z, dtype=float)
     nodata = float(m["nodata_value"])
@@ -741,7 +747,7 @@ def write_topography(path: Path, raster: AvacRaster, cancelled: Callable[[], boo
         for row in np.flipud(np.where(np.isfinite(z), z, nodata)):
             if cancelled and cancelled():
                 raise PreparationCancelled("AVAC input preparation cancelled.")
-            handle.write(" ".join(f"{float(value):.10g}" for value in row) + "\n")
+            handle.write(" ".join(f"{float(value):.17g}" for value in row) + "\n")
 
 
 def read_avac_topography(path: str | Path, crs_authid: str = "") -> AvacRaster:

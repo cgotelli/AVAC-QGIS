@@ -250,8 +250,8 @@ def test_static_yield_ratio_auxiliary_is_declared_and_refreshed():
         / "shallow" / "qinit.f90"
     ).read_text(encoding="utf-8")
 
-    assert "clawdata.num_aux = 2" in setrun
-    assert "amrdata.aux_type = ['center', 'center']" in setrun
+    assert "clawdata.num_aux = 3 if uses_positivity_relimit else 2" in setrun
+    assert "amrdata.aux_type = ['center'] * clawdata.num_aux" in setrun
     assert "static_yield_ratio_2d" in b4step
     assert "aux(2,i,j) = static_yield_ratio_2d" in b4step
     assert "yield_ok_L" in rpn

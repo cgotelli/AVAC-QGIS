@@ -12,6 +12,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from windows_runtime_licenses import DEFAULT_BUNDLE, copy_runtime_licenses
+
 
 TARGET = "windows-amd64"
 EXCLUDED = {".git", ".github", "__pycache__", "build"}
@@ -46,6 +48,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--library", type=Path, action="append", default=[])
     parser.add_argument("--license", type=Path, action="append", default=[])
+    parser.add_argument("--runtime-license-bundle", type=Path, default=DEFAULT_BUNDLE)
     args = parser.parse_args()
 
     solver = args.solver.resolve()
@@ -81,6 +84,7 @@ def main() -> None:
             if not candidate.is_file():
                 raise SystemExit(f"License file not found: {candidate}")
             shutil.copy2(candidate, licenses / candidate.name)
+        copy_runtime_licenses(licenses, libraries, args.runtime_license_bundle.resolve())
         init_text = (clawpack / "clawpack" / "__init__.py").read_text(encoding="utf-8")
         match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)", init_text)
         manifest = {
@@ -90,6 +94,7 @@ def main() -> None:
             "architecture": "amd64",
             "solver": file_record(root, solver_target),
             "native_libraries": [file_record(root, lib_dir / item.name) for item in libraries],
+            "licenses": [file_record(root, path) for path in sorted(licenses.iterdir()) if path.is_file()],
             "backend": [file_record(root, path) for path in sorted(backend_dir.rglob("*")) if path.is_file()],
             "clawpack": {
                 "version": match.group(1) if match else "5.14.0",

@@ -70,6 +70,17 @@ def test_normal_pft_preserves_internal_south_to_north_orientation() -> None:
     np.testing.assert_allclose(result, [[5.0, 1.0], [0.75, 0.5]])
 
 
+def test_stabilization_description_tracks_the_paired_backend(tmp_path):
+    backend = tmp_path / "setrun.py"
+    backend.write_text("# AVAC_SHALLOW_STABILIZATION = curved_correction_flux_v1\n")
+    assert DRIVER.shallow_stabilization_method(backend) == "curved_correction_flux_v1"
+    backend.write_text("# historical setrun\n")
+    (tmp_path / "src2.f90").write_text("call regularized_velocity(h,hu,hv,h_eps,u,v)\n")
+    assert DRIVER.shallow_stabilization_method(backend) == "legacy_per_source_step_momentum_projection"
+    (tmp_path / "src2.f90").write_text("! unrelated explicit source\n")
+    assert DRIVER.shallow_stabilization_method(backend) == "unspecified_backend_policy"
+
+
 def test_normal_release_depth_uses_fractional_cell_coverage() -> None:
     dem = DRIVER.EsriGrid(
         Path("flat.asc"), 2, 2, 0.0, 0.0, 5.0, -9999.0,

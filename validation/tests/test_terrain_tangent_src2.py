@@ -52,12 +52,13 @@ end module amr_module
   implicit none
   integer, parameter :: meqn=3, maux=2, mbc=2
   integer :: mx, my, i, j, ghost_mode, friction_flag, domain_mx, domain_my
-  integer :: terrain_mode, xperiodic, yperiodic
+  integer :: terrain_mode, xperiodic, yperiodic, steps, step, model
   real(kind=8) :: dt, u, v, h, bx, by, bxx, bxy, byy, x, y, datum
-  real(kind=8) :: patch_xlower,patch_ylower,sample_x,sample_y,pi
+  real(kind=8) :: patch_xlower,patch_ylower,sample_x,sample_y,pi,regularization_depth
   real(kind=8), allocatable :: q(:,:,:), aux(:,:,:)
   read(*,*) mx,my,dt,ghost_mode,friction_flag,friction_depth,u,v,h,bx,by,bxx,bxy,byy,datum, &
-            patch_xlower,patch_ylower,domain_mx,domain_my,terrain_mode,xperiodic,yperiodic
+            patch_xlower,patch_ylower,domain_mx,domain_my,terrain_mode,xperiodic,yperiodic, &
+            regularization_depth,steps,model
   xlower=0.d0
   ylower=0.d0
   xupper=dble(domain_mx)
@@ -66,11 +67,11 @@ end module amr_module
   yperdom=yperiodic==1
   pi=acos(-1.d0)
   friction_forcing = friction_flag == 1
-  imodel_rh = 1
+  imodel_rh = model
   n_zones_rh = 1
   rho_rh = 300.d0
-  state_momentum_regularization_depth_rh = 0.d0
-  voellmy_state_momentum_regularization_depth_rh = 0.d0
+  state_momentum_regularization_depth_rh = regularization_depth
+  voellmy_state_momentum_regularization_depth_rh = regularization_depth
   allocate(mu_zones_rh(1),xi_zones_rh(1),C_zones_rh(1))
   mu_zones_rh = 0.d0
   xi_zones_rh = 0.d0
@@ -101,7 +102,10 @@ end module amr_module
       q(:,i,j)=[h,h*u,h*v]
     enddo
   enddo
-  call src2(meqn,mbc,mx,my,patch_xlower,patch_ylower,1.d0,1.d0,q,maux,aux,0.d0,dt)
+  do step=1,steps
+    call src2(meqn,mbc,mx,my,patch_xlower,patch_ylower,1.d0,1.d0,q,maux,aux, &
+              dble(step-1)*dt,dt)
+  enddo
   do j=1,my
     do i=1,mx
       write(*,'(2(i4,1x),3(es25.17,1x))') i,j,q(:,i,j)
@@ -128,10 +132,12 @@ end program terrain_src2_driver
         velocity=(3.0, -1.0), depth=1.0,
         polynomial=(-0.7, 0.1, 0.04, -0.01, -0.02), datum=0.0,
         tile_origin=(0, 0), domain_shape=None, terrain_mode=0, periodic=(False, False),
+        regularization_depth=0.0, steps=1, model=1,
     ):
         values = [*shape, dt, ghost_mode, int(friction), friction_depth,
                   *velocity, depth, *polynomial, datum, *tile_origin,
-                  *(domain_shape or shape), terrain_mode, *map(int, periodic)]
+                  *(domain_shape or shape), terrain_mode, *map(int, periodic),
+                  regularization_depth, steps, model]
         completed = subprocess.run(
             [str(executable)],
             input=" ".join(format(float(value), ".17g") for value in values) + "\n",
@@ -144,6 +150,26 @@ end program terrain_src2_driver
         return rows[:, 2:].reshape((*shape[::-1], 3)).transpose((1, 0, 2))
 
     return run
+
+
+@pytest.mark.parametrize("model", [1, 2, 3])
+def test_zero_duration_source_does_not_project_shallow_momentum(source_step, model):
+    result = source_step(dt=0.0, depth=0.025, regularization_depth=0.05, model=model)
+    assert result == pytest.approx(np.broadcast_to([0.025, 0.075, -0.025], (7, 7, 3)), abs=1e-16)
+
+
+@pytest.mark.parametrize("model", [1, 2, 3])
+def test_force_free_shallow_source_is_independent_of_subcycling(source_step, model):
+    # Terrain is curved transversely, but straight along the moving material
+    # path. No gravity or constitutive force is enabled by this fixture.
+    # Thus geometry and the physical source are exact identities; changing
+    # dt must not introduce a numerical drag on cell-average momentum.
+    kwargs = dict(depth=0.025, velocity=(3.0, 0.0), regularization_depth=0.05,
+                  polynomial=(0.0, 0.0, 0.0, 0.0, 0.04), model=model)
+    whole = source_step(dt=0.2, **kwargs)
+    halves = source_step(dt=0.1, steps=2, **kwargs)
+    assert whole == pytest.approx(halves, abs=1e-16)
+    assert whole == pytest.approx(np.broadcast_to([0.025, 0.075, 0.0], (7, 7, 3)), abs=1e-16)
 
 
 @pytest.mark.parametrize("shape", [(7, 7), (7, 1), (1, 7), (7, 2), (2, 7), (2, 2)])

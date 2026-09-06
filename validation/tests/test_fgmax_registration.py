@@ -228,3 +228,15 @@ def test_setrun_rejects_nonfinite_voellmy_state_regularization_in_hand_authored_
 
     with pytest.raises(ValueError, match="non-negative finite"):
         module.setrun()
+
+
+@pytest.mark.parametrize("model", ["Water", "Coulomb", "Voellmy", "cohesive_Voellmy"])
+def test_transient_curvature_auxiliary_layout_for_every_model(monkeypatch, model):
+    module = _load_setrun(monkeypatch)
+    _configure(module)
+    module.DEM.update(xmax=40.0, ymax=60.0)
+    module.Rheol["model"] = model
+    rundata = module.setrun()
+    expected = 2 if model == "Water" else 3
+    assert rundata.clawdata.num_aux == expected
+    assert rundata.amrdata.aux_type == ["center"] * expected

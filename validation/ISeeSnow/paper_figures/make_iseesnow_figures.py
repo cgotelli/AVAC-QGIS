@@ -34,6 +34,7 @@ from avac4qgis_validation.plot_style import (  # noqa: E402
     apply_paper_style,
     figure_size,
 )
+from avac4qgis_validation.runtime import ISEESNOW_NATIVE_CONTROL_FILENAMES  # noqa: E402
 
 
 CASES = (
@@ -362,6 +363,43 @@ def _nested_value(mapping: dict[str, object], dotted_key: str) -> object:
     return value
 
 
+def _verify_generated_inputs(
+    case: str, case_root: Path, summary: dict[str, object],
+) -> list[dict[str, str]] | None:
+    """Authenticate new exported-input records without inventing legacy provenance."""
+    if "generated_input_manifest" not in summary:
+        return None  # Older runs did not record these hashes before execution.
+    raw_records = summary["generated_input_manifest"]
+    if not isinstance(raw_records, list) or not raw_records:
+        raise RuntimeError(f"{case} has an invalid generated input manifest")
+    run_root = (case_root / "Run").resolve()
+    output_dir = run_root / "AVAC/_output"
+    expected_paths = {
+        (run_root / "Topo/topography.asc").resolve(),
+        (run_root / "AVAC/init.avacbin").resolve(),
+        *(output_dir / name for name in ISEESNOW_NATIVE_CONTROL_FILENAMES),
+        *output_dir.glob("*.data"),
+    }
+    seen: set[Path] = set()
+    records = []
+    for raw in raw_records:
+        if not isinstance(raw, dict):
+            raise RuntimeError(f"{case} has an invalid generated input record")
+        path = _contained_path(case_root, raw.get("path"), f"{case} generated input")
+        if path not in expected_paths or path in seen:
+            raise RuntimeError(f"{case} has an unexpected or duplicate generated input: {path}")
+        if raw.get("name") != path.relative_to(run_root).as_posix():
+            raise RuntimeError(f"{case} generated input name/path mismatch: {path}")
+        _content, record = _stable_artifact(path)
+        if record["sha256"] != raw.get("sha256"):
+            raise RuntimeError(f"{case} generated input hash mismatch: {path}")
+        seen.add(path)
+        records.append({"name": str(raw["name"]), **record})
+    if seen != expected_paths:
+        raise RuntimeError(f"{case} generated input manifest omits native inputs")
+    return records
+
+
 def _verify_case_artifacts(
     case: str, case_root: Path, summary: dict[str, object],
 ) -> dict[str, object]:
@@ -453,6 +491,7 @@ def _verify_case_artifacts(
 
     return {
         "official_inputs": official_inputs,
+        "generated_inputs": _verify_generated_inputs(case, case_root, summary),
         "configuration_record": configuration_artifact,
         "plugin_case": plugin_artifact,
         "configuration_template": template_artifact,

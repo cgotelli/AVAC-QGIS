@@ -35,8 +35,10 @@ def test_temporal_speed_is_the_terrain_tangent_magnitude():
 def test_accepted_physics_sources_are_stable():
     """Intentional physics changes must update this source acceptance pin."""
     expected = {
-        "b4step2.f90": "1153fe52c35136e08dc240c5fc805d6ce86b800688c207293cf7797dc0e90922",
-        "rpn2_geoclaw.f": "a6ed1ebc993b836265b0f57c9bce2047938cab211d16b2d33c568964b18d652d",
+        "b4step2.f90": "a352238a9a72d927385a65aaac9a39a7c4fdfe84372c8432862c04f29af52ca0",
+        # Accepted 0.6.1 direct-head static-interface guard; not a claim of
+        # numerical equivalence with the previous flat-case trajectories.
+        "rpn2_geoclaw.f": "11c13f650b299870c56a0bdb3d51ba75e9b511dad718951ae64ab3b641df5aae",
     }
     for name, digest in expected.items():
         # Git may materialize CRLF working-tree files on Windows. The source

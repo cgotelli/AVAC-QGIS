@@ -30,6 +30,15 @@ import numpy as np
 GRAVITY = 9.81
 AVAC_GHOST_CELLS = 5
 GEOCLAW_GHOST_CELLS = 2
+# Mandatory native controls emitted by the managed ISeeSnow AVAC backend.
+# Extra .data inputs remain allowed and must also be recorded/authenticated.
+ISEESNOW_NATIVE_CONTROL_FILENAMES = frozenset({
+    "adjoint.data", "amr.data", "claw.data", "dtopo.data",
+    "fgmax_grids.data", "fgout_grids.data", "flagregions.data",
+    "friction.data", "gauges.data", "geoclaw.data", "multilayer.data",
+    "qinit.data", "refinement.data", "regions.data", "setprob.data",
+    "surge.data", "topo.data",
+})
 VALIDATION_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = VALIDATION_ROOT.parent
 CLAWPACK_SOURCE = WORKSPACE / "avac-main" / "clawpack-v5.14.0"
@@ -346,18 +355,22 @@ def clean_case(case: Path) -> None:
 
 
 def _arc_ascii(path: Path, xmin: float, ymin: float, dx: float, values: np.ndarray) -> None:
-    """Write the supplied north-up nodal values as an Arc ASCII grid."""
+    """Write north-up terrain with binary64-roundtrip coordinate/value precision.
+
+    Retain all supplied precision so decimal serialization does not create
+    artificial curvature in an otherwise affine terrain raster.
+    """
     values = np.asarray(values, dtype=float)
     nrows, ncols = values.shape
     lines = [
         f"ncols {ncols}",
         f"nrows {nrows}",
-        f"xllcorner {xmin:.12g}",
-        f"yllcorner {ymin:.12g}",
-        f"cellsize {dx:.12g}",
+        f"xllcorner {xmin:.17g}",
+        f"yllcorner {ymin:.17g}",
+        f"cellsize {dx:.17g}",
         "NODATA_value -9999",
     ]
-    lines.extend(" ".join(f"{value:.12g}" for value in row) for row in values)
+    lines.extend(" ".join(f"{value:.17g}" for value in row) for row in values)
     path.write_text("\n".join(lines) + "\n")
 
 

@@ -213,14 +213,14 @@ def validate_controlled_values(values: dict[str, Any]) -> list[str]:
         state_depth = float(values["computation.state_momentum_regularization_depth"])
         if not np.isfinite(state_depth) or state_depth < 0:
             issues.append(
-                "Coulomb state momentum regularization depth must be a non-negative finite number."
+                "Coulomb shallow flux depth must be a non-negative finite number."
             )
         voellmy_state_depth = float(
             values["computation.voellmy_state_momentum_regularization_depth"]
         )
         if not np.isfinite(voellmy_state_depth) or voellmy_state_depth < 0:
             issues.append(
-                "Voellmy state momentum regularization depth must be a non-negative finite number."
+                "Voellmy shallow flux depth must be a non-negative finite number."
             )
         if int(values["computation.nb_simul"]) < 1 or int(values["animation.n_out"]) < 1:
             issues.append("Solver and temporal output counts must each be at least one.")

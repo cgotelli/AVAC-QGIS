@@ -1,5 +1,25 @@
 # AVAC–ISeeSnow intercomparison
 
+The [2026-09-05 precision checkpoint](PRECISION_VALIDATION_20260905.md)
+records the general source/plugin terrain fix, matched native regressions,
+full-duration peer comparisons, and the reasons the flux correction remains
+experimental.
+
+The [Coulomb deposit-peak investigation](COULOMB_DEPOSIT_PEAK.md) separates
+retained-deposit morphology from peak-over-time peer fields, tests spatial
+order and a general static-interface correction, and records why neither
+change is promoted as a peak reduction. Second-order Minmod is retained.
+
+The [Voellmy near-dry source correction](VOELLMY_NEAR_DRY_STABILITY.md)
+documents a reproduced drag-cancellation defect, its general source/plugin
+fix and the full-duration acceptance checks. Historical V1 instability
+warnings remain attached to the runs that produced them.
+
+The [Voellmy CFL refinement](VOELLMY_CFL_REFINEMENT.md) compares the same
+corrected solver at CFL targets 0.50 and 0.25. Both full-duration all-step
+audits pass, but PFT and thin-layer velocity changes are mixed; defaults
+remain unchanged pending a third timestep level.
+
 The three independent notebooks reproduce the official
 [ISeeSnow 1.0](https://github.com/avaframe/ISeeSnow/tree/1.0) cases:
 idealized Voellmy, real-topography Voellmy, and idealized Coulomb-only flow.
@@ -25,8 +45,14 @@ Each notebook:
 The validation driver treats the constitutive equations separately. Coulomb
 uses `--state-regularization-depth` (default 0.05 m), while Voellmy and
 cohesive Voellmy use `--voellmy-state-regularization-depth` (default 0.10 m).
-Both are explicit physical shallow-state momentum scales, independent of the
-0.05 m PFV reporting threshold, and apply only on locally non-planar terrain.
+These legacy option names now specify shallow correction-flux depth scales,
+independent of the 0.05 m PFV reporting threshold. The conservative normal and
+transverse high-order corrections share a bounded taper on locally non-planar
+terrain; stored cell-average momentum is no longer projected once per step.
+Flat/affine beds and water retain their previous flux path. No friction,
+curvature force, or peer parameter is retuned. See
+[`SOURCE_TIMESTEP_STABILIZATION.md`](SOURCE_TIMESTEP_STABILIZATION.md) for the
+method, regression evidence and limitations.
 The native mass history reports moving
 volume in five AVAC vertical-depth bands and uses terrain-tangent speed
 reconstructed from saved bed slopes. The first band audits raw motion from the

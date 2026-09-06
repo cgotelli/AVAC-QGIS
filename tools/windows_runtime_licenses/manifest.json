@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "toolchain": "WinLibs GCC 13.2.0 / MinGW-w64 11.0.1 UCRT POSIX SEH r8, 2024-05-04",
+  "toolchain_release": "https://github.com/brechtsanders/winlibs_mingw/releases/tag/13.2.0posix-18.1.5-11.0.1-ucrt-r8",
+  "source_access": {
+    "gcc": "https://gcc.gnu.org/pub/gcc/releases/gcc-13.2.0/gcc-13.2.0.tar.xz",
+    "mingw_w64": "https://github.com/mingw-w64/mingw-w64/tree/v11.0.1",
+    "dlfcn_win32": "https://github.com/dlfcn-win32/dlfcn-win32/tree/v1.4.1",
+    "winlibs_build_recipes": "https://github.com/brechtsanders/winlibs_recipes/tree/52ea7e3801c3de4568077b28487dbbca506b56b1"
+  },
+  "scope": "License texts and source-access references for these exact unmodified DLL bytes. GCC runtime-exception and libquadmath LGPL notices are distinct. The WinLibs recipe snapshot identifies dlfcn-win32 1.4.1. No compiler or DLL rebuild is performed by packaging.",
+  "libraries": {
+    "libdl.dll": "5371648a682af6c79544a0799fca73a3363c20c59d59a7d29fd9f9230032bc0e",
+    "libgcc_s_seh-1.dll": "89f1eaf8576f691e1aafc8707173618a74b8c82d6d0ac17a1be62c76a6c79aa1",
+    "libgfortran-5.dll": "211b9a2d096d7a6ede71c444b557860a992f027f34390f88280f74d408cb5f0e",
+    "libgomp-1.dll": "796b4f63a78769783923d3d5bc682c263d7a16284471f1028a4003cd2db7a2c0",
+    "libquadmath-0.dll": "452542573b8d81725086742d69b7eb135d83ab77f1f872fd05fac83cf4da59a1",
+    "libwinpthread-1.dll": "4bde68fbb2c6a9a64535928fc505056ebf6f5dc44f82ea2eaac3c714dc22ce79"
+  },
+  "files": [
+    {"path": "gcc-COPYING3", "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903", "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/COPYING3"},
+    {"path": "gcc-COPYING.LIB", "sha256": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861", "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/COPYING.LIB"},
+    {"path": "gcc-COPYING.RUNTIME", "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74", "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/COPYING.RUNTIME"},
+    {"path": "libquadmath-COPYING.LIB", "sha256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b", "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/libquadmath/COPYING.LIB"},
+    {"path": "mingw-w64-COPYING", "sha256": "99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f", "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/v11.0.1/COPYING"},
+    {"path": "winpthreads-COPYING", "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177", "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/v11.0.1/mingw-w64-libraries/winpthreads/COPYING"},
+    {"path": "dlfcn-win32-COPYING", "sha256": "4cc7ac997b9293db5919baf630100cc09b3508efdfe6a6611c95511fb863b3c7", "url": "https://raw.githubusercontent.com/dlfcn-win32/dlfcn-win32/v1.4.1/COPYING"},
+    {"path": "dlfcn-win32-dlfcn.c", "sha256": "0b7a7e71d4beeef7df6ad9422da7b311bb15edd05ac7016d2d93fa8f90a4944e", "url": "https://raw.githubusercontent.com/dlfcn-win32/dlfcn-win32/v1.4.1/src/dlfcn.c"}
+  ]
+}

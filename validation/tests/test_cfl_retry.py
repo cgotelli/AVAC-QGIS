@@ -121,12 +121,13 @@ def test_retry_rechecks_the_whole_level_and_preserves_parent_landing() -> None:
     assert "go to 700" in selector
 
     assert "remaining = tlevel(level-1) - tlevel(level)" in selector
-    assert "steps_required = remaining/new_dt" in selector
-    assert "new_ntogo = ceiling(steps_required)" in selector
+    assert "new_ntogo = checked_amr_substeps(remaining,new_dt," in selector
     assert "new_ntogo = max(new_ntogo,ntogo(level)+1)" in selector
-    assert "new_ntogo .gt. 100" in selector
+    assert "ntogo(level) .ge. huge(ntogo(level))" in selector
+    assert "new_ntogo .gt. 100" not in selector
     assert "new_dt = remaining/dble(new_ntogo)" in selector
     assert "new_dt .ge. old_dt" in selector
+    assert "tlevel(level)+old_dt .le. tlevel(level)" in selector
     # Seventeen printed significant digits let an IEEE double round-trip into
     # a direct-start run, which is how the integration test proves rollback.
     assert selector.count("d25.17") >= 5

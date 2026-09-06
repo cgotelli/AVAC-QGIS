@@ -104,12 +104,14 @@ for those publication accuracy studies. No accepted-CFL violations occurred
 in the completed controls; their accepted/rejected-step histories are unchanged.
 
 The geometry helper has explicit internal/periodic patch-interface tests, but
-the complete curved solver is not proven AMR-invariant. Its pre-existing
-shallow momentum projection still uses a patch-based nonplanarity classifier
-and a per-step factor independent of dt. Therefore source splitting, shallow
-regularization and AMR subcycling can affect the timestep sensitivity of the
-whole solver. The ISeeSnow comparison below is single-level, not a curved-AMR
-certification.
+the complete curved solver is not proven AMR-invariant. The `07654535` build
+reported here still has a shallow momentum projection with a patch-based
+nonplanarity classifier and a per-step factor independent of dt. The later
+[source/timestep investigation](SOURCE_TIMESTEP_STABILIZATION.md) replaces
+that projection in a separately evaluated candidate. Its results must not be
+silently substituted for the accepted build below. Source splitting, shallow
+regularization and AMR subcycling still require whole-solver checks; this
+ISeeSnow comparison is single-level, not a curved-AMR certification.
 
 ## Peer population correction
 

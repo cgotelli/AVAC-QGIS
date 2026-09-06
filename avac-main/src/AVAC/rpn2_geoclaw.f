@@ -12,8 +12,9 @@ c
 c Modified from the standard GeoClaw rpn2_geoclaw.f to add a D-Claw
 c static Coulomb yield check (George & Iverson 2014, J. Geophys. Res.).
 c Once every cell in the local four-cell stencil can reach rest under the
-c current exact friction impulse, the limited normal free-surface gradient
-c is tested against Coulomb yield.  A cell-centred two-dimensional yield
+c current exact friction impulse, both the actual interface head jump and
+c the limited normal free-surface gradient are tested against Coulomb yield.
+c A cell-centred two-dimensional yield
 c ratio, precomputed in b4step2 and passed in aux(2), must also be below one.
 c This avoids falsely arresting a diagonal state whose two individual sweep
 c increments are sub-yield but whose vector free-surface gradient is not.
@@ -70,7 +71,7 @@ c   aux(2)           : cell-centred 2D static-yield ratio (AVAC Cartesian)
       double precision mu_rp, xi_rp, C_rp
 
       ! Local variables for the static yield check
-      double precision dh_n, dh_span, db_n, dx_n, costh_n
+      double precision dh_n, dh_span, dh_face, db_n, dx_n, costh_n
       double precision thresh_n, h_avg_n
       double precision spd_LL, spd_L, spd_R, spd_RR
       double precision h_LL, h_RR, hu_stencil, hv_stencil
@@ -410,6 +411,7 @@ c           the same stencil rather than a maximum-gradient or fitted test.
                dh_n = dabs((hR + bR) - (hL + bL))
                dh_span = dh_n
             endif
+            dh_face = dabs((hR + bR) - (hL + bL))
             db_n   = dabs(bR - bL)
             if (ixy .eq. 1) then
                dx_n = dx_avac
@@ -440,12 +442,20 @@ c           is predicted to stop later in this step remains dynamic here;
 c           otherwise a rarefaction can be pinned before its characteristic
 c           crosses the interface.  The exact zero is produced by src2's
 c           closed-form Coulomb update, so this adds no velocity threshold.
+c           Also bound the actual interface head jump.  Centred gradients
+c           and limited/span slopes can hide a plateau step or alternating
+c           cell mode.  On a flat bed the pressure jump is g*h_avg*dh_face;
+c           available static resistance is mu*g*h_avg*dx.  Suppressing that
+c           Riemann problem therefore requires dh_face <= mu*dx, regardless
+c           of the smoother reconstructed slopes.  Keep the existing
+c           topographic/cohesive strength and full-vector guards unchanged.
             if (stops_LL .and. stops_L .and.
      &          stops_R .and. stops_RR .and.
      &          rests_LL .and. rests_L .and.
      &          rests_R .and. rests_RR .and.
      &          yield_ok_LL .and. yield_ok_L .and.
      &          yield_ok_R .and. yield_ok_RR .and.
+     &          dh_face .le. thresh_n .and.
      &          dh_n .le. thresh_n .and.
      &          dh_span .le. thresh_n) go to 30
             endif

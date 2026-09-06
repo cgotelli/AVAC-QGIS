@@ -2045,8 +2045,13 @@ class AvacDockWidget(QDockWidget):
         state_regularization.setSingleStep(.01)
         state_regularization.setValue(.05)
         state_regularization.setSuffix(" m")
+        state_regularization.setToolTip(
+            "Depth scale for limiting conservative high-order flux corrections "
+            "at shallow curved-terrain fronts. Zero disables it. This is not "
+            "a friction coefficient or a velocity-reporting threshold."
+        )
         form.addRow(
-            "Coulomb state regularization depth",
+            "Coulomb shallow flux depth",
             self._parameter_control(
                 "computation.state_momentum_regularization_depth",
                 state_regularization,
@@ -2058,8 +2063,9 @@ class AvacDockWidget(QDockWidget):
         voellmy_state_regularization.setSingleStep(.01)
         voellmy_state_regularization.setValue(.10)
         voellmy_state_regularization.setSuffix(" m")
+        voellmy_state_regularization.setToolTip(state_regularization.toolTip())
         form.addRow(
-            "Voellmy state regularization depth",
+            "Voellmy shallow flux depth",
             self._parameter_control(
                 "computation.voellmy_state_momentum_regularization_depth",
                 voellmy_state_regularization,

@@ -32,6 +32,7 @@ from avac4qgis_validation.kerswell import (
     undisturbed_rear_position,
 )
 from avac4qgis_validation.runtime import (
+    _arc_ascii,
     configure_analytical_coulomb_amr_compatibility,
     configure_front_amr,
     maximum_written_amr_level,
@@ -91,19 +92,8 @@ def read_data_value(path: Path, label: str) -> float:
 
 
 def write_arc_ascii(path: Path, xmin: float, ymin: float, dx: float, values: np.ndarray) -> None:
-    """Write a north-up Arc ASCII grid."""
-    values = np.asarray(values, dtype=float)
-    nrows, ncols = values.shape
-    header = [
-        f"ncols {ncols}",
-        f"nrows {nrows}",
-        f"xllcorner {xmin:.15g}",
-        f"yllcorner {ymin:.15g}",
-        f"cellsize {dx:.15g}",
-        "NODATA_value -9999",
-    ]
-    body = [" ".join(f"{value:.15g}" for value in row) for row in values]
-    path.write_text("\n".join(header + body) + "\n", encoding="utf-8")
+    """Use the shared full-precision terrain writer, retaining north-up order."""
+    _arc_ascii(path, xmin, ymin, dx, values)
 
 
 def write_inputs(case: Path, dx: float) -> tuple[np.ndarray, np.ndarray]:

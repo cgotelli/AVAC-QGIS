@@ -55,13 +55,13 @@ module rheology_module
     real(kind=8), save :: u_cr_rh = 0.d0
     ! Minimum depth used when reporting velocity and as the AMR kinetic-energy
     ! reference depth.  It is intentionally independent of the separate
-    ! state-level shallow-momentum regularization below.
+    ! shallow correction-flux stabilization below.
     real(kind=8), save :: velocity_depth_threshold_rh = 0.05d0
-    ! Physical depth scales for the Kurganov--Petrova shallow-momentum
-    ! regularization on locally non-planar terrain.  Coulomb and the Voellmy
-    ! equations use separate controls because their source updates differ.
-    ! Fixed values make mesh comparisons explicit; zero disables the
-    ! corresponding regularization above dry_tol.
+    ! Depth scales (metres) for conservative high-order correction-flux
+    ! limiting on locally non-planar terrain. No cell-average momentum is
+    ! projected or relaxed. Coulomb and Voellmy retain separate controls.
+    ! Legacy variable/configuration names are retained for saved projects.
+    ! Fixed values make mesh comparisons explicit; zero disables the taper.
     real(kind=8), save :: state_momentum_regularization_depth_rh = 0.05d0
     real(kind=8), save :: voellmy_state_momentum_regularization_depth_rh = 0.10d0
     integer,      save :: imodel_rh = 0
@@ -74,6 +74,78 @@ module rheology_module
     real(kind=8), save, allocatable :: C_zones_rh(:)   ! (n_zones) cohesion values (Pa)
 
 contains
+
+    ! Stabilize correction FLUXES, never cell averages. This bounded depth
+    ! factor reduces high order at unresolved curved wet fronts. The state
+    ! update still carries dt/dx; no per-step R(h)**N numerical drag is added.
+    pure real(kind=8) function shallow_correction_factor(h_left,h_right,h_eps,curved_left,curved_right) result(factor)
+        real(kind=8), intent(in) :: h_left,h_right,h_eps,curved_left,curved_right
+        real(kind=8) :: ratio2,h_min
+        factor=1.d0
+        if (max(curved_left,curved_right) <= 0.d0 .or. h_eps <= 0.d0) return
+        h_min=max(0.d0,min(h_left,h_right))
+        if (h_min >= h_eps) return
+        ratio2=(h_min/h_eps)**2
+        factor=sqrt(2.d0)*ratio2/sqrt(1.d0+ratio2**2)
+    end function shallow_correction_factor
+
+    ! Full two-dimensional affine/non-affine classification at each state.
+    ! Trust genuine internal/periodic ghost terrain. At a physical exterior
+    ! use the nearest wholly physical stencil, never the boundary closure.
+    ! The wider ghost mask supports the relimiter's extended face stencil.
+    subroutine terrain_nonplanarity_mask(mbc,mx,my,bed,patch_xlower,patch_ylower,dx,dy, &
+                                         domain_xlower,domain_xupper,domain_ylower,domain_yupper, &
+                                         xperiodic,yperiodic,mask)
+        integer, intent(in) :: mbc,mx,my
+        real(kind=8), intent(in) :: bed(1-mbc:mx+mbc,1-mbc:my+mbc)
+        real(kind=8), intent(in) :: patch_xlower,patch_ylower,dx,dy
+        real(kind=8), intent(in) :: domain_xlower,domain_xupper,domain_ylower,domain_yupper
+        logical, intent(in) :: xperiodic,yperiodic
+        real(kind=8), intent(out) :: mask(1-mbc:mx+mbc,1-mbc:my+mbc)
+        integer :: ilo,ihi,jlo,jhi,nx_valid,ny_valid,i,j,ii,jj,iw,ie,js,jn
+        real(kind=8) :: bc,scale,relief,tolerance,residual,mixed
+        mask=0.d0
+        if (dx <= 0.d0 .or. dy <= 0.d0) return
+        ilo=1-mbc
+        ihi=mx+mbc
+        jlo=1-mbc
+        jhi=my+mbc
+        if (.not.xperiodic) then
+            ilo=max(ilo,1+nint((domain_xlower-patch_xlower)/dx))
+            ihi=min(ihi,nint((domain_xupper-patch_xlower)/dx))
+        end if
+        if (.not.yperiodic) then
+            jlo=max(jlo,1+nint((domain_ylower-patch_ylower)/dy))
+            jhi=min(jhi,nint((domain_yupper-patch_ylower)/dy))
+        end if
+        nx_valid=ihi-ilo+1
+        ny_valid=jhi-jlo+1
+        if (nx_valid < 1 .or. ny_valid < 1) return
+        do j=1-mbc,my+mbc
+            jj=max(jlo,min(jhi,j))
+            if (ny_valid >= 3) jj=max(jlo+1,min(jhi-1,j))
+            js=max(jlo,jj-1)
+            jn=min(jhi,jj+1)
+            do i=1-mbc,mx+mbc
+                ii=max(ilo,min(ihi,i))
+                if (nx_valid >= 3) ii=max(ilo+1,min(ihi-1,i))
+                iw=max(ilo,ii-1)
+                ie=min(ihi,ii+1)
+                bc=bed(ii,jj)
+                scale=max(1.d0,maxval(abs(bed(iw:ie,js:jn))))
+                relief=maxval(abs(bed(iw:ie,js:jn)-bc))
+                tolerance=max(1.d-12*max(1.d0,relief),64.d0*epsilon(1.d0)*scale)
+                residual=0.d0
+                if (nx_valid >= 3) residual=max(residual,abs((bed(ie,jj)-bc)+(bed(iw,jj)-bc)))
+                if (ny_valid >= 3) residual=max(residual,abs((bed(ii,jn)-bc)+(bed(ii,js)-bc)))
+                if (nx_valid >= 2 .and. ny_valid >= 2) then
+                    mixed=((bed(ie,jn)-bc)-(bed(iw,jn)-bc))-((bed(ie,js)-bc)-(bed(iw,js)-bc))
+                    residual=max(residual,abs(mixed))
+                end if
+                if (residual > tolerance) mask(i,j)=1.d0
+            end do
+        end do
+    end subroutine terrain_nonplanarity_mask
 
     ! ------------------------------------------------------------------
     ! Parallel-transport a terrain-tangent velocity between two bed normals.

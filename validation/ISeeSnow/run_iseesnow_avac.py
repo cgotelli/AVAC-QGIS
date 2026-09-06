@@ -50,6 +50,7 @@ PROJECT_ROOT = VALIDATION_ROOT.parents[1]
 from avac4qgis_validation.datasets import ensure_iseesnow  # noqa: E402
 from avac4qgis_validation.runtime import (  # noqa: E402
     CLAWPACK_SOURCE,
+    ISEESNOW_NATIVE_CONTROL_FILENAMES,
     build_solver,
     prepare_source_execution,
     runtime as source_runtime,
@@ -373,6 +374,32 @@ def require_input_manifest_unchanged(
                 "Official ISeeSnow input changed during the validation run: "
                 f"{record['name']}."
             )
+
+
+def capture_generated_input_manifest(
+    run_root: Path, output_dir: Path,
+) -> list[dict[str, str]]:
+    """Record the serialized terrain, initial state and native controls actually used."""
+    paths = [run_root / "Topo" / "topography.asc", run_root / "AVAC" / "init.avacbin"]
+    controls = sorted(output_dir.glob("*.data"))
+    missing = ISEESNOW_NATIVE_CONTROL_FILENAMES - {
+        path.name for path in controls if path.is_file()
+    }
+    if missing:
+        raise FileNotFoundError(
+            "Generated native control inputs are missing: " + ", ".join(sorted(missing))
+        )
+    paths.extend(controls)
+    records = []
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(f"Generated solver input is missing: {path}")
+        records.append({
+            "name": path.relative_to(run_root).as_posix(),
+            "path": str(path.resolve()),
+            "sha256": sha256(path),
+        })
+    return records
 
 
 def read_polygon_rings(shapefile: Path) -> list[tuple[np.ndarray, list[np.ndarray]]]:
@@ -1227,6 +1254,22 @@ def prepare_case_transaction(
     return run_root, pft_path, pfv_path, configuration_path, mass_history_path
 
 
+def shallow_stabilization_method(setrun_backend: Path) -> str:
+    """Describe the paired backend, including explicitly selected old builds.
+
+    This is source-policy metadata, not proof that an arbitrary executable
+    was compiled from that source. Executable/backend hashes remain recorded
+    independently; managed releases additionally attest their manifest.
+    """
+    backend_text = setrun_backend.read_text(encoding="utf-8")
+    if "# AVAC_SHALLOW_STABILIZATION = curved_correction_flux_v1" in backend_text:
+        return "curved_correction_flux_v1"
+    source = setrun_backend.parent / "src2.f90"
+    if source.is_file() and "call regularized_velocity" in source.read_text(encoding="utf-8"):
+        return "legacy_per_source_step_momentum_projection"
+    return "unspecified_backend_policy"
+
+
 def write_configuration_record(
     case_name: str,
     path: Path,
@@ -1281,6 +1324,17 @@ def write_configuration_record(
             "vertical-depth scale on locally non-planar terrain only; flat "
             "and affine beds are excluded"
         )
+    stabilization_method = shallow_stabilization_method(setrun_backend)
+    if stabilization_method == "curved_correction_flux_v1":
+        state_regularization_description = (
+            "Conservative high-order correction-flux taper below the selected "
+            "vertical-depth scale on locally non-planar terrain; shared normal "
+            "and transverse factor; genuine internal/periodic ghost geometry; "
+            "flat/affine beds excluded; no per-step cell-average projection. "
+            "Historical state_regularization parameter names are retained."
+        )
+    elif stabilization_method == "unspecified_backend_policy":
+        state_regularization_description = "Unspecified paired backend; inspect its recorded source."
     lines = [
         "AVAC4QGIS ISeeSnow benchmark configuration",
         f"case = {case_name}",
@@ -1350,6 +1404,7 @@ def write_configuration_record(
         "submitted_pfv = AVAC native peak terrain-tangent speed sqrt(u^2 + v^2 + (u*Bx + v*By)^2) where h > 0.05 m",
         "velocity_diagnostic = zero for h <= 0.05 m; Kurganov-Petrova momentum/depth desingularization for 0.05 m < h < 0.20 m; exact momentum/depth for h >= 0.20 m; fgmax output only, with no velocity cap or field clipping",
         f"state_regularization = {state_regularization_description}",
+        f"shallow_stabilization_method = {stabilization_method}",
         "release_elevation_correction = false",
         "release_slope_correction = false",
         "benchmark_grid_contract = GeoClaw cell centres and fixed-grid points equal supplied ISeeSnow cell centres",
@@ -1499,6 +1554,7 @@ def run_case(
     finest_cell_size = set_amr_resolution(
         output_dir, refinement_levels, refinement_ratio,
     )
+    generated_input_manifest = capture_generated_input_manifest(run_root, output_dir)
     solver_sha256 = sha256(solver)
     solver_log = case_root / "solver.log"
     update_run_status(
@@ -1522,6 +1578,10 @@ def run_case(
         raise
     require_solver_unchanged(solver, solver_sha256)
     require_file_unchanged(setrun_backend, setrun_backend_sha256, "AVAC setrun backend")
+    for record in generated_input_manifest:
+        require_file_unchanged(
+            Path(record["path"]), record["sha256"], f"Generated input {record['name']}",
+        )
 
     x, y, peak_depth, peak_velocity = fgmax_fields(output_dir / "fgmax0001.txt")
     require_benchmark_alignment(x, y, dem)
@@ -1570,6 +1630,7 @@ def run_case(
     )
     record = {
         "case": case_name, "cpu_seconds": cpu_s, "wall_seconds": wall_s,
+        "shallow_stabilization_method": shallow_stabilization_method(setrun_backend),
         "simulation_end_ceiling_seconds": simulation_end_s,
         "native_state_output_interval_seconds": output_interval_s,
         "fixed_grid_output_interval_seconds": output_interval_s,
@@ -1608,6 +1669,7 @@ def run_case(
         "setrun_backend": str(setrun_backend),
         "setrun_backend_sha256": setrun_backend_sha256,
         "official_input_manifest": official_input_manifest,
+        "generated_input_manifest": generated_input_manifest,
         "submission_pft_sha256": submission_pft_sha256,
         "submission_pfv_sha256": submission_pfv_sha256,
         "initial_volume_m3": initial_volume, "final_volume_m3": final_volume,
@@ -1683,14 +1745,14 @@ def main() -> None:
     parser.add_argument(
         "--state-regularization-depth", type=float,
         default=STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
-        help=("Coulomb shallow-state momentum regularization depth in metres "
-              "(default: 0.05)."),
+        help=("Coulomb shallow flux-stabilization depth in metres "
+              "(default: 0.05; legacy option name)."),
     )
     parser.add_argument(
         "--voellmy-state-regularization-depth", type=float,
         default=VOELLMY_STATE_MOMENTUM_REGULARIZATION_DEPTH_M,
-        help=("Voellmy/cohesive-Voellmy shallow-state momentum "
-              "regularization depth in metres (default: 0.10)."),
+        help=("Voellmy/cohesive-Voellmy shallow flux-stabilization "
+              "depth in metres (default: 0.10; legacy option name)."),
     )
     parser.add_argument(
         "--cfl-target", type=float,

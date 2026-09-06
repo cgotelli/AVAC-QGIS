@@ -330,7 +330,25 @@ def validate_embedded_runtime(
                     label=f"clawpack.files[{index}]",
                 )
 
+        license_records = runtime_manifest.get("licenses")
+        if license_records is not None:
+            if not isinstance(license_records, list) or not license_records:
+                raise SystemExit(f"embedded runtime has invalid license records: {zip_name}")
+            for index, file_record in enumerate(license_records):
+                relative = _safe_relative_path(
+                    file_record.get("path") if isinstance(file_record, dict) else None,
+                    label=f"licenses[{index}]",
+                )
+                identity_key = record_identity(relative)
+                if not relative.startswith("licenses/") or identity_key in seen:
+                    raise SystemExit(f"invalid or duplicate runtime license path: {relative}")
+                seen.add(identity_key)
+                declared.add(identity_key)
+                _runtime_file_hash(bundle, members, runtime_root, file_record, label=f"licenses[{index}]")
+
         protected_roots = ["bin", "lib", "backend"]
+        if license_records is not None:
+            protected_roots.append("licenses")
         if clawpack_files is not None:
             protected_roots.append(clawpack_root)
         protected_identities = [record_identity(root) for root in protected_roots]

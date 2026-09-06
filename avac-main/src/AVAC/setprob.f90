@@ -10,7 +10,7 @@
 !   C                 cohesion (Pa) !!! removed
 !   u_cr              legacy unused compatibility value (m/s)
 !   velocity_depth_threshold  minimum depth for a reported velocity (m)
-!   state_momentum_regularization_depth  Coulomb shallow-state depth scale (m)
+!   state_momentum_regularization_depth  Coulomb correction-flux depth (m; legacy key)
 !   voellmy_state_momentum_regularization_depth  Voellmy depth scale (m)
 !   n_zones           number of altitude zones (>= 1)
 !   z_break_0 .. z_break_{n-2}   altitude thresholds (m), one per line, ascending
@@ -150,9 +150,9 @@ subroutine setprob
     print *, 'u_cr (legacy, unused) = ', u_cr
     print *, 'velocity depth threshold (m) = ', &
              velocity_depth_threshold_rh
-    print *, 'Coulomb state momentum regularization depth (m) = ', &
+    print *, 'Coulomb shallow correction-flux depth (m) = ', &
              state_momentum_regularization_depth_rh
-    print *, 'Voellmy state momentum regularization depth (m) = ', &
+    print *, 'Voellmy shallow correction-flux depth (m) = ', &
              voellmy_state_momentum_regularization_depth_rh
     print *, 'constitutive_model = ', trim(constitutive_model), &
              '  (imodel=', imodel, ')'

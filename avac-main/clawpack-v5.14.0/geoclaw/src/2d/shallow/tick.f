@@ -25,8 +25,10 @@ c
       integer(kind=8) :: clock_start, clock_finish, clock_rate
       integer(kind=8) :: tick_clock_finish, tick_clock_rate
       integer ifg
+      integer checked_amr_substeps, count_increment
       character(len=128) :: time_format
       real(kind=8) cpu_start,cpu_finish
+      real(kind=8) rounded_substeps
       type(fgrid), pointer :: fg
       type(fgout_grid), pointer :: fgout
       logical :: debug
@@ -386,7 +388,18 @@ c            #  check if should adjust finer grid time step to start wtih
              if (((possk(level-1) - dtnew(level-1))/dtnew(level-1)) .gt.
      .            .05) then
                 dttemp = dtnew(level-1)/kratio(level-1)
-                ntogo(level) = (tlevel(level-1)-tlevel(level))/dttemp+.9
+                new_ntogo = checked_amr_substeps(
+     &              tlevel(level-1)-tlevel(level),dttemp,
+     &              level,tlevel(level))
+c               Preserve historical +.9 rounding, but never truncate a small
+c               positive ratio to zero or convert a value above HUGE.
+                rounded_substeps =
+     &              (tlevel(level-1)-tlevel(level))/dttemp+.9
+                if (rounded_substeps .ge. dble(huge(ntogo(level)))) then
+                    ntogo(level) = huge(ntogo(level))
+                else
+                    ntogo(level) = max(1,int(rounded_substeps))
+                endif
               else
                 ntogo(level) = kratio(level-1)
               endif
@@ -442,43 +455,36 @@ c                   adjust time steps for this and finer levels
 
                     ! try computing ntogo properly (worked better in BoussDev)
                     ! (old way was to repeatedly increment by 1)
-                    new_ntogo = ceiling(((tlevel(level-1)
-     &                              -tlevel(level)) / dtnew(level)))
-                    new_ntogo = min(new_ntogo, ntogo(level)+10)
+                    new_ntogo = checked_amr_substeps(
+     &                  tlevel(level-1)-tlevel(level),dtnew(level),
+     &                  level,tlevel(level))
+                    count_increment = min(10,
+     &                                  huge(ntogo(level))-ntogo(level))
+                    new_ntogo = min(new_ntogo,
+     &                              ntogo(level)+count_increment)
+                    if (new_ntogo .le. ntogo(level)) then
+                        call cfl_retry_abort(
+     &                      'AMR adjustment cannot increase substeps',
+     &                      level,0.d0,cflv1,possk(level),tlevel(level))
+                    endif
                     ntogo(level) = new_ntogo
                     possk(level) = (tlevel(level-1)-tlevel(level))
      &                             / ntogo(level)
                     write(*,*) "    NEW ntogo dt ",ntogo(level),
      &                         possk(level)
                     if (varRefTime) then
-                      kratio(level-1) = ceiling(possk(level-1)
-     &                                  / possk(level))
+                      kratio(level-1) = checked_amr_substeps(
+     &                    possk(level-1),possk(level),
+     &                    level,tlevel(level))
                     endif
 
                     go to 106
                  endif
 
-                 if (ntogo(level) .gt. 100) then
-                     write(6,*) "**** Too many dt reductions ****"
-                     write(6,*) "**** Stopping calculation   ****"
-                     write(6,*) "**** ntogo = ",ntogo(level)
-                     write(6,1006) intratx(level-1),intraty(level-1),
-     &                             kratio(level-1),level
- 603                 format("**** Writing extra output frames for ",
-     &                      "debugging at level-1 =",i3,
-     &                      " and level =",i3)
-                     write(6,603) level-1, level
-                     if (num_gauges .gt. 0) then
-                        do ii = 1, num_gauges
-                           call print_gauges_and_reset_nextLoc(ii)
-                        end do
-                     endif
-                     call valout(level-1,level-1,tlevel(level-1),
-     &                           nvar,naux)                       
-                     call valout(level,level,tlevel(level),nvar,naux)
-                     !call outtre(lstart(level),.true.,nvar,naux)
-                     stop
-                 endif
+c                ntogo is the remaining synchronization work, not a count
+c                of rejected trials.  A valid refinement ratio may exceed
+c                100; finite integer-safe progress is checked when selecting
+c                the substeps and before every accepted physical step.
 
                  go to 60
               else
@@ -526,7 +532,8 @@ c             ! use same alg. as when setting refinement when first make new fin
                kratio(i-1) = 1  ! cant have larger timestep than parent level
                possk(i)    = possk(i-1)
             else
-               kratio(i-1) = ceiling(possk(i-1)/dtnew(i))  ! round up for stable integer ratio
+               kratio(i-1) = checked_amr_substeps(possk(i-1),
+     &                                           dtnew(i),i,tlevel(i))
                possk(i)    = possk(i-1)/kratio(i-1)        ! set exact timestep on this level
            endif
  125    continue
@@ -638,6 +645,44 @@ c
 c
 c --------------------------------------------------------------
 c
+      integer function checked_amr_substeps(interval,dt_limit,level,
+     &                                      trial_time)
+c     Count synchronization substeps without an arbitrary work-count cap.
+c     Check before CEILING so non-finite/out-of-range conversion is never
+c     attempted, and reject a partition that cannot advance floating time.
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+      use amr_module, only: cflv1
+      implicit none
+      integer level
+      double precision interval,dt_limit,trial_time,steps,partition_dt
+
+      if ((.not. ieee_is_finite(interval)) .or. interval .le. 0.d0
+     &    .or. (.not. ieee_is_finite(dt_limit)) .or.
+     &    dt_limit .le. 0.d0) then
+          call cfl_retry_abort('invalid AMR substep interval or limit',
+     &                         level,0.d0,cflv1,dt_limit,trial_time)
+      endif
+      steps = interval/dt_limit
+      if ((.not. ieee_is_finite(steps)) .or.
+     &    steps .gt. dble(huge(checked_amr_substeps))) then
+          call cfl_retry_abort(
+     &                 'AMR substep count exceeds integer range',
+     &                         level,0.d0,cflv1,dt_limit,trial_time)
+      endif
+      checked_amr_substeps = max(1,ceiling(steps))
+      partition_dt = interval/dble(checked_amr_substeps)
+      if ((.not. ieee_is_finite(trial_time)) .or.
+     &    (.not. ieee_is_finite(partition_dt)) .or.
+     &    partition_dt .le. 0.d0 .or.
+     &    (.not. ieee_is_finite(trial_time+partition_dt)) .or.
+     &    trial_time+partition_dt .le. trial_time) then
+          call cfl_retry_abort('AMR substeps cannot advance time',
+     &                         level,0.d0,cflv1,partition_dt,trial_time)
+      endif
+      end
+c
+c --------------------------------------------------------------
+c
       subroutine select_cfl_timestep(level,nvar,naux,ntogo,tlevel,
      &                               vtime)
 c
@@ -651,8 +696,9 @@ c
       double precision tlevel(maxlv)
       logical vtime
       integer retries,new_ntogo,i,cfl_invalid
+      integer checked_amr_substeps
       double precision cfl_trial,target_cfl,old_dt,new_dt
-      double precision remaining,steps_required
+      double precision remaining
 
       retries = 0
 
@@ -660,6 +706,12 @@ c
       old_dt = possk(level)
       if ((.not. ieee_is_finite(old_dt)) .or. old_dt .le. 0.d0) then
           call cfl_retry_abort('non-positive or non-finite timestep',
+     &                         level,0.d0,cflv1,old_dt,tlevel(level))
+      endif
+      if ((.not. ieee_is_finite(tlevel(level))) .or.
+     &    (.not. ieee_is_finite(tlevel(level)+old_dt)) .or.
+     &    tlevel(level)+old_dt .le. tlevel(level)) then
+          call cfl_retry_abort('timestep cannot advance time',
      &                         level,0.d0,cflv1,old_dt,tlevel(level))
       endif
       if ((.not. ieee_is_finite(cflv1)) .or. cflv1 .le. 0.d0) then
@@ -712,20 +764,14 @@ c         evenly rather than taking one isolated short step.
      &                             level,cfl_trial,cflv1,old_dt,
      &                             tlevel(level))
           endif
-          steps_required = remaining/new_dt
-          if ((.not. ieee_is_finite(steps_required)) .or.
-     &        steps_required .gt. 100.d0) then
-              call cfl_retry_abort('more than 100 fine-level substeps',
+          new_ntogo = checked_amr_substeps(remaining,new_dt,
+     &                                    level,tlevel(level))
+          if (ntogo(level) .ge. huge(ntogo(level))) then
+              call cfl_retry_abort('AMR substep increment overflows',
      &                             level,cfl_trial,cflv1,old_dt,
      &                             tlevel(level))
           endif
-          new_ntogo = ceiling(steps_required)
           new_ntogo = max(new_ntogo,ntogo(level)+1)
-          if (new_ntogo .gt. 100) then
-              call cfl_retry_abort('more than 100 fine-level substeps',
-     &                             level,cfl_trial,cflv1,old_dt,
-     &                             tlevel(level))
-          endif
           ntogo(level) = new_ntogo
           new_dt = remaining/dble(new_ntogo)
       endif
@@ -753,7 +799,8 @@ c         evenly rather than taking one isolated short step.
               possk(i) = possk(i-1)/kratio(i-1)
           enddo
       else if (varRefTime) then
-          kratio(level-1) = ceiling(possk(level-1)/possk(level))
+          kratio(level-1) = checked_amr_substeps(possk(level-1),
+     &                        possk(level),level,tlevel(level))
       endif
       go to 700
 

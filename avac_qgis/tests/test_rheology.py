@@ -234,25 +234,25 @@ end program driver
     assert values[2] / values[3] == pytest.approx(0.75)
 
 
-def test_state_regularization_depth_is_independent_and_physical() -> None:
+def test_legacy_depth_controls_stabilize_fluxes_not_cell_average_momentum() -> None:
     avac = ROOT / "avac-main" / "src" / "AVAC"
     module = (avac / "rheology_module.f90").read_text(encoding="utf-8")
     source = (avac / "src2.f90").read_text(encoding="utf-8")
     setrun = (avac / "setrun.py").read_text(encoding="utf-8")
     setprob = (avac / "setprob.f90").read_text(encoding="utf-8")
+    flux = (avac / "flux2fw.f").read_text(encoding="utf-8")
+    b4step = (avac / "b4step2.f90").read_text(encoding="utf-8")
 
     assert "state_momentum_regularization_depth_rh = 0.05d0" in module
     assert "voellmy_state_momentum_regularization_depth_rh = 0.10d0" in module
-    assert "state_momentum_regularization_depth_rh)" in source
-    assert "voellmy_state_momentum_regularization_depth_rh)" in source
-    regularization_block = source[source.index("if (patch_nonplanar) then") :]
-    assert "velocity_depth_threshold_rh" not in regularization_block
-    assert "0.02d0*min(dx,dy)" not in regularization_block
-    assert "if (imodel_rh >= 1) then" in source
-    assert "if (imodel_rh == 1) then" in regularization_block
-    assert "ii = max(2, min(mx-1, i))" in source
-    assert "jj = max(2, min(my-1, j))" in source
-    assert "locally_nonplanar_bed(aux(1,ii,jj)" in source
+    assert "call regularized_velocity" not in source
+    assert "patch_nonplanar" not in source
+    assert "velocity_depth_threshold_rh" not in flux
+    assert "state_momentum_regularization_depth_rh" in flux
+    assert "voellmy_state_momentum_regularization_depth_rh" in flux
+    assert "cqxx(m,i) = correction_factor * cqxx(m,i)" in flux
+    assert "terrain_nonplanarity_mask" in b4step
+    assert "xperdom,yperdom,aux(3,:,:))" in b4step
     assert "state_momentum_regularization_depth" in setrun
     assert "voellmy_state_momentum_regularization_depth" in setrun
     assert "read(7,*) state_momentum_regularization_depth" in setprob
@@ -363,8 +363,8 @@ def test_fortran_source_uses_one_general_steep_slope_formulation():
     assert "mu * curvature * cos_phi * cos_psi" in rheology
     assert "- curvature * tan_psi * cos_psi**2" not in rheology
     assert "d2zdx2" in source
-    assert "locally_nonplanar_bed" in source
-    assert "regularized_velocity" in source
+    assert "terrain_momentum_transport" in source
+    assert "call regularized_velocity" not in source
 
 
 def test_altitude_zone_ids_match_solver_lower_bound_convention():

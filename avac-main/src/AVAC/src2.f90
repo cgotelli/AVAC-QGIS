@@ -28,8 +28,10 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     !   (hu)^{n+1} = (hu / speed) * speed_new
     !   (hv)^{n+1} = (hv / speed) * speed_new
     !
-    ! This allows exact stopping (speed = 0 precisely) only where static
-    ! resistance can support the layer.
+    ! Voellmy honors a zero of the frozen source update even on a super-yield
+    ! bed: that is a transient split-source stop, not permanent static yield.
+    ! The next flux step supplies the bed/pressure-driven direction. Coulomb
+    ! retains its existing static-yield-dependent stopping compatibility path.
 
     use geoclaw_module, only: g => grav, dry_tolerance, speed_limit
     use geoclaw_module, only: friction_forcing, friction_depth
@@ -47,13 +49,13 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     double precision, intent(inout) :: aux(maux,1-mbc:mx+mbc,1-mbc:my+mbc)
 
     ! Locals
-    integer :: i, j, ii, jj, nman
-    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio, h_eps
+    integer :: i, j, nman
+    real(kind=8) :: h, hu, hv, u, v, speed, speed_new, sratio
     real(kind=8) :: dzdx, dzdy, d2zdx2, d2zdxdy, d2zdy2, theta_local
     real(kind=8) :: tau_driving_rho, tau_static_rho
     real(kind=8) :: mu_local, xi_local, C_local   ! altitude-zoned rheology (from get_mu_xi)
     real(kind=8) :: coeff, gamma
-    logical :: at_rest, patch_nonplanar
+    logical :: at_rest
 
     ! Geometry is kinematic, not a friction option.  Water retains GeoClaw's
     ! original horizontal shallow-water equations. All granular constitutive
@@ -63,25 +65,6 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
     end if
 
     if (friction_forcing) then
-        ! Geometry is sampled before the source update.  Test only stencils
-        ! wholly inside the patch, since physical-boundary ghost closure is
-        ! not evidence that an otherwise affine analytical bed is curved.
-        patch_nonplanar = .false.
-        if (imodel_rh >= 1 .and. mx >= 3 .and. my >= 3) then
-            do j = 2, my-1
-                do i = 2, mx-1
-                    if (locally_nonplanar_bed(aux(1,i,j), aux(1,i-1,j), &
-                                              aux(1,i+1,j), aux(1,i,j-1), &
-                                              aux(1,i,j+1), aux(1,i-1,j-1), &
-                                              aux(1,i+1,j-1), aux(1,i-1,j+1), &
-                                              aux(1,i+1,j+1))) then
-                        patch_nonplanar = .true.
-                        exit
-                    end if
-                end do
-                if (patch_nonplanar) exit
-            end do
-        end if
         do j = 1, my
             do i = 1, mx
                 h = q(1,i,j)
@@ -158,12 +141,12 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                         ! Closed-form source update.  Unlike forward Euler,
                         ! this gives the same accumulated local
                         ! Voellmy drag when AMR subcycling changes dt.
-                        ! Mohr-Coulomb stop: if kinetic friction leaves no positive
-                        ! speed AND the driving stress is below yield,
-                        ! the cell stops definitively.  A cell on a super-yield slope
-                        ! (tau_driving > tau_static) must NOT be zeroed, otherwise
-                        ! the slope re-accelerates it on the next step, creating a
-                        ! freeze/restart oscillation that violates the CFL.
+                        ! Voellmy's quadratic drag becomes stiff as h decreases.
+                        ! Never discard that integrated impulse just because the
+                        ! split source reaches zero on a super-yield bed. Such a
+                        ! transient stop is distinct from a static equilibrium;
+                        ! the Riemann update still owns gravity/pressure driving.
+                        ! Keep the legacy pure-Coulomb stopping branch unchanged.
                         speed_new = cartesian_speed_after(speed, dt, h, u, v, &
                                                          dzdx, dzdy, d2zdx2, &
                                                          d2zdxdy, d2zdy2, mu_local, &
@@ -172,8 +155,10 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                         if (speed_new > 0.d0) then
                             q(2,i,j) = hu * speed_new / speed
                             q(3,i,j) = hv * speed_new / speed
-                        else if (tau_driving_rho <= tau_static_rho) then
-                            ! Definitive stop: slope cannot restart the cell.
+                        else if (imodel_rh >= 2 .or. tau_driving_rho <= tau_static_rho) then
+                            ! A zero vector needs no arbitrary velocity direction.
+                            ! For Voellmy this also admits transient source stops;
+                            ! only sub-yield states can remain at static rest.
                             q(2,i,j) = 0.d0
                             q(3,i,j) = 0.d0
                         else
@@ -190,57 +175,8 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
             end do
         end do
 
-        ! A second-order wet/dry update can leave a tiny amount of momentum
-        ! in a very shallow cell.  On non-planar terrain that unresolved seed
-        ! may subsequently be transported into resolved flow and appear as a
-        ! spurious peak velocity.  Apply the standard Kurganov--Petrova
-        ! desingularization in granular modes, below an explicit
-        ! model-specific physical shallow-depth scale, and only where the
-        ! local bed is not affine.
-        ! Depth and momentum direction are preserved.  In particular, flat
-        ! and constant-slope analytical granular-flow cells receive no
-        ! regularization update.
-        if (imodel_rh >= 1) then
-            ! First classify the patch from stencils wholly inside it.  Ghost
-            ! topography at a physical or AMR boundary is a boundary closure,
-            ! not evidence of terrain curvature; using it for this decision
-            ! can spuriously modify an otherwise affine analytical bed.
-            if (patch_nonplanar) then
-                ! Use an explicit physical depth rather than coupling this
-                ! state-changing update to output diagnostics or grid size.
-                ! Constant-slope and flat beds never enter this branch.
-                if (imodel_rh == 1) then
-                    h_eps = max(dry_tolerance, &
-                                state_momentum_regularization_depth_rh)
-                else
-                    h_eps = max(dry_tolerance, &
-                                voellmy_state_momentum_regularization_depth_rh)
-                end if
-                do j = 1, my
-                    do i = 1, mx
-                        h = q(1,i,j)
-                        ! Extend the nearest wholly interior geometry stencil
-                        ! to a patch-edge state.  This nearest-interior
-                        ! classification is extrapolated across the one-cell
-                        ! rim and never treats physical/AMR ghost closure
-                        ! values as terrain evidence.
-                        ii = max(2, min(mx-1, i))
-                        jj = max(2, min(my-1, j))
-                        if (h > dry_tolerance .and. h < h_eps .and. &
-                            locally_nonplanar_bed(aux(1,ii,jj), aux(1,ii-1,jj), &
-                                                  aux(1,ii+1,jj), aux(1,ii,jj-1), &
-                                                  aux(1,ii,jj+1), aux(1,ii-1,jj-1), &
-                                                  aux(1,ii+1,jj-1), aux(1,ii-1,jj+1), &
-                                                  aux(1,ii+1,jj+1))) then
-                            call regularized_velocity(h, q(2,i,j), q(3,i,j), &
-                                                      h_eps, u, v)
-                            q(2,i,j) = h*u
-                            q(3,i,j) = h*v
-                        end if
-                    end do
-                end do
-            end if
-        end if
+        ! No timestep-independent projection of cell-average momentum.
+        ! Shallow stabilization is applied to conservative flux corrections.
     else
         ! Keep GeoClaw's standard no-friction dry-front protection.  This is
         ! essential for frictionless water benchmarks: a tiny wet cell can

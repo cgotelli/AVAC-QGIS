@@ -1,4 +1,5 @@
 # setrun.py for AVAC 4: version = 1.1
+# AVAC_SHALLOW_STABILIZATION = curved_correction_flux_v1
 """
 Module to set up run time parameters for Clawpack.
 
@@ -211,7 +212,9 @@ def setrun(claw_pkg='geoclaw'):
     # lets the directional solver reject a diagonal vector-super-yield state.
     # AVAC uses Cartesian coordinates, so this does not conflict with
     # GeoClaw's spherical capacity/latitude auxiliary fields.
-    clawdata.num_aux = 2
+    # aux(3) is a refreshed, true-2D curved-terrain correction-flux mask.
+    # Water retains its original auxiliary layout and flux path.
+    clawdata.num_aux = 3 if uses_positivity_relimit else 2
     # Index of aux array corresponding to capacity function, if there is one:
     clawdata.capa_index = 0
 
@@ -392,7 +395,7 @@ def setrun(claw_pkg='geoclaw'):
     # Specify type of each aux variable in amrdata.auxtype.
     # This must be a list of length maux, each element of which is one of:
     #   'center',  'capacity', 'xleft', or 'yleft'  (see documentation).
-    amrdata.aux_type = ['center', 'center']
+    amrdata.aux_type = ['center'] * clawdata.num_aux
 
     # Flag using refinement routine flag2refine rather than richardson error
     amrdata.flag_richardson = False    # use Richardson?
@@ -658,10 +661,10 @@ def setrun(claw_pkg='geoclaw'):
                        'minimum depth for a reported velocity (m)')
     probdata.add_param('state_momentum_regularization_depth',
                        state_momentum_regularization_depth,
-                       'Coulomb shallow-state momentum regularization depth (m)')
+                       'Coulomb shallow correction-flux depth (m; legacy key)')
     probdata.add_param('voellmy_state_momentum_regularization_depth',
                        voellmy_state_momentum_regularization_depth,
-                       'Voellmy shallow-state momentum regularization depth (m)')
+                       'Voellmy shallow correction-flux depth (m; legacy key)')
     probdata.add_param('n_zones', n_zones,               'number of altitude rheology zones')
     for k, z in enumerate(z_breaks):
         probdata.add_param(f'z_break_{k}', float(z),
