@@ -1,0 +1,15 @@
+{
+  "figure": "wave_analytical_verification",
+  "lake_at_rest": {
+    "source": "/Users/cmgotelli/Desktop/AVAC-QGIS/validation/WAVE/07_baines_flow_over_bump/results/wave_lake_at_rest_error.csv",
+    "maximum_Linf_eta_m": 0.0006366061298825887,
+    "maximum_L2_eta_m": 6.108771603151664e-05
+  },
+  "thacker": {
+    "source": "/Users/cmgotelli/Desktop/AVAC-QGIS/validation/WAVE/04_thacker_planar_paraboloid/results/summary.json",
+    "time_s": 13.457104,
+    "periods": 3,
+    "rmse_centerline_depth_m": 0.0012718768820814185,
+    "maximum_centerline_depth_error_m": 0.002835532043009889
+  }
+}

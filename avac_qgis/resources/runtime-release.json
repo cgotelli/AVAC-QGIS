@@ -1,5 +1,10 @@
 {
-  "runtime_version": "0.6.1",
-  "archive": "avac-runtime-macos-arm64-0.6.1.tar.gz",
-  "runtime_manifest_sha256": "52bff6162054eeb36a59410bf065a7fe427d328826371860b576454a78bab88f"
+  "runtimes": {
+    "windows-amd64": {
+      "runtime_version": "1.0.0",
+      "platform": "windows-amd64",
+      "archive": "avac-runtime-windows-amd64-1.0.0.tar.gz",
+      "runtime_manifest_sha256": "1e100a5394e07c8951cd76b8b3a66723e71e333c091addd5741630f115bdeeb5"
+    }
+  }
 }

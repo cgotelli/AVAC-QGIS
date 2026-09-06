@@ -1,0 +1,188 @@
+{
+  "analytical_benchmarks": {
+    "01_transcritical_shock": {
+      "case": "Transcritical flow with shock",
+      "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "dx_m": 0.05,
+      "final_time_s": 100.0,
+      "water_model": "WAVE Water",
+      "cells_x": 500,
+      "cells_y": 5,
+      "rmse_depth_m": 0.004255313688751761,
+      "maximum_absolute_depth_error_m": 0.09147117326212376
+    },
+    "02_macdonald_smooth_shock": {
+      "case": "MacDonald smooth transition and shock",
+      "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "dx_m": 0.2,
+      "final_time_s": 1500.0,
+      "water_model": "WAVE Water",
+      "cells_x": 500,
+      "cells_y": 5,
+      "manning_n": 0.0328,
+      "rmse_depth_m": 0.00771880376013161,
+      "maximum_absolute_depth_error_m": 0.16799563993957456
+    },
+    "03_ritter_dry_dam_break": {
+      "case": "Ritter dry-domain dam break",
+      "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "dx_m": 0.02,
+      "final_time_s": 6.0,
+      "water_model": "WAVE Water",
+      "cells_x": 500,
+      "cells_y": 5,
+      "rmse_depth_m": 1.0727028405381385e-05,
+      "maximum_absolute_depth_error_m": 7.145345958086899e-05
+    },
+    "07_baines_flow_over_bump": {
+      "wave_solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "wave_solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "avac_solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/AVAC/xgeoclaw",
+      "avac_solver_sha256": "3b82844df8439215c6661d2b3a6b7ac7a51ac16ff1a643122269508d9f2fa174",
+      "dx_m": 0.05,
+      "cells_x": 500,
+      "cells_y": 20,
+      "final_time_s": 10.0,
+      "wave_baines_steady_maximum_depth_error_m": 0.000780261635874524,
+      "wave_baines_steady_rms_depth_error_m": 7.065009869827011e-05,
+      "wave_lake_at_rest_maximum_surface_error_m": 0.0006213241553558735,
+      "wave_lake_at_rest_rms_surface_error_m": 5.7456557246147e-05,
+      "avac_baines_steady_maximum_depth_error_m": 0.000780261635874524,
+      "avac_baines_steady_rms_depth_error_m": 7.065009869827011e-05,
+      "avac_lake_at_rest_maximum_surface_error_m": 0.0006213241553558735,
+      "avac_lake_at_rest_rms_surface_error_m": 5.7456557246147e-05,
+      "wave_avac_final_depth_rms_difference_m": 0.0
+    }
+  },
+  "numerical_diagnostics": {
+    "2008_WRR_sloping_bed": {
+      "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "water_model": "WAVE Water",
+      "rear_tracker": "tutorial",
+      "bed_datum_m": 10.0,
+      "diagnostic_dx_m": 0.004999999999999893,
+      "width_base_cells": 5,
+      "base_dx_m": 0.005,
+      "finest_dx_m": 0.005,
+      "amr_levels": 1,
+      "refinement_ratios": [],
+      "speed_tolerance_m_s": null,
+      "fgout_ny": 5,
+      "max1d": 1254,
+      "domain_xlower_m": -10.0,
+      "domain_xupper_m": 40.0,
+      "maximum_amr_level_seen": 1,
+      "final_amr_level": 1,
+      "cores": 8,
+      "t_final_s": 5.0,
+      "front_rmse_m_before_open_boundary_m": 0.1707440281730579,
+      "rear_rmse_m_before_open_boundary_m": 0.027399226760919788,
+      "front_rmse_m_full_domain": 0.1707440281730579,
+      "rear_rmse_m_full_domain": 0.027399226760919788,
+      "rear_rmse_m_full_run": 0.0772004510587564,
+      "rear_final_error_m": 0.24970179247927593,
+      "initial_depth_max_abs_error_m": 5.634381849972669e-13,
+      "mass_initial_m2_per_m": 2.8356407649506266,
+      "mass_initial_theory_m2_per_m": 2.8356409098088546,
+      "mass_range_before_open_boundary_m2_per_m": 8.427576032588036e-07,
+      "mass_range_full_domain_m2_per_m": 8.427576032588036e-07,
+      "open_boundary_reached_s": 4.15,
+      "mass_final_m2_per_m": 2.703013932275186
+    },
+    "08_amr_parallel": {
+      "solver": "/Users/cmgotelli/Desktop/AVAC-QGIS/avac-main/src/WAVE/xgeoclaw",
+      "solver_sha256": "aa7bbbb61f9cb5f1b99b31b8d22ba1818b5f2e296db95a1966e3bba08927f829",
+      "case": "flat-bed dry dam break",
+      "coarse_dx_m": 0.05,
+      "fine_dx_m": 0.005,
+      "amr_refinement_ratio": 10,
+      "amr_maximum_written_level": 2,
+      "amr_maximum_written_level_1core": 2,
+      "amr_maximum_written_level_8core": 2,
+      "coarse_vs_uniform_fine_rms_depth_difference_m": 0.0018958247196197216,
+      "amr2_vs_uniform_fine_rms_depth_difference_m": 0.00023022582600912958,
+      "amr_error_ratio_to_coarse": 0.12143835008930043,
+      "parallel_bitwise_equal_float32_fgout": true,
+      "parallel_final_native_binary_bitwise_equal": true,
+      "parallel_final_fgout_binary_bitwise_equal": true,
+      "parallel_uniform_fine_patch_count": 8,
+      "parallel_rms_depth_difference_m": 0.0,
+      "parallel_maximum_depth_difference_m": 0.0,
+      "amr_parallel_bitwise_equal_float32_fgout": true,
+      "amr_parallel_final_native_binary_bitwise_equal": true,
+      "amr_parallel_final_fgout_binary_bitwise_equal": true,
+      "amr_parallel_rms_depth_difference_m": 0.0,
+      "amr_parallel_maximum_depth_difference_m": 0.0,
+      "amr_parallel_patch_count_1core": 9,
+      "amr_parallel_patch_count_8core": 9,
+      "elapsed_wall_seconds": {
+        "uniform_coarse_8core": 0.06964316708035767,
+        "uniform_fine_1core": 11.65707341604866,
+        "uniform_fine_8core": 2.3988487909082323,
+        "amr_level2_1core": 12.372394334059209,
+        "amr_level2_8core": 3.1169937918893993
+      },
+      "fine_parallel_speedup_1core_over_8core": 4.859444855478013,
+      "amr_parallel_speedup_1core_over_8core": 3.9693355714255527,
+      "fgout_mass_initial_final_relative_change": {
+        "uniform_coarse": {
+          "initial_m3": 0.020000000000000007,
+          "final_m3": 0.020000009139271236,
+          "relative_change": 4.5696356143487533e-07
+        },
+        "uniform_fine_1core": {
+          "initial_m3": 0.020000000000000014,
+          "final_m3": 0.020000003906396904,
+          "relative_change": 1.9531984449955284e-07
+        },
+        "uniform_fine_8core": {
+          "initial_m3": 0.020000000000000014,
+          "final_m3": 0.020000003906396904,
+          "relative_change": 1.9531984449955284e-07
+        },
+        "amr_level2_1core": {
+          "initial_m3": 0.020000000000000004,
+          "final_m3": 0.01995513936130545,
+          "relative_change": -0.0022430319347276416
+        },
+        "amr_level2_8core": {
+          "initial_m3": 0.020000000000000004,
+          "final_m3": 0.01995513936130545,
+          "relative_change": -0.0022430319347276416
+        }
+      },
+      "fgout_mass_note": "Visualization-grid quadrature only; do not use as the AMR conservation metric when the sharp front is finer than fgout.",
+      "native_composite_mass_initial_final_relative_change": {
+        "uniform_coarse": {
+          "initial_m3": 0.020000000000000007,
+          "final_m3": 0.020000009365786428,
+          "relative_change": 4.68289321035875e-07
+        },
+        "uniform_fine_1core": {
+          "initial_m3": 0.02000000000000001,
+          "final_m3": 0.020000003906672423,
+          "relative_change": 1.95333620632565e-07
+        },
+        "uniform_fine_8core": {
+          "initial_m3": 0.02000000000000001,
+          "final_m3": 0.020000003906672423,
+          "relative_change": 1.95333620632565e-07
+        },
+        "amr_level2_1core": {
+          "initial_m3": 0.02000000000000001,
+          "final_m3": 0.020000003040052266,
+          "relative_change": 1.5200261275355445e-07
+        },
+        "amr_level2_8core": {
+          "initial_m3": 0.02000000000000001,
+          "final_m3": 0.020000003040052266,
+          "relative_change": 1.5200261275355445e-07
+        }
+      }
+    }
+  }
+}

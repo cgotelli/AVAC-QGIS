@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "release_version": "1.0.0",
+  "scope": "Archived authenticated scalar replot; no solver rerun, field resampling, or new native-validation claim.",
+  "source_record": {
+    "filename": "iseesnow_voellmy_fix_candidate.json",
+    "sha256": "63f9d8ef5ca1d47f5340dd7d9934f1c774002149b67640d4df0f7ad6d4e96c14",
+    "recovery_archive": "evidence-and-worktree-recovery.zip",
+    "recovery_archive_sha256": "539e1ec3d0063be24859ac476b5cd04f32d562f747cca9f9df37d5cf02aa2c26",
+    "archive_member": "evidence/voellmy-near-dry-20260906/figures/iseesnow_voellmy_fix_candidate.json",
+    "selected_values": "cases.<case>.<metric>.avac; previous-configuration comparison values are intentionally omitted",
+    "solver_sha256": "55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3",
+    "setrun_backend_sha256": "843ee3585d0145b26f33a6537c06fac9de3cdd0667a3eaa6d80b58f7e558f5d9"
+  },
+  "release_runtime": {
+    "filename": "avac-runtime-windows-amd64-1.0.0.tar.gz",
+    "archive_sha256": "144872c2bbfd2648ac7338cc95c77f7ebf031e6b2006f85deaecefbb1de17c20",
+    "runtime_manifest_sha256": "1e100a5394e07c8951cd76b8b3a66723e71e333c091addd5741630f115bdeeb5",
+    "solver_sha256": "55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3",
+    "identity_note": "Version-only promotion of the tested executable; native solver bytes are unchanged."
+  },
+  "peer_table": {
+    "path_from_repo": "validation/ISeeSnow/paper_figures/iseesnow_table_c1_core.csv",
+    "sha256": "d8b9a9f16b760b1702962380997e26e1910467fd07a73c3563c6b34b430e9094",
+    "population": "ISeeSnow Table C1 core group; 11 IdealizedTopo, 10 RealTopo, 11 CoulombOnly",
+    "outlier_policy": "Every peer remains in all statistics; the Coulomb r.avaflow PFV is displayed off scale."
+  },
+  "protocol": {
+    "simulation_end_seconds": 1200,
+    "output_interval_seconds": 10,
+    "native_output_frames": 121,
+    "cell_size_m": 5,
+    "spatial_order": 2,
+    "refinement_levels": 1,
+    "cfl_rejection_ceiling": 1.0,
+    "native_dry_tolerance_m": 0.0001,
+    "runout_definition": "Furthest thalweg coordinate with PFT > 0.5 m",
+    "pfv_definition": "Original reported PFV; vertical h > 0.05 m, velocity desingularized below h=0.20 m. This is not an all-wet raw-velocity bound."
+  },
+  "cases": {
+    "IdealizedTopo": {
+      "label": "Idealized Voellmy",
+      "peer_count": 11,
+      "limiter": "vanleer",
+      "cfl_target": 0.5,
+      "mu": 0.4,
+      "xi_m_s2": 2000.0,
+      "state_regularization_depth_m": 0.10,
+      "runout_length_km": 2.310051337906718,
+      "pft_peak_m": 8.53216142,
+      "pfv_peak_mps": 39.62553,
+      "pft_sha256": "d1e462f7e3986a64ff63073d6cda68ffaf574dea3ce9794d3cb086945bd48486",
+      "pfv_sha256": "2b6563ee3b3f6a0b5c2d8c6be344d4c927dd8a7364fb8775e60fa4620fa0f5d9"
+    },
+    "RealTopo": {
+      "label": "Real-terrain Voellmy",
+      "peer_count": 10,
+      "limiter": "vanleer",
+      "cfl_target": 0.5,
+      "mu": 0.2,
+      "xi_m_s2": 2000.0,
+      "state_regularization_depth_m": 0.10,
+      "runout_length_km": 2.097124469278972,
+      "pft_peak_m": 21.0366978,
+      "pfv_peak_mps": 67.664786,
+      "pft_sha256": "f7ce552e249d1b33618460ce5adb5f0bb6c5d4167b0a89f2d6e7d9f1b48d6e20",
+      "pfv_sha256": "1a8927be9cd91895bbf832d4c72ff4716823173291e7bbe1244ca920094ae210"
+    },
+    "CoulombOnly": {
+      "label": "Idealized Coulomb",
+      "peer_count": 11,
+      "limiter": "minmod",
+      "cfl_target": 0.25,
+      "mu": 0.4,
+      "xi_m_s2": 1000000000000.0,
+      "state_regularization_depth_m": 0.05,
+      "runout_length_km": 3.1500406336389553,
+      "pft_peak_m": 7.2198266,
+      "pfv_peak_mps": 110.96495,
+      "pft_sha256": "fe549edcfd9cd3d9cb78229a3581862984ad410b362dc5e2e2df2a09597f9746",
+      "pfv_sha256": "ab008a86e8e31a85076e0d930a0bd504e0cda535ea03da3aaabb7fa38e007045"
+    }
+  }
+}

@@ -5,9 +5,9 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current Windows release is **0.6.1**, supports **QGIS 3.40 or newer**, and
+The current Windows release is **1.0.0**, supports **QGIS 3.40 or newer**, and
 was tested with **QGIS 3.40.11-Bratislava**.
-This checkout contains the **0.6.1** source and reproducible validation suite.
+This checkout contains the **1.0.0** source and reproducible validation suite.
 
 ## Interface overview
 
@@ -23,12 +23,12 @@ WAVE pages, and a shared Results page.
 ## Installation
 
 1. Download the installable package from the
-   [AVAC4QGIS 0.6.1 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.6.1).
+   [AVAC4QGIS 1.0.0 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v1.0.0).
    The 64-bit Windows package is
-   [`avac_qgis-0.6.1-windows-amd64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v0.6.1/avac_qgis-0.6.1-windows-amd64.zip).
+   [`avac_qgis-1.0.0-windows-amd64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-windows-amd64.zip).
    The previous macOS Apple Silicon build remains available from the
    [AVAC4QGIS 0.6.0 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.6.0);
-   it does not include the Windows 0.6.1 solver changes.
+   it does not include the current Windows solver changes.
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.
 3. Select the downloaded ZIP and open **AVAC4QGIS** from the Plugins menu.
 
@@ -40,10 +40,15 @@ The GitHub source-code ZIP does **not** contain the managed solver runtimes and
 is not an installable QGIS package. Use the release asset linked above when
 installing AVAC4QGIS on another computer.
 
-See the [Windows 0.6.1 release notes](docs/releases/v0.6.1-windows.md) for
+See the [Windows 1.0.0 release notes](docs/releases/v1.0.0-windows.md) for
 the accepted numerical checkpoint and validation scope.
 
 ## Documentation
+
+The [version 1.0.0 methods manuscript](docs/article/AVAC4QGIS_GMD.pdf)
+documents the implemented equations, numerical methods, and validation scope.
+Its [editable LaTeX source](docs/article/AVAC4QGIS_GMD.tex), bibliography, and
+figures are included alongside the PDF.
 
 The [AVAC4QGIS User Interface Reference](docs/ui_reference/AVAC_QGIS_UI_REFERENCE.pdf)
 explains the simulation workflow and every control in the graphical interface.

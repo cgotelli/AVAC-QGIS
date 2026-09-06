@@ -1,5 +1,10 @@
 {
-  "runtime_version": "0.6.1",
-  "archive": "wave-runtime-macos-arm64-0.6.1.tar.gz",
-  "runtime_manifest_sha256": "3a851d17ef5f8bd5bb015c6f0e724183912061676baf2635f770390d070595ba"
+  "runtimes": {
+    "windows-amd64": {
+      "runtime_version": "1.0.0",
+      "platform": "windows-amd64",
+      "archive": "wave-runtime-windows-amd64-1.0.0.tar.gz",
+      "runtime_manifest_sha256": "b21803acb023e72dc34304c3d666b14edba8d3932b334a2a20436a2abd5f0aa3"
+    }
+  }
 }

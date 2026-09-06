@@ -1,0 +1,604 @@
+{
+  "scope": "Archived authenticated scalar replot; no solver rerun, field resampling, or new native-validation claim.",
+  "avac_label": "AVAC4QGIS 1.0.0",
+  "comparison_overlay": null,
+  "source_record": {
+    "filename": "iseesnow_voellmy_fix_candidate.json",
+    "sha256": "63f9d8ef5ca1d47f5340dd7d9934f1c774002149b67640d4df0f7ad6d4e96c14",
+    "recovery_archive": "evidence-and-worktree-recovery.zip",
+    "recovery_archive_sha256": "539e1ec3d0063be24859ac476b5cd04f32d562f747cca9f9df37d5cf02aa2c26",
+    "archive_member": "evidence/voellmy-near-dry-20260906/figures/iseesnow_voellmy_fix_candidate.json",
+    "selected_values": "cases.<case>.<metric>.avac; previous-configuration comparison values are intentionally omitted",
+    "solver_sha256": "55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3",
+    "setrun_backend_sha256": "843ee3585d0145b26f33a6537c06fac9de3cdd0667a3eaa6d80b58f7e558f5d9"
+  },
+  "release_runtime": {
+    "filename": "avac-runtime-windows-amd64-1.0.0.tar.gz",
+    "archive_sha256": "144872c2bbfd2648ac7338cc95c77f7ebf031e6b2006f85deaecefbb1de17c20",
+    "runtime_manifest_sha256": "1e100a5394e07c8951cd76b8b3a66723e71e333c091addd5741630f115bdeeb5",
+    "solver_sha256": "55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3",
+    "identity_note": "Version-only promotion of the tested executable; native solver bytes are unchanged."
+  },
+  "archived_source_verified_this_build": {
+    "filename": "iseesnow_voellmy_fix_candidate.json",
+    "sha256": "63f9d8ef5ca1d47f5340dd7d9934f1c774002149b67640d4df0f7ad6d4e96c14",
+    "all_nine_scalars_exact": true,
+    "archived_field_hashes_exact": true,
+    "no_prior_overlay_values_used": true
+  },
+  "release_solver_bytes_verified_this_build": {
+    "filename": "avac-runtime-windows-amd64-1.0.0.tar.gz",
+    "archive_sha256": "144872c2bbfd2648ac7338cc95c77f7ebf031e6b2006f85deaecefbb1de17c20",
+    "runtime_version": "1.0.0",
+    "runtime_manifest_sha256": "1e100a5394e07c8951cd76b8b3a66723e71e333c091addd5741630f115bdeeb5",
+    "actual_solver_bytes_sha256": "55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3",
+    "actual_setrun_bytes_sha256": "843ee3585d0145b26f33a6537c06fac9de3cdd0667a3eaa6d80b58f7e558f5d9",
+    "archived_solver_identity_matches_release": true
+  },
+  "portable_data": {
+    "filename": "iseesnow_intercomparison_v1_0_data.json",
+    "sha256": "6d3adf00a72a2ce4862651dd263d18d07d99bc03bf9f1334fe09a412f0475f84"
+  },
+  "builder": {
+    "filename": "make_iseesnow_intercomparison_v1_0.py",
+    "sha256": "d301a26881e24cec8f77bf978a567e566fba591b52d97684562f44488cd473b0"
+  },
+  "shared_plot_style_sha256": "0f2d562d7b0eff3b84e9cab2189d00a1bfe54053ae9fa633d76c8ed278a6b704",
+  "shared_peer_helpers_sha256": "fcb242871178fc95e2a9ea94670869c054f03d4dd1f451cb7dcb0d9578f45757",
+  "peer_table": {
+    "path_from_repo": "validation/ISeeSnow/paper_figures/iseesnow_table_c1_core.csv",
+    "sha256": "d8b9a9f16b760b1702962380997e26e1910467fd07a73c3563c6b34b430e9094",
+    "population": "ISeeSnow Table C1 core group; 11 IdealizedTopo, 10 RealTopo, 11 CoulombOnly",
+    "outlier_policy": "Every peer remains in all statistics; the Coulomb r.avaflow PFV is displayed off scale."
+  },
+  "protocol": {
+    "simulation_end_seconds": 1200,
+    "output_interval_seconds": 10,
+    "native_output_frames": 121,
+    "cell_size_m": 5,
+    "spatial_order": 2,
+    "refinement_levels": 1,
+    "cfl_rejection_ceiling": 1.0,
+    "native_dry_tolerance_m": 0.0001,
+    "runout_definition": "Furthest thalweg coordinate with PFT > 0.5 m",
+    "pfv_definition": "Original reported PFV; vertical h > 0.05 m, velocity desingularized below h=0.20 m. This is not an all-wet raw-velocity bound."
+  },
+  "cases": {
+    "IdealizedTopo": {
+      "runout_length_km": {
+        "source_field": "runout_length_m",
+        "display_scale": 0.001,
+        "avac": 2.310051337906718,
+        "peer_count": 11,
+        "peer_min": 2.29,
+        "peer_q1": 2.305,
+        "peer_median": 2.31,
+        "peer_q3": 2.335,
+        "peer_max": 2.42,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 2.305
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 2.305
+          },
+          {
+            "model": "Gerris",
+            "value": 2.335
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 2.305
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 2.42
+          },
+          {
+            "model": "samosAT",
+            "value": 2.305
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 2.345
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 2.325
+          },
+          {
+            "model": "r.avaflow",
+            "value": 2.29
+          },
+          {
+            "model": "TITAN2D",
+            "value": 2.335
+          },
+          {
+            "model": "TRENT2D",
+            "value": 2.31
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pft_peak_m": {
+        "source_field": "pft_peak_m",
+        "display_scale": 1.0,
+        "avac": 8.53216142,
+        "peer_count": 11,
+        "peer_min": 4.25,
+        "peer_q1": 7.635,
+        "peer_median": 8.037,
+        "peer_q3": 9.285,
+        "peer_max": 27.06,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 8.037
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 10.92
+          },
+          {
+            "model": "Gerris",
+            "value": 7.9
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 10.27
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 27.06
+          },
+          {
+            "model": "samosAT",
+            "value": 8.0
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 8.3
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 7.37
+          },
+          {
+            "model": "r.avaflow",
+            "value": 4.25
+          },
+          {
+            "model": "TITAN2D",
+            "value": 6.27
+          },
+          {
+            "model": "TRENT2D",
+            "value": 8.05
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pfv_peak_mps": {
+        "source_field": "pfv_peak_mps",
+        "display_scale": 1.0,
+        "avac": 39.62553,
+        "peer_count": 11,
+        "peer_min": 34.18,
+        "peer_q1": 36.72,
+        "peer_median": 37.9,
+        "peer_q3": 39.285,
+        "peer_max": 41.55,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 35.67
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 37.77
+          },
+          {
+            "model": "Gerris",
+            "value": 39.71
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 38.86
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 41.55
+          },
+          {
+            "model": "samosAT",
+            "value": 35.48
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 38.05
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 37.87
+          },
+          {
+            "model": "r.avaflow",
+            "value": 34.18
+          },
+          {
+            "model": "TITAN2D",
+            "value": 37.9
+          },
+          {
+            "model": "TRENT2D",
+            "value": 39.93
+          }
+        ],
+        "off_scale_peer": null
+      }
+    },
+    "RealTopo": {
+      "runout_length_km": {
+        "source_field": "runout_length_m",
+        "display_scale": 0.001,
+        "avac": 2.097124469278972,
+        "peer_count": 10,
+        "peer_min": 2.05069,
+        "peer_q1": 2.071365,
+        "peer_median": 2.082305,
+        "peer_q3": 2.1041875,
+        "peer_max": 2.12365,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 2.10906
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 2.0896
+          },
+          {
+            "model": "Gerris",
+            "value": 2.0750100000000002
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 2.05069
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 2.07015
+          },
+          {
+            "model": "samosAT",
+            "value": 2.1090500000000003
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 2.12365
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 2.0896
+          },
+          {
+            "model": "r.avaflow",
+            "value": 2.0750100000000002
+          },
+          {
+            "model": "TRENT2D",
+            "value": 2.06041
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pft_peak_m": {
+        "source_field": "pft_peak_m",
+        "display_scale": 1.0,
+        "avac": 21.0366978,
+        "peer_count": 10,
+        "peer_min": 15.41,
+        "peer_q1": 19.1025,
+        "peer_median": 21.925,
+        "peer_q3": 24.767500000000002,
+        "peer_max": 30.4,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 18.99
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 28.61
+          },
+          {
+            "model": "Gerris",
+            "value": 20.76
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 30.4
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 24.46
+          },
+          {
+            "model": "samosAT",
+            "value": 19.44
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 18.37
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 24.87
+          },
+          {
+            "model": "r.avaflow",
+            "value": 15.41
+          },
+          {
+            "model": "TRENT2D",
+            "value": 23.09
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pfv_peak_mps": {
+        "source_field": "pfv_peak_mps",
+        "display_scale": 1.0,
+        "avac": 67.664786,
+        "peer_count": 10,
+        "peer_min": 40.87,
+        "peer_q1": 46.3025,
+        "peer_median": 49.084999999999994,
+        "peer_q3": 52.465,
+        "peer_max": 80.23,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 47.57
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 50.55
+          },
+          {
+            "model": "Gerris",
+            "value": 73.0
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 40.87
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 44.37
+          },
+          {
+            "model": "samosAT",
+            "value": 47.62
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 53.09
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 45.88
+          },
+          {
+            "model": "r.avaflow",
+            "value": 50.59
+          },
+          {
+            "model": "TRENT2D",
+            "value": 80.23
+          }
+        ],
+        "off_scale_peer": null
+      }
+    },
+    "CoulombOnly": {
+      "runout_length_km": {
+        "source_field": "runout_length_m",
+        "display_scale": 0.001,
+        "avac": 3.1500406336389553,
+        "peer_count": 11,
+        "peer_min": 2.915,
+        "peer_q1": 3.134335,
+        "peer_median": 3.1443000000000003,
+        "peer_q3": 3.226515,
+        "peer_max": 3.6326,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 3.1443000000000003
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 2.96991
+          },
+          {
+            "model": "Gerris",
+            "value": 3.24395
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 3.12935
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 3.33863
+          },
+          {
+            "model": "samosAT",
+            "value": 3.1443000000000003
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 3.6326
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 3.13932
+          },
+          {
+            "model": "r.avaflow",
+            "value": 3.19911
+          },
+          {
+            "model": "TITAN2D",
+            "value": 2.915
+          },
+          {
+            "model": "TRENT2D",
+            "value": 3.20908
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pft_peak_m": {
+        "source_field": "pft_peak_m",
+        "display_scale": 1.0,
+        "avac": 7.2198266,
+        "peer_count": 11,
+        "peer_min": 3.95,
+        "peer_q1": 5.555,
+        "peer_median": 5.99,
+        "peer_q3": 7.125,
+        "peer_max": 9.97,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 5.85
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 5.29
+          },
+          {
+            "model": "Gerris",
+            "value": 5.82
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 7.08
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 9.97
+          },
+          {
+            "model": "samosAT",
+            "value": 5.99
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 6.37
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 7.17
+          },
+          {
+            "model": "r.avaflow",
+            "value": 5.12
+          },
+          {
+            "model": "TITAN2D",
+            "value": 3.95
+          },
+          {
+            "model": "TRENT2D",
+            "value": 7.22
+          }
+        ],
+        "off_scale_peer": null
+      },
+      "pfv_peak_mps": {
+        "source_field": "pfv_peak_mps",
+        "display_scale": 1.0,
+        "avac": 110.96495,
+        "peer_count": 11,
+        "peer_min": 90.52,
+        "peer_q1": 102.0975,
+        "peer_median": 105.745,
+        "peer_q3": 110.71549999999999,
+        "peer_max": 322.59,
+        "peers": [
+          {
+            "model": "com1DFA",
+            "value": 102.35
+          },
+          {
+            "model": "faSavageHutterFoam",
+            "value": 90.52
+          },
+          {
+            "model": "Gerris",
+            "value": 108.89
+          },
+          {
+            "model": "minVoellmyv2",
+            "value": 114.18
+          },
+          {
+            "model": "MoT-Voellmy",
+            "value": 108.385
+          },
+          {
+            "model": "samosAT",
+            "value": 102.33
+          },
+          {
+            "model": "SaVal-2D",
+            "value": 112.541
+          },
+          {
+            "model": "RAMMS::Avalanche",
+            "value": 105.745
+          },
+          {
+            "model": "r.avaflow",
+            "value": 322.59
+          },
+          {
+            "model": "TITAN2D",
+            "value": 95.56
+          },
+          {
+            "model": "TRENT2D",
+            "value": 101.865
+          }
+        ],
+        "off_scale_peer": {
+          "model": "r.avaflow",
+          "value": 322.59,
+          "peer_index": 8,
+          "detection_threshold": 129.11125000000004,
+          "axis_min": 88.0,
+          "axis_max": 118.0,
+          "included_in_peer_statistics": true,
+          "peer_count_in_statistics": 11,
+          "note": "r.avaflow is drawn as an off-scale marker but remains included in all n=11 peer statistics."
+        }
+      }
+    }
+  },
+  "notes": [
+    "No solver or native publication gate was rerun. This is an explicitly archived scalar replot.",
+    "All 11/10/11 Table C1 peers contribute to every statistic; Coulomb r.avaflow PFV322.59m/s is shown off scale.",
+    "PFV is the original thresholded/desingularized diagnostic, not the all-wet raw velocity audit.",
+    "PFT/runout scalar comparison does not establish spatial or temporal convergence."
+  ],
+  "output_sha256": {
+    "pdf": "d8d757e9a88353039b985f8da5cac95d0289994d9871cfd536e4be7044e9d9dc",
+    "png": "f15b8f2990483e43c61c9edf47e74a1beed66bcdc37cd02063731742d0dfa41b"
+  }
+}
