@@ -217,27 +217,132 @@ def crop_raster_to_rings_extent(raster: AvacRaster, rings) -> AvacRaster:
     return AvacRaster(raster.x[ix0:ix1], raster.y[iy0:iy1], values, metadata, raster.crs_authid, raster.band)
 
 
-def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) -> dict[str, Any]:
-    """Return a configuration whose computational domain is covered by ``raster``.
+def trim_raster_to_computational_grid(
+    raster: AvacRaster,
+    computational_cell_size: float,
+) -> AvacRaster:
+    """Trim opposite DEM edges to fit a whole number of solver cells.
 
-    A QGIS raster represents a rectangular set of physical cells, so AVAC's
-    computational domain must retain all of its outer edges.  GeoClaw reads
-    topotype-3 values as nodal samples after shifting an ESRI ``xllcorner`` to
-    its first sample centre.  :func:`prepare_inputs` therefore supplies an
-    extra, topography-only edge halo; it never shortens the solver domain or
-    the cell-centred qinit/release grid to compensate for that reader
-    convention.
-
-    The selected terrain extent must contain a whole number of computational
-    cells.  Extending a non-divisible raster would create a solver strip with
-    extrapolated terrain but no matching QGIS qinit cells, while silently
-    cropping it loses release mass.  Reject that ambiguity explicitly.
+    AVAC does not resample terrain during preparation.  When a computational
+    cell contains an integer number of source DEM cells but the source row or
+    column count is not divisible by that number, remove the minimum number
+    of source cells.  The removal is split as evenly as possible between the
+    two sides; for an odd remainder, the extra cell is removed from the upper
+    or right side.  This keeps the retained domain centered to within half a
+    source cell and preserves the original DEM samples exactly.
     """
-    result = deepcopy(configuration)
     metadata = raster.metadata
     try:
         source_cell = float(metadata["cellsize"])
+        computational_cell = float(computational_cell_size)
+        ncols, nrows = int(metadata["ncols"]), int(metadata["nrows"])
+        xmin, xmax = float(metadata["xmin"]), float(metadata["xmax"])
+        ymin, ymax = float(metadata["ymin"]), float(metadata["ymax"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Cannot trim the selected DEM to the AVAC grid: {exc}") from exc
+    if (
+        not np.isfinite(source_cell)
+        or source_cell <= 0.0
+        or not np.isfinite(computational_cell)
+        or computational_cell <= 0.0
+    ):
+        raise ValueError("DEM and computational cell sizes must be positive finite values.")
+    if ncols < 1 or nrows < 1:
+        raise ValueError("Selected DEM must contain at least one row and one column.")
+    if not all(np.isfinite(value) for value in (xmin, xmax, ymin, ymax)):
+        raise ValueError("Selected DEM outer extent must contain finite coordinates.")
+    if (
+        not np.isclose((xmax - xmin) / source_cell, ncols, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+        or not np.isclose((ymax - ymin) / source_cell, nrows, rtol=0.0, atol=GRID_COUNT_TOLERANCE)
+    ):
+        raise ValueError(
+            "Selected DEM edges, dimensions, and cell size do not describe one regular cell-centred grid."
+        )
+    metadata_only = raster.x.size == 0 and raster.y.size == 0 and raster.z.size == 0
+    if not metadata_only:
+        if ncols < 1 or nrows < 1 or raster.z.shape != (nrows, ncols):
+            raise ValueError("Selected DEM dimensions do not match its elevation array.")
+        if raster.x.size != ncols or raster.y.size != nrows:
+            raise ValueError("Selected DEM dimensions do not match its coordinate axes.")
+        expected_x = _cell_centres(xmin, ncols, source_cell)
+        expected_y = _cell_centres(ymin, nrows, source_cell)
+        if not np.allclose(raster.x, expected_x, rtol=0.0, atol=GRID_COUNT_TOLERANCE):
+            raise ValueError("Selected DEM x coordinates do not match its outer extent and cell size.")
+        if not np.allclose(raster.y, expected_y, rtol=0.0, atol=GRID_COUNT_TOLERANCE):
+            raise ValueError("Selected DEM y coordinates do not match its outer extent and cell size.")
+
+    ratio = computational_cell / source_cell
+    cells_per_computation = round(ratio)
+    if cells_per_computation < 1 or not np.isclose(
+        ratio, cells_per_computation, rtol=0.0, atol=1e-8,
+    ):
+        raise ValueError(
+            "Source DEM cell size must equal or evenly subdivide the computational cell size; "
+            "AVAC does not silently resample terrain during preparation."
+        )
+
+    trim_x, trim_y = ncols % cells_per_computation, nrows % cells_per_computation
+    if trim_x == 0 and trim_y == 0:
+        return raster
+    retained_ncols, retained_nrows = ncols - trim_x, nrows - trim_y
+    if retained_ncols < cells_per_computation or retained_nrows < cells_per_computation:
+        raise ValueError(
+            f"Selected DEM ({ncols} x {nrows} cells) is too small for a "
+            f"{computational_cell:g} m AVAC grid after edge trimming."
+        )
+
+    west = trim_x // 2
+    east = trim_x - west
+    south = trim_y // 2
+    north = trim_y - south
+    column_stop = ncols - east if east else ncols
+    row_stop = nrows - north if north else nrows
+    trimmed_metadata = dict(metadata)
+    trimmed_metadata.update({
+        "xmin": xmin + west * source_cell,
+        "xmax": xmax - east * source_cell,
+        "ymin": ymin + south * source_cell,
+        "ymax": ymax - north * source_cell,
+        "ncols": retained_ncols,
+        "nrows": retained_nrows,
+    })
+    if metadata_only:
+        return AvacRaster(
+            raster.x, raster.y, raster.z, trimmed_metadata, raster.crs_authid, raster.band,
+        )
+    return AvacRaster(
+        raster.x[west:column_stop],
+        raster.y[south:row_stop],
+        raster.z[south:row_stop, west:column_stop],
+        trimmed_metadata,
+        raster.crs_authid,
+        raster.band,
+    )
+
+
+def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) -> dict[str, Any]:
+    """Return a configuration whose computational domain is covered by ``raster``.
+
+    A QGIS raster represents a rectangular set of physical cells. GeoClaw reads
+    topotype-3 values as nodal samples after shifting an ESRI ``xllcorner`` to
+    its first sample centre.  :func:`prepare_inputs` therefore supplies an
+    extra, topography-only edge halo for the retained domain.
+
+    A computational cell must contain an integer number of source DEM cells.
+    If the source dimensions are not divisible by that integer, the smallest
+    possible number of source cells is trimmed and shared between opposite
+    sides. The solver, terrain, release, qinit, and result domains then use the
+    same retained rectangle.
+    """
+    result = deepcopy(configuration)
+    try:
         computational_cell = float(result["computation"]["cell_size"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Cannot derive an AVAC domain from the selected DEM: {exc}") from exc
+    raster = trim_raster_to_computational_grid(raster, computational_cell)
+    metadata = raster.metadata
+    try:
+        source_cell = float(metadata["cellsize"])
         ncols, nrows = int(metadata["ncols"]), int(metadata["nrows"])
         xmin, xmax = float(metadata["xmin"]), float(metadata["xmax"])
         ymin, ymax = float(metadata["ymin"]), float(metadata["ymax"])
@@ -263,13 +368,8 @@ def configuration_for_raster(configuration: dict[str, Any], raster: AvacRaster) 
             "Source DEM cell size must equal or evenly subdivide the computational cell size; "
             "AVAC does not silently resample terrain during preparation."
         )
-    if ncols % cells_per_computation or nrows % cells_per_computation:
-        raise ValueError(
-            f"Selected DEM dimensions ({ncols} x {nrows} cells) must each be divisible by "
-            f"{cells_per_computation}, the number of DEM cells per {computational_cell:g} m "
-            "computational cell. Crop or regrid the DEM, or choose a compatible computational cell size; "
-            "AVAC will not silently crop release cells or extend the solver domain."
-        )
+    if ncols % cells_per_computation or nrows % cells_per_computation:  # pragma: no cover - helper invariant
+        raise ValueError("Internal error while trimming the selected DEM to the AVAC grid.")
     nx, ny = ncols // cells_per_computation, nrows // cells_per_computation
     # GeoClaw FGmax point_style=2 uses the first and last sample coordinates
     # to derive spacing with (n-1).  QGIS also needs two centre coordinates
@@ -375,6 +475,8 @@ def release_coverage_from_rings(
     cell_size: float,
     *,
     subsamples: int = 64,
+    progress: Callable[[float], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> np.ndarray:
     """Return the area fraction of each DEM cell covered by release polygons.
 
@@ -384,10 +486,13 @@ def release_coverage_from_rings(
     multipart features, and overlaps are combined as a geometric union at
     the sampling points, so the result is bounded by zero and one.
 
-    The calculation is restricted to polygon bounding boxes and processed in
-    bounded chunks.  Sixty-four samples per direction make the boundary-area
-    error negligible relative to the DEM resolution while keeping input
-    preparation independent of optional geometry libraries.
+    Cells whose centres are strictly inside or outside and whose area is not
+    crossed by a polygon boundary have exact fractions of one or zero.  Only
+    boundary-crossing cells need the regular subcell integration.  This gives
+    the same 64-by-64 boundary estimate as the former whole-bounding-box
+    algorithm without sampling thousands of points in every interior cell.
+    Work is processed in bounded chunks and remains independent of optional
+    geometry libraries.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -399,35 +504,152 @@ def release_coverage_from_rings(
         raise ValueError("Release coverage requires a positive finite cell size.")
     if samples < 2:
         raise ValueError("Release coverage requires at least two subcell samples per direction.")
+    if np.any(~np.isfinite(x)) or np.any(~np.isfinite(y)):
+        raise ValueError("Release coverage grid axes must contain only finite coordinates.")
+    if (x.size > 1 and np.any(np.diff(x) <= 0.0)) or (y.size > 1 and np.any(np.diff(y) <= 0.0)):
+        raise ValueError("Release coverage grid axes must be strictly increasing.")
+    if x.size > 1 and not np.allclose(np.diff(x), cell, rtol=0.0, atol=1e-8):
+        raise ValueError("Release coverage x coordinates do not match the DEM cell size.")
+    if y.size > 1 and not np.allclose(np.diff(y), cell, rtol=0.0, atol=1e-8):
+        raise ValueError("Release coverage y coordinates do not match the DEM cell size.")
+
+    def check_cancelled() -> None:
+        if cancelled and cancelled():
+            raise PreparationCancelled("AVAC input preparation cancelled.")
+
+    def report(value: float) -> None:
+        if progress:
+            progress(float(np.clip(value, 0.0, 1.0)))
+
+    def closed_ring(values: np.ndarray) -> np.ndarray:
+        vertices = np.asarray(values, dtype=float)
+        if vertices.ndim != 2 or vertices.shape[0] < 3 or vertices.shape[1] < 2:
+            return np.empty((0, 2), dtype=float)
+        vertices = vertices[:, :2]
+        if np.any(~np.isfinite(vertices)):
+            raise ValueError("Release polygon coordinates must be finite.")
+        if not np.array_equal(vertices[0], vertices[-1]):
+            vertices = np.vstack((vertices, vertices[0]))
+        return vertices
 
     normalized: list[tuple[np.ndarray, list[np.ndarray]]] = []
-    candidate = np.zeros((y.size, x.size), dtype=bool)
     half = 0.5 * cell
     for exterior, holes in rings:
-        exterior = np.asarray(exterior, dtype=float)
-        if exterior.ndim != 2 or exterior.shape[0] < 3 or exterior.shape[1] < 2:
+        exterior_array = closed_ring(exterior)
+        if not exterior_array.size:
             continue
-        hole_arrays = [
-            np.asarray(hole, dtype=float)
-            for hole in holes
-            if np.asarray(hole).ndim == 2 and np.asarray(hole).shape[0] >= 3
-        ]
-        normalized.append((exterior[:, :2], [hole[:, :2] for hole in hole_arrays]))
-        columns = np.flatnonzero(
-            (x >= float(np.min(exterior[:, 0])) - half)
-            & (x <= float(np.max(exterior[:, 0])) + half)
-        )
-        rows = np.flatnonzero(
-            (y >= float(np.min(exterior[:, 1])) - half)
-            & (y <= float(np.max(exterior[:, 1])) + half)
-        )
-        if columns.size and rows.size:
-            candidate[np.ix_(rows, columns)] = True
+        hole_arrays = []
+        for hole in holes:
+            hole_array = closed_ring(hole)
+            if hole_array.size:
+                hole_arrays.append(hole_array)
+        normalized.append((exterior_array, hole_arrays))
     if not normalized:
+        report(1.0)
         return np.zeros((y.size, x.size), dtype=float)
 
-    row_indices, column_indices = np.nonzero(candidate)
-    coverage = np.zeros((y.size, x.size), dtype=float)
+    report(0.05)
+    check_cancelled()
+
+    def axis_window(axis: np.ndarray, lower: float, upper: float, padding: float = 0.0) -> tuple[int, int]:
+        # A coordinate-scaled tolerance keeps cells touched exactly at their
+        # outer edge in the boundary set.  Extra boundary cells are harmless:
+        # they are simply sampled and assigned zero or one.
+        scale = max(1.0, abs(lower), abs(upper), cell)
+        tolerance = 16.0 * np.finfo(float).eps * scale
+        start = int(np.searchsorted(axis, lower - padding - tolerance, side="left"))
+        stop = int(np.searchsorted(axis, upper + padding + tolerance, side="right"))
+        return max(0, start), min(axis.size, stop)
+
+    def inside_polygon(points: np.ndarray, exterior: np.ndarray, holes: Sequence[np.ndarray]) -> np.ndarray:
+        inside = MplPath(exterior).contains_points(points)
+        if not np.any(inside):
+            return inside
+        for hole in holes:
+            selected = np.flatnonzero(inside)
+            if selected.size == 0:
+                break
+            hole_points = points[selected]
+            hole_bbox = (
+                (hole_points[:, 0] >= float(np.min(hole[:, 0])))
+                & (hole_points[:, 0] <= float(np.max(hole[:, 0])))
+                & (hole_points[:, 1] >= float(np.min(hole[:, 1])))
+                & (hole_points[:, 1] <= float(np.max(hole[:, 1])))
+            )
+            if np.any(hole_bbox):
+                tested = selected[hole_bbox]
+                inside[tested] &= ~MplPath(hole).contains_points(points[tested])
+        return inside
+
+    # Classify cell centres first.  For a cell not crossed by any boundary,
+    # this is its exact area classification.  Large polygon bounding boxes are
+    # split into blocks so preparation memory does not scale with DEM area.
+    centre_inside = np.zeros((y.size, x.size), dtype=bool)
+    max_centre_points = 1_000_000
+    for polygon_index, (exterior, holes) in enumerate(normalized):
+        check_cancelled()
+        column_start, column_stop = axis_window(
+            x, float(np.min(exterior[:, 0])), float(np.max(exterior[:, 0])),
+        )
+        row_start, row_stop = axis_window(
+            y, float(np.min(exterior[:, 1])), float(np.max(exterior[:, 1])),
+        )
+        column_count = column_stop - column_start
+        if column_count > 0 and row_stop > row_start:
+            rows_per_block = max(1, max_centre_points // column_count)
+            columns = np.arange(column_start, column_stop)
+            for block_start in range(row_start, row_stop, rows_per_block):
+                check_cancelled()
+                block_stop = min(block_start + rows_per_block, row_stop)
+                rows = np.arange(block_start, block_stop)
+                xx, yy = np.meshgrid(x[columns], y[rows])
+                points = np.column_stack((xx.ravel(), yy.ravel()))
+                inside = inside_polygon(points, exterior, holes).reshape((rows.size, columns.size))
+                centre_inside[np.ix_(rows, columns)] |= inside
+        report(0.05 + 0.20 * (polygon_index + 1) / len(normalized))
+
+    # Mark every DEM cell touched by an exterior or hole segment.  Iterating
+    # through the intersected row slabs makes this proportional to boundary
+    # length, rather than to the area of a diagonal segment's bounding box.
+    boundary = np.zeros((y.size, x.size), dtype=bool)
+    segment_count = sum(exterior.shape[0] - 1 + sum(hole.shape[0] - 1 for hole in holes)
+                        for exterior, holes in normalized)
+    completed_segments = 0
+    for exterior, holes in normalized:
+        for ring in (exterior, *holes):
+            for point_a, point_b in zip(ring[:-1], ring[1:]):
+                check_cancelled()
+                x0, y0 = float(point_a[0]), float(point_a[1])
+                dx, dy = float(point_b[0] - point_a[0]), float(point_b[1] - point_a[1])
+                row_start, row_stop = axis_window(y, min(y0, y0 + dy), max(y0, y0 + dy), half)
+                for row in range(row_start, row_stop):
+                    lower_y, upper_y = y[row] - half, y[row] + half
+                    if dy == 0.0:
+                        if y0 < lower_y or y0 > upper_y:
+                            continue
+                        enter, leave = 0.0, 1.0
+                    else:
+                        first = (lower_y - y0) / dy
+                        second = (upper_y - y0) / dy
+                        enter = max(0.0, min(first, second))
+                        leave = min(1.0, max(first, second))
+                        if enter > leave:
+                            continue
+                    first_x, last_x = x0 + enter * dx, x0 + leave * dx
+                    column_start, column_stop = axis_window(
+                        x, min(first_x, last_x), max(first_x, last_x), half,
+                    )
+                    if column_stop > column_start:
+                        boundary[row, column_start:column_stop] = True
+                completed_segments += 1
+                report(0.25 + 0.25 * completed_segments / max(1, segment_count))
+
+    row_indices, column_indices = np.nonzero(boundary)
+    coverage = centre_inside.astype(float)
+    if row_indices.size == 0:
+        report(1.0)
+        return coverage
+
     offsets = ((np.arange(samples, dtype=float) + 0.5) / samples - 0.5) * cell
     offset_x, offset_y = np.meshgrid(offsets, offsets)
     offsets_xy = np.column_stack((offset_x.ravel(), offset_y.ravel()))
@@ -451,21 +673,14 @@ def release_coverage_from_rings(
             if not np.any(bbox):
                 continue
             inside = np.zeros(points.shape[0], dtype=bool)
-            inside[bbox] = MplPath(exterior).contains_points(points[bbox])
-            for hole in holes:
-                hole_bbox = (
-                    inside
-                    & (points[:, 0] >= float(np.min(hole[:, 0])))
-                    & (points[:, 0] <= float(np.max(hole[:, 0])))
-                    & (points[:, 1] >= float(np.min(hole[:, 1])))
-                    & (points[:, 1] <= float(np.max(hole[:, 1])))
-                )
-                if np.any(hole_bbox):
-                    inside[hole_bbox] &= ~MplPath(hole).contains_points(points[hole_bbox])
+            inside[bbox] = inside_polygon(points[bbox], exterior, holes)
             inside_any |= inside
         fractions = inside_any.reshape((stop - start, -1)).mean(axis=1)
         coverage[rows, columns] = fractions
+        report(0.50 + 0.50 * stop / row_indices.size)
+        check_cancelled()
 
+    report(1.0)
     return coverage
 
 
@@ -926,7 +1141,7 @@ def materialize_configuration(template: Path, destination: Path, raster: AvacRas
 
 def prepare_inputs(
     run_root: Path, raster: AvacRaster, rings, template: Path, release: dict[str, Any], controlled_values: dict[str, Any] | None = None, *, fine_raster: AvacRaster | None = None, allow_existing_run: bool = False,
-    progress: Callable[[int], None] | None = None,
+    progress: Callable[[float], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> PreparedInputs:
     """Materialize only AVAC scientific input files in a new per-run directory."""
@@ -934,9 +1149,13 @@ def prepare_inputs(
     if run_root.exists() and any(run_root.iterdir()) and not allow_existing_run:
         raise ValueError(f"Run directory must be empty: {run_root}")
     avac_dir, topo_dir = run_root / "AVAC", run_root / "Topo"
-    template_payload = configuration_for_raster(
-        apply_controlled_values(load_complete_configuration(template), controlled_values or {}), raster,
-    )
+    controlled_template = apply_controlled_values(load_complete_configuration(template), controlled_values or {})
+    try:
+        computational_cell = float(controlled_template["computation"]["cell_size"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Cannot derive an AVAC domain from the selected DEM: {exc}") from exc
+    raster = trim_raster_to_computational_grid(raster, computational_cell)
+    template_payload = configuration_for_raster(controlled_template, raster)
     grid_issues = validate_grid_contract(template_payload, float(raster.metadata["cellsize"]))
     if grid_issues:
         raise ValueError(" ".join(grid_issues))
@@ -952,6 +1171,8 @@ def prepare_inputs(
         raise PreparationCancelled("AVAC input preparation cancelled.")
     coverage = release_coverage_from_rings(
         rings, raster.x, raster.y, float(raster.metadata["cellsize"]),
+        progress=(lambda value: progress(25.0 + 15.0 * value)) if progress else None,
+        cancelled=cancelled,
     )
     mask = coverage > 0.0
     if not np.any(mask):

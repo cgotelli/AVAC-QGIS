@@ -35,14 +35,13 @@ RUN_ROOT = Path(os.environ["AVAC_QGIS_PREPROCESS_ROOT"])
 
 
 def canonical_compatible_template(raster):
-    """Reject the documented 2 m setup, then make a test-only 1 m copy.
+    """Verify the documented 2 m crop, then make a reference-only 1 m copy.
 
     The canonical QGIS raster is 2999 by 1999 cells at 1 m.  Its old 2 m
-    template cannot cover that physical rectangle exactly: using it would
-    either discard the top/right release cells or invent terrain outside the
-    raster.  Production correctly rejects that input.  This manual QGIS test
-    records the rejection and uses a temporary 1 m template only so the
-    remaining ingestion/preparation route is still exercised.
+    template needs one fewer source cell on each axis.  Production now applies
+    that minimum upper/right crop.  This historical equivalence harness still
+    uses a temporary 1 m copy because its stored reference arrays represent
+    the former full 1 m domain.
     """
     source_template = yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))
     assert isinstance(source_template, dict), "canonical configuration is not a YAML mapping"
@@ -50,12 +49,12 @@ def canonical_compatible_template(raster):
     configured_cell = float(source_template["computation"]["cell_size"])
     assert np.isclose(source_cell, 1.0), source_cell
     assert np.isclose(configured_cell, 2.0), configured_cell
-    try:
-        configuration_for_raster(source_template, raster)
-    except ValueError as exc:
-        assert "must each be divisible" in str(exc), str(exc)
-    else:
-        raise AssertionError("The non-divisible canonical 2 m configuration was unexpectedly accepted.")
+    cropped = configuration_for_raster(source_template, raster)["dem_extent"]
+    assert cropped["xmin"] == raster.metadata["xmin"]
+    assert cropped["xmax"] == raster.metadata["xmax"] - source_cell
+    assert cropped["ymin"] == raster.metadata["ymin"]
+    assert cropped["ymax"] == raster.metadata["ymax"] - source_cell
+    assert (cropped["nbx"], cropped["nby"]) == (1499, 999)
 
     compatible_template = deepcopy(source_template)
     compatible_template["computation"]["cell_size"] = source_cell
@@ -215,7 +214,7 @@ def _check() -> None:
             flush=True,
         )
         print(f"INITIAL_DEPTH fractional_volume=True rows={rows} nonzero={nonzero} min={minimum:.12g} max={maximum:.12g} sum={total:.12g}", flush=True)
-        print("GRID_CONTRACT canonical_2m_rejected=True regression_template_cell_size=1m full_qgis_domain=True", flush=True)
+        print("GRID_CONTRACT canonical_2m_minimum_crop=True regression_template_cell_size=1m full_qgis_reference=True", flush=True)
         print("TOPOGRAPHY byte_identical=True terrain_only_halo=True", flush=True)
         print("INIT_BINARY fractional_release_coverage=True", flush=True)
         print("YAML template_preservation=True", flush=True)

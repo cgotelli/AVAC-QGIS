@@ -119,7 +119,7 @@ def materialize_runtime_tree(run_root: str | Path, runtime_backend: str | Path, 
 def prepare_isolated_runtime_run(run_root: str | Path, runtime_backend: str | Path, raster: AvacRaster, rings, template: str | Path,
                                  release: dict[str, Any], metadata: dict[str, Any], controlled_values: dict[str, Any] | None = None,
                                  fine_raster: AvacRaster | None = None,
-                                 progress: Callable[[int], None] | None = None, cancelled: Callable[[], bool] | None = None) -> PreparedInputs:
+                                 progress: Callable[[float], None] | None = None, cancelled: Callable[[], bool] | None = None) -> PreparedInputs:
     """Prepare scientific inputs for direct packaged execution without sources/Make."""
     run_root = Path(run_root).expanduser().resolve()
     if progress: progress(5)
@@ -146,7 +146,7 @@ def prepare_isolated_run(
     metadata: dict[str, Any],
     controlled_values: dict[str, Any] | None = None,
     fine_raster: AvacRaster | None = None,
-    progress: Callable[[int], None] | None = None,
+    progress: Callable[[float], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> PreparedInputs:
     """Build a marked solver tree, then materialize equivalent scientific inputs."""

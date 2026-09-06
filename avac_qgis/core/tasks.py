@@ -35,7 +35,7 @@ class PrepareAvacRunTask(QgsTask):
             self.error = exc
             return False
 
-    def _progress(self, value: int) -> None:
+    def _progress(self, value: float) -> None:
         if self.isCanceled():
             raise PreparationCancelled("AVAC input preparation cancelled.")
         self.setProgress(value)
@@ -152,6 +152,8 @@ class InitialDepthPreviewTask(QgsTask):
                 self.raster.x,
                 self.raster.y,
                 float(self.raster.metadata["cellsize"]),
+                progress=lambda value: self.setProgress(10.0 + 45.0 * value),
+                cancelled=self.isCanceled,
             )
             self.mask = self.coverage > 0.0
             if self.isCanceled():

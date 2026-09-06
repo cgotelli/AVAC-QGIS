@@ -21,6 +21,7 @@ from avac_qgis.core.preprocessing import (
     raster_from_qgis_layer,
     read_avac_topography,
     release_coverage_from_rings,
+    trim_raster_to_computational_grid,
     write_init_binary,
     write_topography,
 )
@@ -388,12 +389,70 @@ def test_prepare_inputs_keeps_fine_raster_bounds_with_closed_terrain_support(tmp
     assert fine_terrain.metadata["ymin"] == -0.125 and fine_terrain.metadata["ymax"] == 20.125
 
 
-def test_nondivisible_qgis_extent_is_rejected_instead_of_cropping_or_padding() -> None:
-    with pytest.raises(ValueError, match="must each be divisible"):
-        configuration_for_raster(
-            {"computation": {"cell_size": 2.0}, "dem_extent": {}, "gauges": {}},
-            _registered_raster(5, 4),
-        )
+def test_nondivisible_qgis_extent_is_trimmed_evenly_without_resampling() -> None:
+    raster = _registered_raster(11, 10)
+    trimmed = trim_raster_to_computational_grid(raster, 4.0)
+
+    # Three columns are removed as one west plus two east; two rows are
+    # removed as one on each side.  This is the minimum possible crop and is
+    # centred to within half a source cell when a remainder is odd.
+    assert trimmed.z.shape == (8, 8)
+    assert np.array_equal(trimmed.x, raster.x[1:9])
+    assert np.array_equal(trimmed.y, raster.y[1:9])
+    assert np.array_equal(trimmed.z, raster.z[1:9, 1:9])
+    assert trimmed.metadata["xmin"] == 1.0 and trimmed.metadata["xmax"] == 9.0
+    assert trimmed.metadata["ymin"] == 1.0 and trimmed.metadata["ymax"] == 9.0
+
+    configuration = configuration_for_raster(
+        {"computation": {"cell_size": 4.0}, "dem_extent": {}, "gauges": {}}, raster,
+    )
+    assert configuration["dem_extent"] == {
+        "xmin": 1.0, "xmax": 9.0, "ymin": 1.0, "ymax": 9.0,
+        "nbx": 2, "nby": 2, "cell_size": 4.0, "nodata_value": -9999.0,
+    }
+
+
+def test_prepare_inputs_uses_the_same_trimmed_grid_for_every_artifact(tmp_path) -> None:
+    raster = _registered_raster(43, 42)
+    release_ring = np.array([
+        [2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0], [2.0, 2.0],
+    ])
+    release = {
+        "d0": 1.0,
+        "z_ref": 0.0,
+        "gradient_hypso": 0.0,
+        "theta_cr": 30.0,
+        "nu": 0.2,
+        "correction_elevation": False,
+        "correction_slope": False,
+    }
+    prepared = prepare_inputs(
+        tmp_path / "trimmed_run", raster, [(release_ring, [])], TEMPLATE, release,
+        {"computation.cell_size": 4.0},
+    )
+
+    # Source 43 x 42 becomes 40 x 40: west/east remove 1/2 and south/north
+    # remove 1/1.  Release coverage and qinit use exactly that retained grid.
+    assert prepared.coverage.shape == (40, 40)
+    assert prepared.depth.shape == (40, 40)
+    assert prepared.coverage[1, 1] == pytest.approx(1.0)
+    assert float(np.sum(prepared.coverage)) == pytest.approx(1.0)
+
+    generated = yaml.safe_load(prepared.configuration_path.read_text(encoding="utf-8"))
+    assert generated["dem_extent"] == {
+        "xmin": 1.0, "xmax": 41.0, "ymin": 1.0, "ymax": 41.0,
+        "nbx": 10, "nby": 10, "cell_size": 4.0, "nodata_value": -9999.0,
+    }
+    terrain = read_avac_topography(prepared.topo_path, raster.crs_authid)
+    assert terrain.z.shape == (42, 42)
+    assert np.array_equal(terrain.z[1:-1, 1:-1], raster.z[1:41, 1:41])
+
+    with prepared.init_path.open("rb") as handle:
+        header = QINIT_BINARY_HEADER.unpack(handle.read(QINIT_BINARY_HEADER.size))
+    _magic, ncols, nrows, _components, _flags, xlow, yhigh, dx, dy = header
+    assert (ncols, nrows) == (40, 40)
+    assert (xlow - .5 * dx, xlow + (ncols - .5) * dx) == (1.0, 41.0)
+    assert (yhigh - (nrows - .5) * dy, yhigh + .5 * dy) == (1.0, 41.0)
 
 
 def test_metadata_extent_uses_the_same_integer_grid_tolerance_as_setrun() -> None:

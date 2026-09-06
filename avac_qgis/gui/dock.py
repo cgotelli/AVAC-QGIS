@@ -40,7 +40,7 @@ from ..core.configuration import apply_controlled_values, controlled_values, def
 from ..core.runner import AvacRunner, output_summary
 from ..core.preprocessing import (
     configuration_for_raster, initial_snow_surface_elevation, read_avac_topography,
-    raster_from_qgis_layer, rings_from_qgis_layer,
+    raster_from_qgis_layer, rings_from_qgis_layer, trim_raster_to_computational_grid,
 )
 from ..core.tasks import InitialDepthPreviewTask, PrepareAvacLakeDepthTask, PrepareAvacRunTask, PrepareAvacResultsTask, PrepareWaveResultsTask
 from ..core.wave_results import WAVE_RESULT_DIRECTORY, discover_wave_results, load_wave_frame, read_wave_gauges
@@ -2720,6 +2720,9 @@ class AvacDockWidget(QDockWidget):
         try:
             dem = self.dem_layer.currentLayer()
             raster = raster_from_qgis_layer(dem)
+            raster = trim_raster_to_computational_grid(
+                raster, float(self._controlled_parameters()["computation.cell_size"]),
+            )
             rings = rings_from_qgis_layer(self.release_layer.currentLayer(), dem.crs())
             task = InitialDepthPreviewTask(raster, rings, self._preprocessing_release())
             self._preview_kind = kind
@@ -2925,13 +2928,29 @@ class AvacDockWidget(QDockWidget):
             issues += validate_grid_contract(configuration, float(raster.metadata["cellsize"]))
             if issues:
                 raise ValueError(" ".join(issues))
-            self.status.setText("Inputs valid. Preparation will derive the AVAC domain from the selected DEM and use its CRS.")
+            domain = configuration["dem_extent"]
+            source_cell = float(raster.metadata["cellsize"])
+            retained_columns = int(round((float(domain["xmax"]) - float(domain["xmin"])) / source_cell))
+            retained_rows = int(round((float(domain["ymax"]) - float(domain["ymin"])) / source_cell))
+            removed_columns = int(raster.metadata["ncols"]) - retained_columns
+            removed_rows = int(raster.metadata["nrows"]) - retained_rows
+            trim_text = (
+                f" Preparation will remove {removed_columns} DEM column(s) and {removed_rows} row(s), "
+                "shared between opposite edges."
+                if removed_columns or removed_rows else ""
+            )
+            self.status.setText(
+                "Inputs valid. Preparation will derive the AVAC domain from the selected DEM and use its CRS."
+                + trim_text
+            )
             self.log.setPlainText(
                 f"DEM: {raster.metadata['ncols']} x {raster.metadata['nrows']}; "
                 f"cell size {raster.metadata['cellsize']}; CRS {raster.crs_authid}; band {raster.band}\n"
                 f"NoData: {raster.metadata['nodata_value']}; release polygons: {len(rings)}\n"
-                f"AVAC domain: {configuration['dem_extent']['xmin']:g} to {configuration['dem_extent']['xmax']:g}, "
-                f"{configuration['dem_extent']['ymin']:g} to {configuration['dem_extent']['ymax']:g}\n"
+                f"Retained DEM: {retained_columns} x {retained_rows}; removed at the edges: "
+                f"{removed_columns} column(s), {removed_rows} row(s)\n"
+                f"AVAC domain: {domain['xmin']:g} to {domain['xmax']:g}, "
+                f"{domain['ymin']:g} to {domain['ymax']:g}\n"
                 "Release geometries are explicitly transformed to the DEM CRS only when their CRS differs."
             )
         except Exception as exc:  # noqa: BLE001
@@ -3064,6 +3083,9 @@ class AvacDockWidget(QDockWidget):
         )
         self.log.setPlainText(
             f"Prepared run: {prepared.run_root}\n{prepared.topo_path}\n{prepared.init_path}\n{prepared.configuration_path}\n"
+            f"Retained DEM cells: {prepared.coverage.shape[1]} x {prepared.coverage.shape[0]}; "
+            f"domain: {configuration['dem_extent']['xmin']:g} to {configuration['dem_extent']['xmax']:g}, "
+            f"{configuration['dem_extent']['ymin']:g} to {configuration['dem_extent']['ymax']:g}\n"
             f"Release cells touched: {int(prepared.mask.sum())}; equivalent full cells: "
             f"{prepared.coverage.sum():.6f}; depth min/max/sum: "
             f"{prepared.depth.min():.12g} / {prepared.depth.max():.12g} / {prepared.depth.sum():.12g}\n"

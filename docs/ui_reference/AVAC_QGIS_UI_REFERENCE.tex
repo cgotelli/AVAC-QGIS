@@ -180,11 +180,12 @@ prepare again before executing it.
         first raster band must have a valid CRS, finite usable cells, and square
         pixels. The selected DEM extent defines the rectangular AVAC
         calculation domain. The terrain resolution must equal or evenly
-        subdivide the chosen computational cell size, and the selected DEM
-        dimensions must be divisible by the corresponding number of DEM cells
-        per computational cell. AVAC4QGIS rejects an incompatible extent
-        rather than silently cropping release cells or extending the solver
-        domain. Internally it writes one replicated edge-sample halo for
+        subdivide the chosen computational cell size. If the DEM dimensions
+        are not divisible by the corresponding number of source cells per
+        computational cell, AVAC4QGIS removes the minimum number of source
+        rows and columns. It shares the crop as evenly as possible between
+        opposite edges and never resamples or extends the DEM. Internally it
+        writes one replicated edge-sample halo for
         GeoClaw terrain interpolation only; this does not add release or qinit
         cells. If the optional fine-DEM backend is enabled programmatically,
         its local terrain file uses a closed node envelope at the selected fine

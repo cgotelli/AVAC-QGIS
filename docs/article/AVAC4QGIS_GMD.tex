@@ -126,11 +126,6 @@ avalanche propagation and avalanche-generated impulse-wave simulation}}
 \maketitle
 \thispagestyle{empty}
 
-\begin{center}
-\small Methods checkpoint for source and Windows plugin version \modelversion.
-The accepted numerical kernels are unchanged from release 0.6.1.
-Uncompleted observational and coupled-validation sections remain draft material.
-\end{center}
 
 \begin{abstract}
 AVAC4QGIS is a QGIS framework for spatially explicit simulation of snow
@@ -140,12 +135,11 @@ with Coulomb--Voellmy resistance, a curvature-dependent normal-load correction,
 finite terrain-tangent velocity transport, an analytical frozen-coefficient
 basal-source update, and static-yield arrest. Conservative shallow-layer
 correction-flux damping and synchronized CFL preflight complement the
-wet--dry finite-volume scheme. Voellmy source updates retain an exact zero
-even on a super-yield bed; the legacy pure-Coulomb fallback is kept separate.
+wet--dry finite-volume scheme.
 WAVE subsequently advances the standard GeoClaw
 shallow-water equations on a separately selected terrain/bathymetry surface.
 The offline coupling transfers positive avalanche volume flux and horizontal
-momentum across a polygon-derived shoreline. This paper specifies the
+momentum across a polygon-derived shoreline. This document specifies the
 implemented equations, numerical treatment, geospatial preprocessing, and
 physical scope of the two solvers, including the assumptions and current
 implementation limitations that affect interpretation of their outputs.
@@ -167,201 +161,100 @@ implementation limitations that affect interpretation of their outputs.
 \section{AVAC4QGIS model system}
 \label{sec:model-system}
 
-AVAC4QGIS organizes two depth-averaged solvers in a single geospatial
-workflow. AVAC represents avalanche release and propagation as a mobile
-depth layer and can be used independently. It has no erosion, entrainment,
-compaction, mass source, deposited-bed evolution, or changing topography;
-its final-time depth is therefore an arrested-layer field rather than a
-separate physical deposition model. When the optional impulse-wave workflow is
-selected, a completed AVAC calculation supplies a time-dependent source to
-WAVE, which represents wave generation, propagation, and inundation. The
-coupling is sequential and one-way: WAVE reads AVAC output, whereas the water
-does not alter the preceding avalanche calculation.
+AVAC4QGIS combines two depth-averaged flow models in QGIS. AVAC simulates snow
+avalanche release and propagation. It can run on its own or provide input to
+WAVE, which simulates the resulting water waves and inundation. Both solvers
+are based on GeoClaw, an open-source finite-volume model for geophysical flows
+with wetting and drying \citep{George2008,BergerEtAl2011}.
 
-Both solvers are developments of GeoClaw, an open-source finite-volume code
-for depth-averaged geophysical flows with wetting and drying
-\citep{George2008,BergerEtAl2011}. This common numerical basis gives the two
-states the same conservative structure, but it does not make the two physical
-models interchangeable. AVAC adds a basal snow-avalanche rheology and a
-static-yield treatment; WAVE retains the standard water equations and Manning
-friction. Their shared state representation is instead used to define an
-explicit shoreline transfer operator.
+AVAC represents snow as a moving layer over fixed terrain. It includes basal
+friction and stopping, but does not model erosion, entrainment, compaction,
+or changes to the bed. The final snow depth represents an arrested layer only
+if the avalanche has stopped by the end of the simulation. In the coupled
+workflow, AVAC runs first and WAVE uses its saved results. Water motion does
+not feed back on the avalanche.
 
-The description below follows the same order as a simulation. We first define
-the geospatial inputs and the two available workflows, then state the AVAC and
-WAVE equations exactly as implemented, and finally define the transfer between
-them. This ordering distinguishes the governing equations from the QGIS and
-runtime infrastructure that makes them accessible.
+This section describes the physical assumptions, governing equations, and
+main numerical choices. Implementation details, including numerical stencils,
+file formats, and software checks, are available in the open-source repository
+listed in Sect.~\ref{sec:code-data}.
 
 \subsection{System overview and workflow}
 \label{sec:system-overview}
 
-In the standalone workflow, the user supplies a digital elevation model (DEM)
-and one or more avalanche-release polygons. The polygons are transformed to
-the DEM coordinate reference system; because AVAC solves Cartesian equations,
-that system must express horizontal distances in consistent metric units.
-AVAC4QGIS rasterizes the polygons against the DEM cells, creates the initial mobile-snow
-layer, writes an isolated run directory, and executes AVAC. The principal
-results are time-dependent flow depth and momentum, maximum depth and speed,
-and the final-time mobile-depth field. The latter is an arrested deposit only
-when the calculation has reached rest by its selected final time. No lake data
-or WAVE execution is required for this branch.
+An AVAC simulation requires a digital elevation model (DEM) and one or more
+release polygons. The plugin transforms the polygons to the DEM coordinate
+reference system and uses them to create the initial snow layer. The
+calculation uses Cartesian coordinates, so horizontal distances must be in
+meters. Outputs include the evolving flow depth and velocity, their maximum
+values, and the final snow-depth field.
 
-The impulse-wave workflow adds a terrain/bathymetry DEM, a polygon delimiting
-the water body, an absolute initial water-surface elevation, and WAVE
-hydraulic parameters. It requires a successfully completed AVAC run. The WAVE
-rectangular domain is the AVAC domain, while the polygon determines the
-initial lake and the shoreline across which avalanche flux is sampled. The
-WAVE terrain/bathymetry DEM must cover that rectangle and share its coordinate
-reference system, but it is a separately selected surface and need not equal
-the fixed AVAC bed. Consequently, the source and receiving calculations share
-a coordinate system and spatial coverage even when their terrain resolutions
-and solver cell sizes differ.
+The optional WAVE calculation adds a terrain/bathymetry DEM, a lake polygon,
+an initial water level, and hydraulic parameters. WAVE covers the same
+rectangle as AVAC. Its DEM must cover this domain in the same coordinate
+reference system, but its elevations and resolution may differ from those
+used for AVAC. The lake polygon defines the initial water body and the
+shoreline where avalanche inflow is sampled.
 
-AVAC output frames remain immutable during preparation of the WAVE scenario.
-The plugin reconstructs the lake on the WAVE grid, samples the saved AVAC
-states along its shoreline, writes a conservative source time series, and then
-starts WAVE. This separation makes the avalanche result reusable: several lake
-levels, coupling factors, or hydraulic parameter sets can be evaluated without
-rerunning AVAC.
-
-The two branches return to a common results workspace in QGIS
-\citep{QGIS2026}. Run metadata retain the materialized input layers,
-scientific parameters, solver configuration, source-run identifier, and
-runtime identity. Temporal raster layers, profiles, gauges, summary maps, and
-exports are therefore linked to the calculation that produced them rather
-than being handled as independent files.
+The plugin prepares the shoreline source from a completed AVAC run and then
+starts WAVE. The saved avalanche results can be reused to examine different
+lake levels or hydraulic parameters. Both workflows return results to QGIS
+\citep{QGIS2026}, where each run retains its inputs, parameters, and solver
+identity.
 
 \figureplan{AVAC4QGIS architecture and data flow}{Show the standalone AVAC
-branch, the optional WAVE branch, the DEM and polygon inputs, the immutable
-completed-run handoff, the shoreline-source construction, managed runtimes,
-and the shared QGIS results workspace.}
-
+workflow, the optional WAVE calculation, their DEM and polygon inputs, the
+shoreline transfer, and the shared QGIS results workspace.}
 
 \subsection{AVAC governing equations and numerical method}
 \label{sec:avac-method}
 
-\subsubsection{Conserved variables, coordinates, and terrain representation}
+\subsubsection{State variables and initial snow layer}
 
-AVAC is solved on a Cartesian map grid $(x,y)$ over a fixed bed elevation
-$B(x,y)$. Its conservative state is
+AVAC uses a Cartesian grid $(x,y)$ over a fixed bed $B(x,y)$. The conserved
+state is
 \begin{equation}
-  \boldsymbol{q}_a=(h_a,m_{x,a},m_{y,a})^{\mathsf T}
-  =(h_a,h_a u_a,h_a v_a)^{\mathsf T},
+  \boldsymbol{q}_a=(h_a,h_a u_a,h_a v_a)^{\mathsf T},
   \label{eq:avac-state}
 \end{equation}
-where $h_a$ is vertical flow depth and $(u_a,v_a)$ are the two horizontal,
-depth-averaged velocity components. This convention is important because
-many avalanche models instead use depth normal to the terrain. Whenever a
-terrain-tangent speed is reported, AVAC4QGIS reconstructs the vertical
-component $w_a=u_a B_x+v_a B_y$ and evaluates
-$U_{a,s}=\sqrt{u_a^2+v_a^2+w_a^2}$. This is a geometric reconstruction used
-by the basal-law projections and diagnostics. The conserved variables remain a
-vertical depth and horizontal map-plane momenta: AVAC neither stores a
-terrain-tangent momentum state nor an independent local frame. It does apply
-a discrete transport between estimated departure and arrival tangent planes,
-as described below.
+where $h_a$ is vertical flow depth and $(u_a,v_a)$ is horizontal,
+depth-averaged velocity. Some avalanche models instead use thickness normal
+to the terrain. AVAC converts between these quantities when needed, but
+always stores vertical depth and horizontal momentum.
 
-The initial momenta are zero. Within the release polygons, the initial depth
-can be uniform, $h_a=d_0$, or corrected for elevation and slope. The optional
-elevation increment is
+The snow is initially at rest. Within the release area, its depth can be
+uniform, $d_0$, or corrected for elevation and slope. The elevation correction
+is
 \begin{equation}
   d_z=(B-z_{\mathrm{ref}})G_z/100,
   \label{eq:release-elevation}
 \end{equation}
-where $G_z$ is the snow-depth change per \SI{100}{m}. The optional slope
-factor is
+where $z_{\mathrm{ref}}$ is a reference elevation and $G_z$ is the snow-depth
+change per \SI{100}{m}. The optional slope factor is
 \begin{equation}
   f_s=\frac{\sin\theta_c-\nu\cos\theta_c}
            {\sin\theta-\nu\cos\theta},
   \qquad \theta=\tan^{-1}\!\left(\lVert\nabla B\rVert\right),
   \label{eq:release-slope}
 \end{equation}
-and is applied only where $\theta>25^\circ$ and the absolute value of the
-denominator exceeds $10^{-12}$;
-else it is set to zero. Thus the four supported choices inside the release
-mask are $d_0$, $d_0+d_z$, $d_0f_s$, and $(d_0+d_z)f_s$. Outside that mask the
-mobile depth is zero. The cell-centred release raster is conservatively
-constructed in two stages. QGIS reports the selected raster extent as outer
-pixel edges. AVAC4QGIS therefore represents sample $i,j$ by the common DEM and
-release-cell centres
-\begin{equation}
-  x_i=x_{\min}+(i-\tfrac12)\Delta x,\qquad
-  y_j=y_{\min}+(j-\tfrac12)\Delta y,
-  \label{eq:avac-qgis-cell-centres}
-\end{equation}
-for $i=1,\ldots,N_x$ and $j=1,\ldots,N_y$, while retaining
-$(x_{\min},x_{\max},y_{\min},y_{\max})$ as physical outer edges in terrain
-metadata. First, the fraction of each DEM cell occupied by
-the union of the release polygons is estimated on a regular $64\times64$
-subcell grid. Exterior rings, holes, multipart features, and overlapping
-polygons are handled jointly, so the fraction remains between zero and one;
-this stage is a high-resolution area approximation rather than an exact
-polygon--cell intersection. Second, the resulting piecewise-constant raster
-is conservatively averaged onto each solver cell from the exact rectangular
-overlap with the source cells. If the solver spacing is $r\Delta x$, $r$ must
-be an integer and both $N_x$ and $N_y$ must be divisible by $r$. A
-non-divisible selected DEM is rejected: silently cropping it would lose QGIS
-release cells, whereas extending its domain would add extrapolated terrain and
-qinit-free solver cells.
+where $\theta_c$ and $\nu$ are prescribed release parameters. This factor
+applies above $25^\circ$ and is zero on gentler slopes or when the denominator
+is numerically zero. The available depth choices are $d_0$, $d_0+d_z$,
+$d_0f_s$, and $(d_0+d_z)f_s$.
 
-GeoClaw's topotype-3 reader shifts an ESRI \texttt{xllcorner} to the first
-terrain-sample centre and interpolates the supplied elevations as nodal data.
-AVAC4QGIS consequently writes a one-sample, replicated terrain halo only for
-that topography file. For a QGIS DEM extending from $x_{\min}$ to
-$x_{\max}$, the topography samples span from
-$x_{\min}-\Delta x/2$ to $x_{\max}+\Delta x/2$ (and analogously in $y$),
-which brackets every retained solver edge. The release coverage and binary
-initializer are not padded: the latter writes the original western and
-northern cell centres and native spacings, from which its reader reconstructs
-the original source-cell edges by adding and subtracting one half-cell. Thus
-the QGIS terrain cells, release cells, qinit cells, and solver rectangle are
-co-registered; the replicated halo supplies interpolation support rather than
-additional terrain or initialized mass. GeoClaw's maximum-value fixed grid
-(FGmax) instead specifies its first and last output \emph{sample points}.
-AVAC4QGIS supplies those points at the finite-volume cell centres in
-Eq.~\eqref{eq:avac-qgis-cell-centres}, rather than at the physical outer
-edges. It consequently writes $N_x\times N_y$ peak samples; when the QGIS
-reader restores each sample's half-cell envelope, the maximum products cover
-their configured output rectangle without a half-cell shift or an extra row or
-column. The time-dependent fixed-grid products use their own edge-based
-GeoClaw convention and have the same raster registration when they share that
-domain. Raw FGmax files produced with the former edge-sample setup must be
-regenerated by rerunning: their samples do not contain the missing cell-centre
-values, so a GIS georeferencing change alone cannot repair them.
-A local fine DEM is instead an overlay
-on that base field. It cannot receive the external replicated halo, because
-GeoClaw gives the finer topography file priority wherever its nodal envelope
-overlaps the base terrain. AVAC4QGIS therefore writes the fine file on a
-half-spacing node grid whose first and last nodes lie exactly on the fine
-QGIS outer edges. Its edge and midpoint values sample the same replicated-edge
-bilinear surface within the fine footprint, while the base DEM remains active
-at every exterior point. Thus the local terrain is neither extrapolated over
-an undocumented half-cell fringe nor truncated at its own boundary. Prepared
-\texttt{init.xyz} and
-\texttt{init.avacbin} files
-written by earlier plugin versions must be regenerated: their format already
-defined the listed coordinates as cell centres, but the former writer violated
-that contract. AVAC4QGIS validates the release controls before evaluating the
-corrections and requires the unscaled candidate depth in every covered cell to
-be finite and non-negative. A release polygon that covers a non-finite DEM
-cell, a non-finite control, or a slope/elevation correction that produces a
-negative candidate is rejected with its affected cell location; it is not
-silently converted to a dry cell. The fractional coverage factor is applied
-only after this check, and both qinit writers independently reject non-finite
-or negative stored values. Thus dry-state handling cannot alter an invalid
-initial mass field after preparation.
-
-Terrain elevations and ASCII terrain coordinates are serialized with
-binary64 round-trip precision (17 significant decimal digits for elevations).
-This avoids introducing artificial second differences by rounding a planar
-DEM during preparation; it does not recover precision absent from the source
-DEM. It also does not eliminate roundoff or conditioning errors in GeoClaw's
-subsequent topographic cell integration, especially on fine AMR patches.
+The plugin weights these depths by the fraction of each DEM cell covered by
+the release polygons. Coverage is estimated by subcell sampling, with holes
+and overlapping polygons handled together. The resulting snow volume is
+conservatively averaged onto the solver grid. A coarser solver spacing must
+be an integer multiple of the DEM spacing. If the DEM dimensions do not divide
+evenly, the plugin removes the minimum number of rows and columns and shares
+the crop as evenly as possible between opposite edges. Terrain, release, and
+output grids use the same retained rectangle. Invalid or negative release
+depths are rejected.
 
 \subsubsection{Mass and momentum equations}
 
-The active AVAC solver advances the Cartesian shallow-water balance laws
+AVAC solves
 \begin{align}
   \partial_t h_a
     +\partial_x(h_a u_a)+\partial_y(h_a v_a) &=0,
@@ -377,570 +270,291 @@ The active AVAC solver advances the Cartesian shallow-water balance laws
     &=-g h_a\,\partial_y B+S_{y,r}+S_{y,g}.
     \label{eq:avac-ymomentum}
 \end{align}
-Here $g$ is gravitational acceleration,
-$\boldsymbol{S}_r=(S_{x,r},S_{y,r})$ combines basal resistance with the
-flow-parallel steep-slope correction, and
-$\boldsymbol{S}_g=(S_{x,g},S_{y,g})$ denotes the differential limit of the
-separate terrain-tangent transport operator below. The
-conservative fluxes, topographic source, and wet--dry Riemann problem are those
-of GeoClaw \citep{George2008,BergerEtAl2011}; the rheology and arrest logic
-described below are AVAC-specific.
+Here $g$ is gravitational acceleration. The source $\boldsymbol{S}_r$
+combines basal resistance with a correction for motion on steep slopes.
+The source $\boldsymbol{S}_g$ describes the change in horizontal velocity as
+the terrain tangent plane changes along the flow path.
 
-Equations~\eqref{eq:avac-mass}--\eqref{eq:avac-ymomentum} are map-plane
-shallow-water equations rather than surface-fitted Savage--Hutter equations.
-Their pressure flux is hydrostatic and isotropic, corresponding to an
-earth-pressure coefficient of one; no active--passive earth-pressure closure
-is introduced. Relief enters the conservative balance through $\nabla B$.
-The directional Hessian projection $\kappa_v$ affects the moving basal
-normal-load correction below, but does not enter the hydrostatic pressure flux
-and is distinct from terrain-tangent velocity transport. Standard Cartesian
-shallow-water gravity is too large on a steep surface because the surface
-gradient is a tangent rather than a sine and because only the horizontal
-acceleration is evolved. AVAC accounts for both projections in its
-flow-parallel source term following the bed-gradient variant of
-\citet{HergartenRobl2015}. This distinction is retained when AVAC is compared
-with models that express thickness and momentum in a terrain-following frame.
+The pressure is hydrostatic and isotropic, equivalent to an earth-pressure
+coefficient of one. The equations use a horizontal map grid; they are not a
+fully terrain-following Savage--Hutter formulation. AVAC adds slope and
+curvature corrections to momentum while retaining GeoClaw's Cartesian
+pressure flux. These distinctions matter when comparing AVAC with models
+that use terrain-normal thickness and surface-following momentum.
 
-\subsubsection{Basal rheology}
+\subsubsection{Basal resistance and slope corrections}
 
-AVAC offers Coulomb, Voellmy, and cohesive Voellmy resistance. The first two
-follow the two-parameter avalanche-resistance family introduced by
-\citet{Voellmy1955} and subsequently used in operational avalanche calculation
-\citep{SalmEtAl1990,ChristenEtAl2010}. Because the conserved variables are
-defined on the map plane, the geometric quantities needed by this law are
-introduced explicitly. Let
+AVAC offers Coulomb, Voellmy, and cohesive Voellmy resistance
+\citep{Voellmy1955,SalmEtAl1990,ChristenEtAl2010}. To express these laws on the
+map grid, define
 \begin{equation}
   U_h=\sqrt{u_a^2+v_a^2},\qquad
   \tan\phi=\lVert\nabla B\rVert,\qquad
-  \tan\psi=-\frac{(u_a,v_a)\boldsymbol{\cdot}\nabla B}{U_h},
+  \tan\psi=-\frac{(u_a,v_a)\boldsymbol{\cdot}\nabla B}{U_h}.
   \label{eq:avac-geometry}
 \end{equation}
-where $\phi$ is the local bed angle and $\psi$ is the inclination of the
-velocity in its instantaneous direction. Thus the terrain-normal depth and
-terrain-tangent speed represented by the Cartesian state are
-$h_n=h_a\cos\phi$ and $U=U_h/\cos\psi$, respectively. The curvature sampled
-by motion in that direction is the projection of the fixed-bed Hessian,
+For moving snow, $\phi$ is the bed angle and $\psi$ is the slope angle along
+the direction of motion, positive downhill. Terrain-normal depth is
+$h_n=h_a\cos\phi$, and speed along the terrain is $U=U_h/\cos\psi$.
+The directional bed curvature used in the source is
 \begin{equation}
   \kappa_v=
   \frac{u_a^2B_{xx}+2u_av_aB_{xy}+v_a^2B_{yy}}{U_h^2}.
   \label{eq:avac-curvature}
 \end{equation}
-For the scalar basal source, AVAC evaluates $B_x$, $B_y$, $B_{xx}$, and $B_{yy}$
-with centred differences and $B_{xy}$ with a four-point diagonal stencil.
-The transport operator has the domain-aware boundary treatment described
-below. No curvature smoothing is applied. The constitutive basal stress combines a Coulomb contribution,
-cohesion, and Voellmy resistance,
+These derivatives are computed from the fixed DEM without smoothing.
+Curvature corrections therefore depend on DEM resolution and elevation noise.
+
+The basal stress is
 \begin{equation}
   \tau_b=\mu\sigma_b+I_C C+I_V\frac{\rho_a g}{\xi}U^2,
   \label{eq:avac-rheology}
 \end{equation}
-where $\rho_a$ is avalanche bulk density, $\mu$ the Coulomb coefficient,
-$\xi$ the Voellmy turbulent coefficient, and $C$ cohesion. The indicators are
-$(I_C,I_V)=(0,0)$ for Coulomb, $(0,1)$ for Voellmy, and $(1,1)$ for cohesive
-Voellmy. The code does not evolve $\sigma_b$ as an independent variable; its
-gravitational and centripetal contributions enter the projected Coulomb terms
-in Eqs.~\eqref{eq:avac-source-coefficients} and
-\eqref{eq:avac-curvature-normal-load}.
+where $\sigma_b$ is effective basal normal stress, $\rho_a$ is snow density,
+$\mu$ is the Coulomb coefficient, $\xi$ is the Voellmy coefficient, and $C$
+is cohesion. The indicators $(I_C,I_V)$ are $(0,0)$ for Coulomb, $(0,1)$
+for Voellmy, and $(1,1)$ for cohesive Voellmy.
 
-The Cartesian steep-slope correction, curvature-dependent normal load, and
-basal stress are applied together. Projecting the large-slope gravity
-correction onto the flow direction, as proposed by
-\citet{HergartenRobl2015}, gives
+AVAC applies basal resistance and the steep-slope correction together as
 \begin{equation}
-  \boldsymbol{S}_r=-h_a\left(a+bU_h^2\right)
-  \frac{(u_a,v_a)}{U_h}, \qquad U_h>0,
+  \boldsymbol{S}_r=-h_a(a+bU_h^2)\frac{(u_a,v_a)}{U_h},\qquad U_h>0,
   \label{eq:avac-friction-vector}
 \end{equation}
 with
 \begin{equation}
   \begin{split}
-  a={}&g\sin^2\phi\tan\psi
-       +\mu g\cos\phi\cos\psi
+  a={}&g\sin^2\phi\tan\psi+\mu g\cos\phi\cos\psi
        +I_C\frac{C\cos\psi}{\rho_a h_a\cos\phi},\\
   b={}&I_V\frac{g}{\xi h_a\cos\phi\cos\psi}
        +\mu\kappa_v\cos\phi\cos\psi.
   \end{split}
   \label{eq:avac-source-coefficients}
 \end{equation}
-The first contribution to $a$ removes the excessive flow-parallel component
-of Cartesian shallow-water gravity; the remaining terms are the projected
-Coulomb, cohesive, and turbulent resistances. Curvature changes $b$ through
-$\mu\kappa_v\cos\phi\cos\psi$, the centripetal contribution to Coulomb
-normal load: concave curvature increases the load, whereas convex curvature
-decreases it \citep{FischerEtAl2012}. The curvature-dependent normal-load
-correction is distinct from transport of a velocity vector between changing
-terrain tangent planes. AVAC applies a separate finite rotation after the
-conservative flux update and dry-state cleanup, before the scalar basal
-source. Let $\boldsymbol{u}^{*}$ be the provisional horizontal velocity,
-$\boldsymbol{b}_a=\nabla B$ the arrival gradient, and $H_B$ the local Hessian.
-A first-order material backtrace estimates the departure gradient as
+The first term in $a$ corrects the excessive flow-parallel gravity produced
+by the Cartesian shallow-water equations on steep slopes
+\citep{HergartenRobl2015}. The other terms represent friction, cohesion, and
+velocity-dependent drag. The correction uses bed slope rather than the
+gradient of the evolving snow surface.
+
+Concave curvature increases the effective normal load and thus Coulomb
+resistance; convex curvature reduces it \citep{FischerEtAl2012}. The combined
+gravity and curvature contribution to Coulomb deceleration is
+\begin{equation}
+  -\mu\cos\phi\cos\psi\left(g+\kappa_v U_h^2\right).
+  \label{eq:avac-curvature-normal-load}
+\end{equation}
+On convex terrain this load reaches zero at
+\begin{equation}
+  U_{h,c}=\sqrt{-g/\kappa_v}.
+  \label{eq:avac-contact-speed}
+\end{equation}
+AVAC removes the Coulomb contribution above this threshold and switches
+branches if the threshold is crossed during a source step. This prevents a
+negative normal load, a treatment also considered by \citet{WirbelEtAl2026}.
+Voellmy drag, cohesion, and the steep-slope correction remain active. The
+model does not simulate an airborne phase.
+
+For uniform downslope motion on a plane, the gravity and resistance terms
+recover
+\begin{equation}
+  \frac{\mathrm dU}{\mathrm dt}
+  =g\left(\sin\phi-\mu\cos\phi
+   -I_C\frac{C}{\rho_a g h_n}
+   -I_V\frac{U^2}{\xi h_n}\right).
+  \label{eq:avac-planar-voellmy}
+\end{equation}
+For non-cohesive Voellmy flow with positive net driving,
+$U_\infty=[\xi h_n(\sin\phi-\mu\cos\phi)]^{1/2}$.
+This limit provides a direct check of the source implementation.
+
+During each basal-source step, depth, terrain geometry, material parameters,
+and horizontal flow direction are held fixed. The speed then satisfies
+\begin{equation}
+  \frac{\mathrm dU_h}{\mathrm dt}=-a-bU_h^2,
+  \label{eq:avac-speed-ode}
+\end{equation}
+which AVAC integrates analytically. The updated speed scales both momentum
+components equally while motion continues. Exact integration applies to this
+local problem; the full calculation still has errors from spatial
+discretization and the separate flux and source updates.
+
+Voellmy and cohesive Voellmy set momentum to zero when the integrated speed
+reaches zero. A later flow update can restart motion if pressure and gravity
+exceed static resistance. Pure Coulomb uses a separate stopping rule: if the
+local source predicts zero speed on a slope that cannot support rest, it
+retains the incoming momentum for that source step. This fallback is not an
+exact continuation through zero. It also means that the stopping rules need
+not coincide as Voellmy drag tends to zero.
+
+Users can assign different values of $\mu$, $\xi$, and $C$ to elevation bands.
+The moving source uses the bed elevation at the cell center; the normal
+interface yield test uses the mean adjacent bed elevation. This distinction
+can matter at a band boundary.
+
+\subsubsection{Velocity transport over curved terrain}
+
+A change in terrain orientation changes the horizontal components of a
+velocity tangent to the bed. AVAC accounts for this with a finite rotation
+between estimated departure and arrival tangent planes. Let
+$\boldsymbol{u}=(u_a,v_a)$ and let $\boldsymbol{u}^{*}$ be velocity after
+the flux update. With $H_B$ denoting the matrix of second derivatives of
+bed elevation, the gradients and upward unit normals are estimated as
 \begin{equation}
   \begin{aligned}
-    \boldsymbol{b}_d&=\boldsymbol{b}_a-\Delta t\,H_B\boldsymbol{u}^{*},\\
+    \boldsymbol{b}_a&=\nabla B,\qquad
+    \boldsymbol{b}_d=\boldsymbol{b}_a-\Delta t\,H_B\boldsymbol{u}^{*},\\
     \boldsymbol{n}_k&=\frac{(-\boldsymbol{b}_k,1)}
     {\sqrt{1+\lVert\boldsymbol{b}_k\rVert^2}},\quad k\in\{d,a\}.
   \end{aligned}
   \label{eq:avac-transport-normals}
 \end{equation}
-The provisional velocity is lifted to the departure tangent plane as
+The provisional velocity is lifted to the departure plane as
 $\boldsymbol{w}_d=(\boldsymbol{u}^{*},
 \boldsymbol{b}_d\boldsymbol{\cdot}\boldsymbol{u}^{*})$.
-Writing $\boldsymbol{s}=(\boldsymbol{n}_d+\boldsymbol{n}_a)/
-\lVert\boldsymbol{n}_d+\boldsymbol{n}_a\rVert$, the implementation uses two
-orthogonal reflections to obtain the minimal rotation,
-\begin{equation}
-  \begin{aligned}
-    \boldsymbol{w}_a&=
-    (I-2\boldsymbol{s}\boldsymbol{s}^{\mathsf T})
-    (I-2\boldsymbol{n}_d\boldsymbol{n}_d^{\mathsf T})\boldsymbol{w}_d,\\
-    (m_{x,a},m_{y,a})^{\dagger}&=h_a(w_{a,x},w_{a,y}).
-  \end{aligned}
-  \label{eq:avac-tangent-transport}
-\end{equation}
-Both graph normals point upward, so their bisector is defined for finite
-slopes. The rotation preserves the norm of the \emph{lifted departure}
-velocity and changes neither depth nor mass. Its differential horizontal
-acceleration is
+The smallest rotation that maps $\boldsymbol{n}_d$ to $\boldsymbol{n}_a$
+then gives the arrival velocity. Its horizontal components define the
+updated momentum.
+
+This rotation preserves the length of the lifted departure velocity and
+does not change snow depth. It is an identity on a planar bed or at rest,
+and is disabled for dry cells and the water model. In the small-step limit,
+its horizontal acceleration is
 \begin{equation}
   \boldsymbol{S}_g/h_a=
   -\frac{\nabla B}{1+\lVert\nabla B\rVert^2}
   \left(\boldsymbol{u}^{\mathsf T}H_B\boldsymbol{u}\right).
   \label{eq:avac-geometric-source}
 \end{equation}
-Using finite normals avoids integrating this connection acceleration as a
-frozen quadratic growth law. The operation is an exact identity on an affine
-bed and at zero velocity; it is inactive for numerically dry cells and for
-the water model.
+The finite rotation avoids a potentially unbounded explicit integration of
+this acceleration. It is a local approximation of motion over the bed, not
+a reconstruction of every path through a grid cell. Preserving the rotated
+vector's length does not establish energy conservation of the complete
+numerical method, whose pressure flux remains Cartesian.
 
-Transport derivatives use genuine neighbouring topography across internal
-patch boundaries, including periodic ghosts. At a physical exterior, the
-nearest wholly physical quadratic stencil supplies a gradient extrapolated
-to the cell centre. A direction with only two physical samples resolves its
-slope but not pure curvature; one sample implies extrusion. Mixed derivatives
-are retained when both directions have at least two samples. An affine-bed
-roundoff test avoids reconstructing momentum when all second differences
-are below the scale-aware tolerance specified below.
+\subsubsection{Static yield and stopping}
 
-This is a split, local approximation using the post-flux velocity, not an
-exact reconstruction of all material paths entering a finite-volume cell.
-The preserved lifted-vector norm is not a proof of energy conservation for
-the complete spatial update. The hydrostatic pressure flux remains Cartesian
-and isotropic, and the steep-slope gravity correction remains flow-parallel.
-Thus the added transport does not constitute a fully surface-metric pressure
-and momentum discretization or a complete surface-fitted granular model.
-
-The curvature-dependent Coulomb contribution to the speed equation can be
-written compactly as
-\begin{equation}
-  -\mu\cos\phi\cos\psi\left(g+\kappa_v U_h^2\right).
-  \label{eq:avac-curvature-normal-load}
-\end{equation}
-On convex terrain, $\kappa_v<0$, the quantity in parentheses vanishes at
-\begin{equation}
-  U_{h,c}=\sqrt{-g/\kappa_v}.
-  \label{eq:avac-contact-speed}
-\end{equation}
-AVAC does not allow this effective Coulomb normal load to become tensile, a
-limiting choice also documented among the curvature treatments compared by
-\citet{WirbelEtAl2026}.
-Below $U_{h,c}$ it integrates the contact branch; above it, the gravity and
-curvature parts of the Coulomb contribution are removed together. If a source
-step crosses the threshold, the crossing time is located with 60 bisection
-iterations and the remainder is integrated on the other branch. Voellmy drag,
-cohesion, and the large-slope gravity correction remain active. This is a
-no-tensile-normal-load approximation rather than a ballistic detachment
-model: AVAC does not introduce an airborne phase. The
-retention of cohesion outside the Coulomb-contact branch is an explicit
-constitutive choice of the present implementation.
-
-On a plane with motion directly downslope, $\psi=\phi$. Combining
-Eq.~\eqref{eq:avac-source-coefficients} with GeoClaw's map-plane driving term
-and converting from $U_h$ to $U$ recovers
-\begin{equation}
-  \frac{\mathrm dU}{\mathrm dt}
-  =g\left(\sin\phi-\mu\cos\phi
-   -I_C\frac{C}{\rho_a g h_n}
-   -I_V\frac{U^2}{\xi h_n}\right),
-  \label{eq:avac-planar-voellmy}
-\end{equation}
-and, for the non-cohesive Voellmy model,
-$U_\infty=[\xi h_n(\sin\phi-\mu\cos\phi)]^{1/2}$. This planar limit is used as
-a source-level verification of the implementation.
-
-During one operator-split \emph{scalar basal-source} step, $h_a$, the local
-bed gradient and Hessian, the altitude-selected rheological parameters, and
-the map-plane velocity direction are held fixed.
-Equations~\eqref{eq:avac-friction-vector}
-and~\eqref{eq:avac-source-coefficients} then reduce to
-\begin{equation}
-  \frac{\mathrm d U_h}{\mathrm dt}=-a-bU_h^2.
-  \label{eq:avac-speed-ode}
-\end{equation}
-AVAC integrates this local equation analytically. For $a>0$ and $b>0$,
-\begin{equation}
-  U_h^{n+1}=
-  \begin{cases}
-  \displaystyle
-  \sqrt{\frac{a}{b}}\tan\!\left[
-  \tan^{-1}\!\left(U_h^n\sqrt{\frac{b}{a}}\right)
-  -\sqrt{ab}\,\Delta t\right], & \Phi>0,\\[6pt]
-  0, & \Phi\leq0,
-  \end{cases}
-  \label{eq:avac-friction-update}
-\end{equation}
-where $\Phi$ denotes the phase in square brackets. The limiting cases are
-$U_h^{n+1}=\max(0,U_h^n-a\Delta t)$ for $b=0$ and
-$U_h^{n+1}=U_h^n/(1+bU_h^n\Delta t)$ for $a=0$. Uphill motion can give $a<0$
-because the correction then returns part of GeoClaw's excessive opposing
-gravity; the corresponding exact hyperbolic branch tends to
-$\sqrt{-a/b}$ rather than forcing a false stop. While the analytical speed is
-positive, the two momenta are scaled by $U_h^{n+1}/U_h^n$, preserving their
-map-plane direction. For Voellmy and cohesive Voellmy, a zero scalar result
-always sets both momenta to zero: no direction must be assigned to a zero
-vector. This can be a transient source-stage stop on a super-yield bed; the
-subsequent Riemann update still supplies pressure and bed-slope driving, while
-static equilibrium additionally requires the yield conditions below.
-Discarding the integrated impulse merely because the bed is super-yield
-would incorrectly remove the stiff $1/h_a$ Voellmy drag precisely when a
-source step reaches zero.
-
-Pure Coulomb retains its separate compatibility rule: a zero scalar result
-sets momentum to zero only if Eq.~\eqref{eq:avac-cell-yield} supports static
-rest; otherwise the incoming momentum is retained for that source substep.
-This is a legacy split-step fallback, not an exact continuation of the scalar
-ODE through zero. Consequently, although the constitutive turbulent term
-vanishes as $\xi\to\infty$, the two caller-level stopping policies need not
-coincide in that limit. No empirical speed floor or locally assigned reversal
-is introduced.
-
-The closed-form impulse eliminates the explicit time-discretization error
-of the frozen scalar drag problem. The implementation also uses
-the analytical trigonometric, hyperbolic, linear, or rational branch required
-by all other sign combinations of $a$ and $b$. For admissible non-negative
-rheological parameters, a $b<0$ contact state can arise only from convex
-curvature; the contact-limited update transitions at
-Eq.~\eqref{eq:avac-contact-speed} before that branch can become the returned
-momentum state. Exact integration of this frozen local subproblem does not
-make the flux--transport--source composition exact or independent of the
-time step: depth, velocity direction, geometry sampled by motion, and driving
-forces evolve between substeps. Timestep refinement therefore remains a
-separate numerical verification requirement.
-
-Users may assign piecewise-constant values of $\mu$, $\xi$, and $C$ to
-altitude intervals; the moving rheological source selects the active interval
-from the bed elevation at the cell centre. The static Riemann checks instead
-select one set of parameters from the mean bed elevation at each interface,
-which is an intentional but discontinuous approximation at an altitude-zone
-boundary. The rheological source is enabled to a nominal depth of
-$10^6$~m and therefore acts at every physically relevant avalanche depth.
-The angles in Eq.~\eqref{eq:avac-geometry} are computed from the
-fixed bed rather than the evolving free surface. This is the
-\textit{Gerris-$z_b$} choice of \citet{HergartenRobl2015}; it avoids a second,
-inconsistent numerical differentiation of $h_a+B$. The implementation
-includes the curvature-dependent normal-load and steep-slope corrections
-projected along the instantaneous map-plane velocity. Although $B_{xy}$ enters
-both the directional curvature $\kappa_v$ and the separate tangent transport,
-AVAC includes no surface-fitted transverse pressure or active--passive
-earth-pressure closure. The Riemann-interface arrest
-criterion described below also remains a map-plane approximation. Because the
-fixed DEM is differentiated without smoothing, the curvature normal-load
-source inherits sensitivity to DEM resolution and short-wavelength elevation
-noise.
-
-\subsubsection{Static yield, stopping, and arrested depth}
-
-Kinetic resistance alone is insufficient to retain a non-horizontal arrested
-layer:
-the pressure and bed-slope terms can remobilize a cell after its velocity has
-reached zero. AVAC therefore adds a set-valued static-yield treatment inspired
-by the arrest strategy used in D-Claw \citep{GeorgeIverson2014}. At the cell
-level the terrain angle is evaluated from centred DEM gradients. A cell that
-is exactly at rest remains at rest when
+Friction must also hold a stopped layer in place against gravity and pressure
+gradients. AVAC uses cell and interface yield checks inspired by the arrest
+treatment in D-Claw \citep{GeorgeIverson2014}. The cell-level condition for
+a resting layer is
 \begin{equation}
   g h_a\tan\theta
-  \leq \mu g h_a + I_C\frac{C}{\rho_a\cos^2\theta}.
+  \leq \mu g h_a+I_C\frac{C}{\rho_a\cos^2\theta}.
   \label{eq:avac-cell-yield}
 \end{equation}
-For a moving cell, the analytical update of Eq.~\eqref{eq:avac-speed-ode}
-determines the source-stage speed. Voellmy and cohesive Voellmy honour a
-zero result even on a super-yield slope; this transient stop is not a claim
-that the static inequality holds. Only pure Coulomb retains the incoming
-momentum when a zero result occurs on a super-yield slope. Subsequent
-pressure and bed-slope driving remain part of the coupled flux update.
 
-A second check acts in the normal Riemann solver to prevent pressure-driven
-creep through interfaces within an arrested deposit. For a wet--wet interface
-of spacing $\Delta n$, the directional threshold is
+At an interface between two wet cells, the allowable change in snow-surface
+elevation is
 \begin{equation}
-  \Delta\eta_y
-  =\left(\mu+I_C\frac{C}
-  {\rho_a g\bar h_a\cos^2\theta_n}\right)\Delta n,
+  \Delta\eta_y=
+  \left(\mu+I_C\frac{C}{\rho_a g\bar h_a\cos^2\theta_n}\right)\Delta n,
   \qquad \eta_a=h_a+B,
   \label{eq:avac-interface-yield}
 \end{equation}
-where $\bar h_a$ is the mean interface depth and $\theta_n$ is the bed angle
-estimated from the elevation difference normal to that interface. Before this
-directional test can suppress waves, each eligible wet cell must also satisfy
-the cell-centred map-plane condition
+where $\Delta n$ is cell spacing, $\bar h_a$ is mean depth, and $\theta_n$
+is the bed angle across the interface. A second condition checks the full
+two-dimensional surface gradient in each adjacent wet cell:
 \begin{equation}
- R_{ij}=
- \frac{\left\lVert\nabla_c\eta_a\right\rVert_2}
- {\displaystyle \mu_{ij}+I_C\frac{C_{ij}}
- {\rho_a g h_{a,ij}\cos^2\theta_{B,ij}}}
- \leq 1,\qquad
- \cos^2\theta_{B,ij}=
- \frac{1}{1+B_{x,c,ij}^2+B_{y,c,ij}^2}.
- \label{eq:avac-vector-interface-yield}
+  \lVert\nabla_c\eta_a\rVert
+  \leq \mu+I_C\frac{C}{\rho_a g h_a\cos^2\theta_B}.
+  \label{eq:avac-vector-interface-yield}
 \end{equation}
-Here $\nabla_c$, $B_{x,c}$, and $B_{y,c}$ are centred differences over the
-four neighbouring cell centres, and $\mu_{ij}$ and $C_{ij}$ are selected from
-the bed elevation of that cell. The ratio is refreshed in a transient
-cell-centred auxiliary field before the directional Riemann sweeps. It blocks
-static suppression when a diagonal free-surface gradient is vector
-super-yield even though each normal increment considered separately is
-sub-yield.
+Here the subscript $c$ denotes centered differences and $\theta_B$ is the
+local bed angle. This vector check prevents false arrest of diagonal flow
+when the separate $x$ and $y$ tests would each appear below yield.
 
-The flux is therefore suppressed only when the available wet--wet stencil is
-exactly at rest, its wet cells have $R_{ij}\leq1$, and all three of the actual
-adjacent head jump $|\eta_{a,R}-\eta_{a,L}|$, a minmod-limited local increment,
-and the corresponding stencil-scale increment of $\eta_a$ do not exceed
-$\Delta\eta_y$. The actual jump is necessary because limited or centred
-differences can cancel across a plateau edge or alternating cell pattern.
-On a flat, non-cohesive bed its condition follows from
-$(g/2)|h_R^2-h_L^2|\leq\mu g\bar h_a\Delta n$, equivalently
-$|h_R-h_L|\leq\mu\Delta n$. The code also evaluates a local closed-form
-basal stopping predictor over the trial step, with coefficients
-$a_p=\mu g+I_C C/(\rho_a h_a)$ and $b_p=I_V g/(\xi h_a)$.
-It does not use a predicted future stop to suppress a currently moving
-interface: exact rest is required independently. This predictor is not the
-full curved-terrain source update or a source-stage CFL bound. Where the
-four-cell stencil is unavailable at a
-patch/stencil edge, the implementation falls back to the two interface states;
-an unavailable or invalid vector marker disables static suppression rather
-than applying a component-wise fallback. At an interface between an arrested
-wet cell and a dry cell, the same directional expression is evaluated with the
-wet-cell depth and the head increment
-$\max(0,\eta_{a,\mathrm{wet}}-B_{\mathrm{dry}})$, and the adjacent wet cell
-must meet Eq.~\eqref{eq:avac-vector-interface-yield}. Thus cohesion is
-included at both wet--wet and wet--dry interfaces. These conditions preserve
-an admissible deposit without averaging its free surface. The normal interface
-threshold uses parameters selected from the mean adjacent bed elevation,
-whereas the vector eligibility check uses the local cell values. Both use
-interface/centred bed differences rather than the Hessian-based moving source,
-and hence remain map-plane approximations of static yield. The new vector
-gate is necessary for static arrest, but not a monolithic rotationally
-invariant two-dimensional complementarity solve: the normal interface tests
-remain direction-dependent, even though the wave-propagation update includes
-transverse corrections. States that fail these eligibility checks are allowed
-to evolve through the Riemann solver.
+Interface transport is suppressed only for states already at rest that pass
+both checks. The actual adjacent surface-elevation jump and local stencil
+estimates must also remain below the directional threshold. At a wet--dry
+edge, the same test uses the wet-cell depth and the height of its snow surface
+above the dry bed. Moving states are not frozen merely because a local
+predictor expects them to stop later in the step.
 
-No empirical stopping velocity is used. Depths at or below the numerical dry
-tolerance have their momenta set to zero, and the unresolved wet--dry fringe
-is regularized as described below. At resolved depths, the transition from
-motion to rest follows the analytical source impulse and the static-yield
-conditions, with the separate pure-Coulomb fallback and Voellmy transient
-stops stated above. This exact-zero
-construction for statically supportable states is the feature assessed by the
-deposit and steady-slope tests in Sect.~\ref{sec:avac-verification}. The input
-field historically named $u_{\mathrm{cr}}$ is retained in the configuration
-schema for compatibility but is not used by the present solver.
+These conditions can maintain a non-horizontal arrested layer without
+smoothing its surface. They remain directional approximations on the map
+grid, rather than a fully rotation-invariant static-yield solution. No
+empirical stopping speed is imposed. Momentum is set to zero in numerically
+dry cells; at resolved depths, stopping follows the basal update and yield
+checks described above.
 
 \subsubsection{Finite-volume solution and adaptive refinement}
 
-The homogeneous and topographic parts of
-Eqs.~\eqref{eq:avac-mass}--\eqref{eq:avac-ymomentum} are advanced with
-GeoClaw's augmented $f$-wave Riemann solver, which is well balanced for steady
-water surfaces and explicitly resolves inundation over variable topography
-\citep{George2008}. AVAC replaces the standard normal solver only to add the
-static-yield decisions above; it retains the three-wave, second-order,
-unsplit wave-propagation update and transverse corrections. A single
-user-selected TVD limiter is applied to the three wave families. A newly
-selected Coulomb model defaults to Minmod in the plugin, whereas Voellmy and
-cohesive Voellmy retain Superbee; saved explicit choices are preserved.
-The ISeeSnow protocol instead specifies Van Leer for its two Voellmy cases
-and Minmod for Coulomb. These benchmark choices are not substituted silently
-for the general plugin defaults.
+AVAC uses GeoClaw's augmented $f$-wave Riemann solver
+\citep{George2008,BergerEtAl2011}. This finite-volume method handles variable
+topography and wet--dry fronts, with second-order spatial corrections and
+transverse wave propagation. AVAC adds the static-yield checks to the normal
+interface solve. The plugin defaults to the Minmod limiter for Coulomb and
+Superbee for the Voellmy laws. The separate numerical choices used for
+ISeeSnow are given in Sect.~\ref{sec:iseesnow}.
 
-At moving wet--dry margins, division of momentum by a vanishing cell-average
-depth can otherwise create a large, non-physical velocity while leaving the
-conserved momentum small. The Riemann solver itself uses the conservative
-ratio $(u_a,v_a)=(m_{x,a},m_{y,a})/h_a$ whenever
-$h_a>h_{\mathrm{dry}}$. AVAC does not project or relax cell-average momentum
-after each source step. Instead, on locally non-planar terrain it tapers the
-conservative high-order correction flux at an interface. For $h_\epsilon>0$,
-let $h_{\min}=\max[0,\min(h_L,h_R)]$, $r=h_{\min}/h_\epsilon$, and let
-$\chi_f=1$ when either neighbouring cell is classified as non-planar. The
-correction factor is
-\begin{equation}
-  R_f=\begin{cases}
-    \displaystyle\frac{\sqrt{2}\,r^2}{\sqrt{1+r^4}},
-       & h_{\min}<h_\epsilon\text{ and }\chi_f=1,\\[5pt]
-    1, & \text{otherwise},
-  \end{cases}
-  \label{eq:avac-correction-taper}
-\end{equation}
-Zero $h_\epsilon$ disables this taper. The default depths are
-$h_\epsilon=\SI{0.05}{\metre}$ for Coulomb and
-$\SI{0.10}{\metre}$ for both Voellmy laws; they are independent of mesh
-spacing and the reporting threshold $h_v$. The same factor multiplies all
-three components of each high-order correction and is retained when that
-correction is split transversely. The first-order normal flux, its Riemann
-states and its wave-speed calculation are unchanged. The usual $\Delta t/
-\Delta x$ and $\Delta t/\Delta y$ factors remain in the conservative update,
-rather than accumulating an extra momentum multiplier once per source step.
-The factor has the shape of the velocity desingularization of
-\citet{KurganovPetrova2007}, but its use on correction fluxes and its terrain
-trigger are AVAC-specific numerical choices, not a new physical basal law.
+Very shallow cells can develop large velocities when small momenta are divided
+by nearly zero depths. On nonplanar terrain, AVAC therefore reduces the
+higher-order correction flux smoothly as depth falls below $h_\epsilon$.
+The default threshold is \SI{0.05}{\metre} for Coulomb and
+\SI{0.10}{\metre} for the Voellmy laws; zero disables this correction.
+All conserved components receive the same factor, including transverse
+corrections. The first-order flux is unchanged. This numerical treatment
+uses the smooth form proposed by \citet{KurganovPetrova2007}, adapted here to
+correction fluxes and local terrain curvature. It is not an additional
+physical friction law.
 
-The two-dimensional terrain mask includes pure and mixed second differences.
-For stencil centre $B_c$, let $D_2$ be their largest absolute value,
-$A_B=\max(1,\max|B|)$ and $L_B=\max|B-B_c|$, with elevations in metres.
-A stencil is non-planar when
-\begin{equation}
-  D_2>\max\!\left[10^{-12}\max(1,L_B),\,
-                 64\epsilon_{\mathrm{mach}}A_B\right].
-  \label{eq:avac-nonplanarity}
-\end{equation}
-This auxiliary mask is refreshed before the Riemann sweeps, including the
-extended ghost stencil used by the positivity relimiter. It trusts internal
-and periodic ghost terrain and excludes only exterior physical closures,
-using the same domain-aware stencil convention as the transport operator.
-An affine discrete bed below this roundoff threshold bypasses the taper;
-that property is not a guarantee that every AMR representation of an
-analytically planar DEM remains below the threshold after topographic
-integration. Water does not use the granular mask or correction taper.
+A further flux limiter bounds outgoing transport by the depth available in
+the donor cell to help preserve nonnegative depth. Any residual negative depth
+is clipped to zero, and cells at or below
+$h_{\mathrm{dry}}=\SI{1e-4}{\metre}$ have zero momentum. Because clipping can
+add volume, mass conservation is measured explicitly.
 
-Donor-based positivity relimiting is enabled for granular runs. Available
-cell depth bounds outgoing face fluxes, with the same positive scaling for
-all conserved components and the two-sided source-related flux differences
-retained. Face ownership is determined before any component is modified,
-and the extended normal and transverse stencils are evaluated consistently.
-The flux-based operation is distinct from a post-update transfer of material
-between neighbouring cells: AVAC performs no such deficit redistribution.
-Residual negative depths are clipped to zero after the flux update, and
-numerically dry cells have zero momentum. Such clipping can add a residual
-volume, so conservation must still be measured rather than inferred from
-the relimiter alone. The default dry tolerance is
-$h_{\mathrm{dry}}=\SI{1e-4}{\metre}$.
-
-Peak diagnostics apply a separate, non-invasive depth rule. Depth is copied
-from the non-negative current state without applying the velocity threshold;
-reported velocity is zero for $h_a\leq h_v$, follows
-the desingularization
-\begin{equation}
-  \widehat u_a=\frac{\sqrt{2}\,h_a m_{x,a}}
-  {\left[h_a^4+\max(h_a^4,(4h_v)^4)\right]^{1/2}},
-  \qquad
-  \widehat v_a=\frac{\sqrt{2}\,h_a m_{y,a}}
-  {\left[h_a^4+\max(h_a^4,(4h_v)^4)\right]^{1/2}}
-  \label{eq:avac-state-regularization}
-\end{equation}
-for
-$h_v<h_a<4h_v$, and is exactly momentum divided by depth for
-$h_a\geq4h_v$. The default $h_v$ is \SI{0.05}{\metre}, so the diagnostic
-transition ends at \SI{0.20}{\metre}. The horizontal diagnostic velocity is
-converted to the terrain-tangent magnitude using $w_a=u_aB_x+v_aB_y$ before
-the temporal maximum is updated. This reporting operation does not alter the
-conserved state. AVAC writes the shared GeoClaw speed guard as the deliberately
-nonphysical value $10^{99}$~\si{\metre\per\second}; this is not an operational
-finite speed cap.
-
-Topographic balance is incorporated in the augmented $f$-wave Riemann solve.
-After the flux update and dry-state cleanup, terrain-tangent transport is
-applied once, followed by the scalar granular rheological source, using
+The flux update is followed by dry-state cleanup, tangent-velocity transport,
+and basal resistance, in that order. These separate source updates use
 first-order Godunov splitting. Second-order spatial reconstruction therefore
-does not imply a second-order accurate full source-split method.
+does not make the full method second-order accurate in time.
 
-Before committing an AMR-level step, a CFL preflight repeats the preparation
-and normal Riemann sweeps on private copies of the incoming depth, momentum
-and auxiliary fields. Its wave-speed reduction matches that of the physical
-flux update. If the maximum trial Courant number $C_{\mathrm{trial}}$ exceeds
-the configured ceiling $C_{\max}$, the common level step is reduced toward
+Time steps are controlled by the Courant--Friedrichs--Lewy (CFL) condition.
+Before accepting a step, AVAC checks wave speeds from the incoming state and
+reduces the step if its Courant number exceeds the configured maximum.
+Rejected trials do not change the solution or recorded outputs. The default
+target and maximum Courant numbers are 0.5 and 1.0. This check constrains
+incoming waves; it does not guarantee stability of every subsequent source
+update. Grid and time-step sensitivity must still be assessed.
+Real-terrain runs use outflow boundaries that allow snow to leave while
+blocking inflow. Analytical tests can use other boundary conditions.
+
+AVAC supports patch-based adaptive mesh refinement (AMR)
+\citep{BergerLeVeque1998,BergerEtAl2011}. Automatic refinement requires wet
+cells to exceed a speed tolerance and satisfy
 \begin{equation}
-  \Delta t_{\mathrm{retry}}=
-  \Delta t\,\frac{\min(C_{\mathrm{target}},0.9C_{\max})}
-                    {C_{\mathrm{trial}}},
-  \label{eq:avac-cfl-retry}
-\end{equation}
-and the trial is repeated. No rejected trial commits solution fields, flux
-registers, clocks, gauges or peak observations. The accepted physical update
-then executes once. A non-finite trial CFL, invalid timestep or CFL settings,
-a non-advancing time step, an excessive fixed step, or more than 20 rejected trials cause an explicit
-failure. This is an incoming-wave CFL test, not a full post-flux or
-post-source state acceptance test. It neither bounds every shallow-cell
-velocity nor proves stability or convergence of the split scheme.
-
-The plugin defaults are $C_{\mathrm{target}}=0.5$ and $C_{\max}=1$.
-The ISeeSnow Coulomb protocol explicitly uses target 0.25, while the two
-Voellmy cases use 0.5, all with ceiling 1. A halved target need not halve
-every accepted step, because wave speeds and output/AMR synchronization also
-influence the selected time step.
-
-Ordinary granular runs use five ghost-cell layers; water uses two.
-The synthetic Coulomb analytical harness can explicitly request a restricted
-two-layer compatibility configuration for its narrow strips. Real-terrain runs use a one-way,
-zero-gradient outflow boundary:
-an outward state is copied while attempted inward normal momentum is reflected
-to block external avalanche inflow. Verification problems may instead select
-the boundary condition required by their analytical solution. Wetting and
-drying follow GeoClaw's depth tolerance, supplemented by the AVAC arrested-edge
-criterion.
-
-AVAC can use patch-based adaptive mesh refinement following the Clawpack
-wave-propagation framework \citep{BergerLeVeque1998,BergerEtAl2011}. The plugin
-disables the usual free-surface wave-height flag and uses the following
-automatic velocity-based flag for a wet cell when its speed exceeds the
-level-specific tolerance and its kinetic
-proxy satisfies
-\begin{equation}
-  \sqrt{h_a}\,U_h>\sqrt{h_v}\,U_{\mathrm{tol}}.
+  \sqrt{h_a}\,U_h>\sqrt{h_v}\,U_{\mathrm{tol}},
   \label{eq:avac-amr-flag}
 \end{equation}
-The second condition prevents a vanishing-depth numerical tail from creating
-fine patches, and it is independent of the disabled velocity ceiling. Explicit
-AMR regions can also require refinement of static or dry terrain. The current
-plugin supplies \SI{0.05}{\metre\per\second} as the speed tolerance for every
-requested level transition, regrids periodically, and subcycles finer levels
-in time. When a fine-level CFL retry shortens the admissible step, the
-remaining parent interval is repartitioned into an integer number of equal
-substeps so that synchronization is retained. Counts are checked for finite
-values, integer overflow and representable time advancement; no arbitrary
-100-substep ceiling replaces the numerical timestep constraint. The bundled
-plugin template defaults to one refinement level, and the ISeeSnow comparisons
-reported here also use one level; the analytical AMR tests use explicitly
-different level and stencil settings.
+which limits refinement caused by very thin numerical tails. Here $h_v$ is
+the depth threshold used for velocity reporting, and $U_{\mathrm{tol}}$ is
+the speed tolerance for a refinement transition, set to
+\SI{0.05}{\metre\per\second} by default. Users can also prescribe regions
+that require refinement. Fine grids take smaller time steps and remain
+synchronized with their parent grids.
 
-During coarse-to-fine transfer, AVAC reconstructs mobile depth rather than a
-lake-at-rest free surface because $h_a$ is avalanche mass per unit map area.
-Minmod-limited depth slopes in the two coordinate directions are scaled
-together, when necessary, so that every child depth is non-negative while the
-parent mean is retained. During fine-to-coarse restriction, depth and both
-momenta are averaged over all child cells, including dry children; averaging
-only wet cells would duplicate mass at a partly wet front. A deliberately low
-sea-level value of $-10^4$~m prevents standard GeoClaw initialization of a new
-fine patch from creating water-like depth over below-datum dry topography.
-Together with release mapping and the exact frozen-coefficient friction
-impulse, these transfers make avalanche volume the primary AMR invariant,
-subject to the residual clipping possible in the post-flux positivity repair.
-The round-trip terrain writer and affine-bypass tests do not establish
-exact planar preservation under every AMR topographic integration: this
-remaining geometric conditioning issue is separate from the conservative
-depth and momentum transfer rules.
+Coarse-to-fine transfer reconstructs snow depth with nonnegative child
+values while preserving the parent mean. Fine-to-coarse transfer averages
+depth and both momenta over all children, including dry cells. These rules
+preserve avalanche volume during grid transfer, subject to the separate
+clipping noted above. Terrain integration on AMR grids can still introduce
+small geometric errors. The plugin defaults to one refinement level, as do
+the ISeeSnow cases reported here.
 
 
-
+\newpage
 \subsection{WAVE governing equations and numerical method}
 \label{sec:wave-method}
 
 \subsubsection{Shallow-water equations}
 
-WAVE uses the standard GeoClaw state
-$\boldsymbol{q}_w=(h_w,h_wu_w,h_wv_w)^{\mathsf T}$, where $h_w$ is water depth
-and $(u_w,v_w)$ is the horizontal depth-averaged water velocity. Away from the
-AVAC source it solves
+WAVE stores water depth and horizontal momentum as
+$\boldsymbol{q}_w=(h_w,h_wu_w,h_wv_w)^{\mathsf T}$, where $(u_w,v_w)$ is
+horizontal, depth-averaged velocity. Away from the shoreline source, it solves
+the following equations over terrain/bathymetry $B_w$:
 \begin{align}
   \partial_t h_w
-    +\partial_x(h_w u_w)+\partial_y(h_w v_w) &=0,
+    +\partial_x(h_wu_w)+\partial_y(h_wv_w) &=0,
     \label{eq:wave-mass}\\
   \partial_t(h_wu_w)
     +\partial_x\!\left(h_wu_w^2+\tfrac12gh_w^2\right)
@@ -950,350 +564,222 @@ AVAC source it solves
   \partial_t(h_wv_w)
     +\partial_x(h_wu_wv_w)
     +\partial_y\!\left(h_wv_w^2+\tfrac12gh_w^2\right)
-    &=-gh_w\,\partial_yB_w+S_{y,M},
+    &=-gh_w\,\partial_yB_w+S_{y,M}.
     \label{eq:wave-ymomentum}
 \end{align}
-where $B_w$ is the terrain/bathymetry surface prepared for WAVE. It is read
-from a separately selected DEM that covers the AVAC rectangle in the same
-coordinate reference system and therefore need not equal the fixed AVAC bed
-$B$. Both standard configurations use $g=\SI{9.81}{\metre\per\second\squared}$.
-$\boldsymbol{S}_M$ is Manning resistance. The coupling source introduced in
-Sect.~\ref{sec:coupling-method} is added to all three equations at shoreline
-cells.
+The source $\boldsymbol{S}_M$ represents Manning friction. The avalanche
+source adds water and momentum at shoreline cells, as described in
+Sect.~\ref{sec:coupling-method}. Both solvers use
+$g=\SI{9.81}{\metre\per\second\squared}$.
 
-These nonlinear shallow-water equations assume hydrostatic pressure and omit
-frequency dispersion. They are appropriate when the relevant wavelength is
-large relative to water depth, but they cannot resolve the three-dimensional,
-non-hydrostatic impact zone. This limitation is especially relevant to
-landslide- and avalanche-generated waves \citep{PoulainEtAl2023}; the purpose
-of the present coupling is to prescribe depth-integrated mass and momentum to
-a long-wave propagation model, not to reproduce grain-scale impact physics.
+WAVE assumes hydrostatic pressure and neglects frequency dispersion. It is
+intended for waves whose wavelengths are large compared with water depth.
+It does not resolve the three-dimensional, non-hydrostatic impact zone
+\citep{PoulainEtAl2023}.
 
-\subsubsection{Initial lake, friction, and wetting/drying}
+\subsubsection{Lake initialization and bed friction}
 
-Let $\zeta_0$ be the absolute initial lake level. Before shoreline
-stabilization, the desired lake-at-rest state is
+For an initial water-surface elevation $\zeta_0$ and lake area $\Omega_L$,
+the intended resting state is
 \begin{equation}
   h_w(x,y,0)=
   \begin{cases}
     \max(\zeta_0-B_w(x,y),0), & (x,y)\in\Omega_L,\\
     0, & (x,y)\notin\Omega_L,
   \end{cases}
-  \qquad u_w=v_w=0,
+  \qquad u_w=v_w=0.
   \label{eq:wave-initial-lake}
 \end{equation}
-where $\Omega_L$ is the lake polygon rasterized on the WAVE mesh. When GDAL
-rasterization is available, the polygon uses an all-touched rule at the
-terrain resolution; the dependency-free fallback uses centre-point inclusion
-instead. If the WAVE grid is coarser, the fine binary mask is aggregated and
-a WAVE cell belongs to the lake when at least half of its fine mask cells are
-inside. This is an area approximation that prevents a narrow polygon sliver
-from turning an entire coarse cell into water.
+The lake polygon is rasterized on the terrain grid. GDAL includes all cells
+touched by the polygon; the fallback method uses cell-center inclusion.
+When the WAVE grid is coarser, a cell belongs to the lake if at least half
+of its fine-grid mask cells are inside.
 
-GeoClaw cell-averages a piecewise-linear topographic representation. A dry
-cell beside a deep lake can therefore acquire a mean bed below $\zeta_0$ even
-when its centre lies outside $\Omega_L$, producing a numerical wave when the
-initial dry mask is released. AVAC4QGIS avoids that artifact by raising every
-exterior terrain sample below the waterline, and---when at least one wet
-interior cell remains---an eight-neighbour one-cell inner rim, to
-$\zeta_0+h_{\mathrm{dry}}$. The force-dry file is configured through
-$t_0+\SI{0.5}{\second}$ when initial or newly refined patches are constructed;
-in the standard one-level WAVE workflow it therefore acts only at
-initialization. The stabilized rim is not a permanent wall: subsequent inflow
-or runup can wet a cell once its computed water surface exceeds the guarded
-bed elevation.
+Terrain averaging near the shoreline can otherwise create an artificial
+wave at initialization. To reduce this effect, the plugin raises terrain
+samples outside the lake that lie below the waterline to
+$\zeta_0+h_{\mathrm{dry}}$. Where an interior wet cell can be retained, it
+also raises a one-cell inner rim. A temporary dry mask supports initialization.
+The rim can later be overtopped; it is not a permanent wall. Because this
+procedure changes shoreline geometry and initial water volume, the prepared
+lake must be checked before applying an avalanche source.
 
-WAVE expresses bed friction through Strickler coefficients $K=1/n$, where $n$
-is the Manning coefficient. With
-$\boldsymbol{m}_w=(h_wu_w,h_wv_w)$, the implemented local source update is
+Bed friction is specified using Strickler coefficients $K=1/n$, where $n$
+is the Manning coefficient. For water momentum
+$\boldsymbol{m}_w=(h_wu_w,h_wv_w)$, the local update is
 \begin{equation}
-  \gamma_M=
-  \frac{g n^2\lVert\boldsymbol{m}_w\rVert}{h_w^{7/3}},
+  \gamma_M=\frac{g n^2\lVert\boldsymbol{m}_w\rVert}{h_w^{7/3}},
   \qquad
   \boldsymbol{m}_w^{n+1}
   =\frac{\boldsymbol{m}_w^n}{1+\gamma_M\Delta t}.
   \label{eq:wave-manning}
 \end{equation}
-It is applied only where $h_w$ is above the dry tolerance and below the
-configured friction-depth limit. Two coefficients can be separated by the
-initial water elevation. Their executable mapping is
+It applies above the dry tolerance and below the configured friction-depth
+limit. The user can set different coefficients for terrain below and above
+the initial water level:
 \begin{equation}
   n(B_w)=
   \begin{cases}
     1/K_w, & B_w<\zeta_0,\\
-    1/K_l, & B_w\geq\zeta_0,
+    1/K_l, & B_w\geq\zeta_0.
   \end{cases}
   \label{eq:wave-strickler-zones}
 \end{equation}
-where $K_w$ and $K_l$ are the water and land Strickler coefficients,
-respectively. AVAC4QGIS writes them in this order because GeoClaw applies its
-first coefficient below the elevation break and its second coefficient above
-the break.
+Here $K_w$ and $K_l$ denote water and land values.
 
-Because the coupled signal can be smaller than an imbalance created during
-lake preparation, the unforced lake is itself a model test. A stationary
-lake, stable wet--dry edge, and negligible drift in water volume are required
-before an avalanche source is interpreted; these properties are evaluated in
-Sect.~\ref{sec:wave-verification}.
+\subsubsection{Numerical solution}
 
-\subsubsection{Numerical solution and adaptive refinement}
+WAVE uses GeoClaw's standard augmented Riemann solver, second-order spatial
+corrections, and wetting-and-drying method
+\citep{George2008,BergerEtAl2011}. Manning friction and shoreline injection
+are applied as separate source updates. The time step follows the selected
+CFL limits. Standard runs use zero-gradient outer boundaries; tests can
+select periodic or wall boundaries.
 
-WAVE uses GeoClaw's unmodified augmented normal Riemann solver and transverse
-solver \citep{George2008}. As in AVAC, the finite-volume update is
-second-order, unsplit, and based on three limited $f$-waves; topographic
-balance is embedded in the augmented $f$-wave solve, while the Manning and
-injected shoreline sources are applied by Godunov splitting. The time step is
-adapted to user-specified target and maximum Courant numbers. The standard configuration uses
-zero-order extrapolation at the four outer boundaries, while analytical tests
-can select periodic or wall boundaries when required. Dry states, shoreline
-motion, and inundation use the standard GeoClaw wetting-and-drying algorithm
-\citep{BergerEtAl2011}.
-
-The underlying solver and the internal shoreline source are compatible with
-patch-based AMR because total source rates are divided by the area of the
-receiving patch cell. However, the normal AVAC4QGIS WAVE workflow in the
-version documented here deliberately prepares one refinement level. Thus the
-reported plugin simulations use a uniform WAVE grid, whereas AMR capability
-remains a property to be activated and evaluated separately. Verification is
-still required for the plugin-specific lake mask, shoreline stabilization,
-and source routine even though the homogeneous water solver is established
-GeoClaw software.
-
+The underlying solver supports AMR, and shoreline injection is scaled by
+the receiving cell area. The current QGIS workflow nevertheless prepares a
+uniform WAVE grid. Lake initialization and shoreline forcing require their
+own verification, including a resting lake with negligible water-volume
+drift before forcing is introduced (Sect.~\ref{sec:wave-verification}).
 
 \subsection{One-way AVAC-to-WAVE shoreline coupling}
 \label{sec:coupling-method}
 
-\subsubsection{Lake-mask and shoreline construction}
+\subsubsection{Shoreline geometry and avalanche sampling}
 
-The coupling follows the long-standing idea of representing avalanche entry
-as a forcing of a depth-averaged reservoir model \citep{Vila1987,Ancey2023}.
-AVAC4QGIS makes that forcing spatially and temporally explicit on the WAVE
-mesh. The lake polygon defines the initially wet body $\Omega_L$, not the
-rectangular calculation domain. Every cell in the polygon-derived WAVE mask
-adjacent to a cell outside that mask contributes one grid-aligned shoreline
-face. Such a target can be a zero-depth cell of the numerical stabilization
-rim rather than an initially wet cell. For each face $f$, the preprocessing
-stores the face centre, the centre of the source-target cell, the face length
-$L_f$, and the unit normal
+The coupling represents avalanche entry as a source in a depth-averaged
+water model \citep{Vila1987,Ancey2023}. The edge of the lake mask defines
+grid-aligned shoreline faces. Each face has length $L_f$ and an inward normal
 $\boldsymbol{n}_f=(n_{x,f},n_{y,f})$ pointing from land into the lake.
+Corner cells may receive flux through two faces. Source cells can include
+the initially dry stabilization rim.
 
-This construction produces a staircase approximation of the polygon at the
-chosen WAVE resolution. A mask corner cell can therefore contribute two faces,
-and all of their fluxes are retained. The shoreline resolution is controlled
-by WAVE cell size rather than by an independent number of sampling points,
-which keeps the geometric flux integral and its receiving cells in the same
-discretization. The polygon should retain at least one dry WAVE-cell margin to
-the rectangular domain boundary: a missing exterior neighbour is currently
-treated as dry and would otherwise create an outer-boundary source face.
+This shoreline is a staircase approximation controlled by WAVE cell size.
+The lake polygon should leave at least one dry cell between itself and the
+domain boundary to avoid creating artificial boundary source faces.
+Shoreline resolution is therefore part of the coupling setup.
 
-\subsubsection{Sampling the AVAC state}
-
-At every saved AVAC time, the three conserved components are interpolated at
-the WAVE shoreline-face centres. Bilinear interpolation is performed within
-each AVAC patch, with finite values on finer patches replacing coarser ones.
-Samples outside every AVAC patch are recorded and replaced by a zero state;
-the workflow fails only if every shoreline sample is outside AVAC coverage in
-every saved frame.
-Denoting avalanche depth and map-grid velocity by
-$h_a$ and $(u_a,v_a)$, respectively, the inward normal volume flux per unit
-shoreline length is
+At each saved AVAC time, the plugin interpolates depth and both horizontal
+momenta at the shoreline-face centers. Where patches overlap, values from
+the finest available patch are used. Samples outside AVAC coverage are
+recorded and replaced by zero; preparation fails if no shoreline sample is
+covered. The inward volume flux per unit shoreline length is
 \begin{equation}
-  q_{n,f} = (h_a u_a)_f n_{x,f} + (h_a v_a)_f n_{y,f}.
+  q_{n,f}=(h_au_a)_f n_{x,f}+(h_av_a)_f n_{y,f}.
   \label{eq:normal-flux}
 \end{equation}
-Only finite samples with $h_a>\epsilon_h$ and $q_{n,f}>\epsilon_q$ contribute
-to the WAVE source. The current implementation assigns the same numerical
-tolerance to $\epsilon_h$ and $\epsilon_q$ in their respective units. The
-positive-flux condition admits avalanche material entering the lake but does
-not withdraw water when the sampled avalanche velocity points out of it.
+Only finite, positive inflow above the depth and flux tolerances contributes.
+Outward avalanche motion does not withdraw water from WAVE.
 
-\subsubsection{Transferred volume and horizontal momentum}
+\subsubsection{Volume and momentum transfer}
 
-For a shoreline face of length $L_f$, AVAC4QGIS constructs the water-volume
-rate
+For each face, the equivalent water-volume rate is
 \begin{equation}
-  Q_{w,f} = \beta q_{n,f} L_f,
+  Q_{w,f}=\beta q_{n,f}L_f.
   \label{eq:water-volume-rate}
 \end{equation}
-and supplies WAVE with the three conservative rates
+The three rates supplied to WAVE are
 \begin{equation}
-  \boldsymbol{R}_f =
-  \left(Q_{w,f},\;Q_{w,f}u_{a,f},\;Q_{w,f}v_{a,f}\right)^{\mathsf T}.
+  \boldsymbol{R}_f=
+  \left(Q_{w,f},Q_{w,f}u_{a,f},Q_{w,f}v_{a,f}\right)^{\mathsf T}.
   \label{eq:coupling-source}
 \end{equation}
-The units of the three entries are \si{\metre\cubed\per\second},
-\si{\metre\tothe{4}\per\second\squared}, and
-\si{\metre\tothe{4}\per\second\squared}, respectively. Multiplication of
-the last two time integrals by water density converts them into physical
-horizontal momentum.
+The first adds water volume; the other two add horizontal depth-integrated
+momentum. Multiplying the latter by water density gives physical momentum
+rates.
 
-The coefficient $\beta$ combines the snow-to-water volume conversion and any
-unresolved transfer efficiency. It can be written as
+The coefficient $\beta$ combines density conversion with a transfer
+efficiency:
 \begin{equation}
   \beta=\varepsilon_T\frac{\rho_a}{\rho_w},
   \label{eq:coupling-beta}
 \end{equation}
-where $\rho_w$ is water density and $\varepsilon_T$ is a dimensionless
-efficiency. For $\varepsilon_T=1$, the avalanche mass rate
-$\rho_a q_{n,f}L_f$ equals the injected water mass rate
-$\rho_wQ_{w,f}$, and the two horizontal momentum rates also agree. For
-$\varepsilon_T<1$, both transferred mass and momentum are reduced by the same
-factor. The current interface exposes their product $\beta$ as a single
-``snow-to-water damping'' parameter; mass and momentum conservation are
-therefore exact only when that parameter is set to $\rho_a/\rho_w$. The QGIS
-control supplies $\beta$ directly under the name ``damping'' and constrains it
-to $0\leq\beta\leq0.4$.
+where $\rho_w$ is water density. When $\varepsilon_T=1$, injected mass and
+horizontal momentum equal the incoming avalanche values. A smaller efficiency
+reduces both by the same factor. The QGIS control exposes $\beta$ directly
+as \emph{snow-to-water damping}, with $0\leq\beta\leq0.4$.
 
-This density dependence is not cosmetic. Laboratory work on snow-avalanche
-impulse waves shows that buoyancy, impact velocity, and the density ratio
-control momentum and energy transfer \citep{ZittiEtAl2016}. The present
-operator is a deliberately reduced closure: it preserves the incoming
-depth-integrated horizontal quantities when
-Eq.~\eqref{eq:coupling-beta} is conservative, but it does not resolve the
-underlying two-phase interaction. In particular, the operator transfers no
-energy, vertical momentum, granular-volume removal, or pressure impulse.
+This is a simplified representation of impact. Experiments show that
+density ratio, buoyancy, and impact velocity affect transfer
+\citep{ZittiEtAl2016}. The present source prescribes volume and horizontal
+momentum but does not separately transfer vertical momentum, energy, or a
+pressure impulse.
 
-\subsubsection{Temporal interpolation and injection into WAVE}
+\subsubsection{Time-dependent injection and conservation checks}
 
-Equation~\eqref{eq:coupling-source} is evaluated at every saved AVAC output
-time. Contributions from faces that point to the same WAVE source-target cell
-are summed, producing a piecewise-linear time series
-$\boldsymbol{R}_c(t)$ for each source cell $c$. During an accepted WAVE step
-from $t$ to $t+\Delta t$, the source routine samples that series at the
-midpoint and applies
+Face contributions are summed for each receiving WAVE cell and interpolated
+linearly between saved AVAC times. During a WAVE step, the source is sampled
+at the midpoint:
 \begin{equation}
   \boldsymbol{q}_{w,c}^{*}
   =\boldsymbol{q}_{w,c}^{n}
-   +\frac{\Delta t}{A_c}\,
+   +\frac{\Delta t}{A_c}
     \boldsymbol{R}_c\!\left(t+\tfrac12\Delta t\right),
   \label{eq:wave-source-update}
 \end{equation}
-where $A_c$ is the area of the WAVE patch cell that receives the source. The
-Manning update follows within the same split source step. Because the stored
-quantities are total rates and division uses the actual receiving area, the
-integrated injection is independent of cell area and remains well defined if
-WAVE AMR is enabled later.
+where $A_c$ is the receiving cell area. Manning friction is applied afterward.
 
-The midpoint rule is exact for a WAVE step lying within one linearly
-interpolated AVAC-frame interval. The implementation does not split a WAVE
-step at a frame-time knot, so a step spanning a change in the interpolated
-slope has an additional quadrature error. The AVAC output interval and its
-alignment with WAVE time steps are therefore coupling-resolution parameters,
-not merely visualization choices. The coupled
-verification in Sect.~\ref{sec:coupling-verification} examines both temporal
-sampling and spatial shoreline resolution.
+The midpoint rule is exact within one linear interpolation interval.
+A step crossing an AVAC frame time can introduce an additional integration
+error. AVAC output frequency and WAVE time steps therefore affect the
+accuracy of the transferred source, as does shoreline resolution.
 
-\subsubsection{Transfer ledger and provenance}
+Each WAVE scenario records its source AVAC run, shoreline samples, receiving
+cells, and any missing coverage. A transfer ledger integrates the stored
+rates over time to report water volume and horizontal momentum. Comparing
+this ledger with the WAVE state helps separate errors in source transfer
+from errors in wave propagation
+(Sect.~\ref{sec:coupling-verification}).
 
-Each prepared WAVE scenario retains the source AVAC run and frame times, all
-shoreline faces, the faces that are active in at least one frame, the receiving
-source cells, and the count of samples replaced because they were outside
-AVAC coverage. In addition, AVAC4QGIS integrates the sum of all stored source
-rates by the trapezoidal rule over the AVAC frame times. The resulting ledger
-contains injected water volume, both depth-momentum integrals, and both
-physical water-momentum components after multiplication by $\rho_w$.
+\subsubsection{Physical limits of the coupling}
 
-The ledger separates a transfer error from a propagation error. Its volume and
-momentum can be compared directly with the positive avalanche flux implied by
-Eqs.~\eqref{eq:normal-flux}--\eqref{eq:coupling-beta}, while the WAVE state can
-be integrated independently after injection. These two balances form the
-first part of the coupling verification in
-Sect.~\ref{sec:coupling-verification}.
+The coupling is one-way. AVAC is completed before WAVE starts, and avalanche
+material is not removed from its saved state when it enters the lake.
+The method does not track submerged snow, mixing, entrainment, melting, or
+feedback from water to the avalanche. After injection, the transferred
+material behaves as water.
 
-\subsubsection{Physical scope of the sequential coupling}
+The model thus represents shoreline forcing followed by hydrostatic
+long-wave propagation. It is not a two-phase impact model. The planned
+laboratory comparison is needed to assess suitable transfer efficiencies
+and the conditions under which this approximation is useful.
 
-The transfer is one-way and offline. AVAC is completed before WAVE starts, so
-water pressure and wave motion do not feed back on avalanche runout. The AVAC
-state is not removed or altered after crossing the polygon; its inward flux is
-used only to construct an equivalent water source. Consequently, the method
-does not track submerged granular material or explicitly solve buoyancy,
-hydrodynamic drag, entrainment, mixing, compaction, melting, or air
-displacement.
-
-Within WAVE, the converted material is inserted into the polygon-mask
-shoreline source-target cells (which can include the zero-depth stabilization
-rim) and thereafter behaves as water governed by
-Eqs.~\eqref{eq:wave-mass}--\eqref{eq:wave-ymomentum}. This construction is less
-complete than two-phase or multilayer impact models, but is computationally
-transparent and compatible with a geospatial hazard workflow. Its scientific
-claim is correspondingly narrow: it is a conservative depth-integrated
-shoreline forcing when $\varepsilon_T=1$, followed by hydrostatic long-wave
-propagation. The forthcoming laboratory comparison must determine the useful
-range of $\varepsilon_T$ and the conditions under which this reduction is
-adequate.
-
-\figureplan{internal shoreline transfer}{Show a lake polygon rasterized on the
-WAVE grid, inward face normals, sampled AVAC $(h,hu,hv)$, the positive normal
-flux filter, the source triplet $(Q,Q u,Q v)$, temporal interpolation, and the
+\figureplan{internal shoreline transfer}{Show the lake mask, inward shoreline
+normals, sampled avalanche flux, volume and momentum transfer, and the
 receiving WAVE cells.}
 
-
-
-\subsection{QGIS integration, managed runtimes, and outputs}
+\newpage
+\subsection{QGIS integration, platform support, and outputs}
 \label{sec:qgis-integration}
 
-AVAC4QGIS embeds the model chain in QGIS rather than requiring the user to
-construct GeoClaw data files manually. The plugin reads a selected DEM band,
-transforms release and lake polygons into its coordinate reference system,
-and provides previews of the release depth, initial snow surface, lake depth,
-and stabilized shoreline before execution. Scientific controls remain
-explicit: the interface writes the selected rheology, release corrections,
-grid spacing, duration, output frequency, wet--dry tolerance, friction, CFL,
-and coupling coefficient into human-readable run configuration files.
+AVAC4QGIS provides installable plugins for Windows, macOS, and Linux. Each
+package includes the native AVAC and WAVE solvers and their required
+libraries. The plugin checks and installs the appropriate runtime
+automatically, so routine use does not require a compiler or a separate
+Clawpack installation. Platform requirements and reproducibility information
+are provided in Appendix~\ref{app:platforms}.
 
-Preparation checks a valid coordinate reference system and positive square
-horizontal cell spacing. Release and lake polygons are transformed into the
-selected DEM coordinate reference system. Users must ensure that this CRS has
-suitable metric horizontal units, that raster orientation and sampling are
-appropriate for a Cartesian calculation, and that DEM and water-level vertical
-datums are compatible; these properties cannot in general be inferred from
-the layer metadata. The WAVE grid must cover the AVAC domain with an integer
-number of cells, and its terrain/bathymetry DEM must cover that domain at an
-equal or integer-finer source resolution. A coupled run cannot be prepared from an
-unfinished AVAC calculation or from a lake shoreline entirely outside AVAC
-coverage. Each calculation is materialized in a new run directory containing
-copies of its geospatial inputs, configuration, generated solver files,
-status metadata, and outputs. Thus later changes to a QGIS layer do not
-silently rewrite the provenance of an existing result.
+The interface previews the snow release and initial lake. Each run stores
+copies of its inputs, configuration, and outputs. Users must check metric
+horizontal coordinates, compatible vertical datums, and adequate DEM
+coverage and resolution.
 
-The numerical executables and their required native libraries are distributed
-as managed, platform-specific runtimes. At installation the plugin selects the
-runtime for the operating-system/architecture pair, checks its manifest and
-cryptographic hashes, and installs it atomically in the QGIS profile. A user
-therefore does not need a Fortran compiler, Make, a Python Clawpack
-installation, or a separately configured Conda environment. The packaging
-system contains target selection for macOS on Apple Silicon, Windows on AMD64,
-and Linux on x86\_64; the set of binaries formally released and tested for the
-paper is reported separately in the reproducibility matrix rather than
-inferred from this selection logic.
-
-After a run, the plugin reads GeoClaw patch output into a shared QGIS results
-model. Standard temporal AVAC layers are depth, terrain-tangent speed,
-snow-surface elevation, and the derived kinetic-pressure proxy
+AVAC results include time-dependent depth, terrain-tangent speed, snow-surface
+elevation, and a kinetic-pressure estimate
 \begin{equation}
-  p_k=\tfrac12\rho_a U_{a,s}^2/1000\quad\text{(kPa)}.
+  p_k=\tfrac12\rho_a U_{a,s}^2/1000\quad\text{(kPa)},
   \label{eq:qgis-kinetic-pressure}
 \end{equation}
-It is neither a solver pressure nor a basal-stress, impact-pressure, or
-constitutive prediction. The raw output frames retain the conserved momenta,
-but the ordinary QGIS temporal layer choices do not expose a momentum map.
-Summary products include maximum depth, speed, and kinetic pressure, plus
-arrival and time-of-maximum fields where available; the last saved temporal
-frame supplies the final state rather than a separate deposition product. The
-temporal reader currently masks speed and kinetic pressure below a fixed
-depth of \SI{0.05}{\metre} and uses an abrupt momentum/depth ratio. It can
-therefore disagree with a user-selected $h_v$ or the smooth fixed-grid maximum
-diagnostic. WAVE results add lake-volume and shoreline-source diagnostics,
-while coupled scenarios retain a link to the source AVAC run and its transfer
-ledger. AVAC and WAVE use the same civil-time origin in QGIS, so their layers
-can be compared on one timeline even though the solvers execute sequentially.
+where $U_{a,s}=\sqrt{u_a^2+v_a^2+(u_aB_x+v_aB_y)^2}$.
+This quantity is a velocity-based proxy, not a prediction of impact pressure.
+Summary maps show peak depth, speed, and kinetic pressure, with arrival times
+where available.
 
-These controls make the workflow ``plug and play'' in the operational sense:
-installation and routine execution do not require solver compilation or
-command-line preprocessing. They do not remove the need for scientific
-judgement. Release geometry, DEM quality, rheological parameters, water level,
-resolution, boundary distance, and the coupling efficiency remain modelling
-choices whose consequences must be tested and documented.
+Temporal QGIS layers hide speed and kinetic pressure below
+\SI{0.05}{\metre}. Their sharp cutoff differs from peak-speed reporting in
+shallow cells. The final depth map is the last saved state. WAVE outputs
+include water levels, wave motion, and volume and source diagnostics. Coupled
+runs share a QGIS timeline and retain their link to the AVAC calculation.
 
 
 
@@ -1357,21 +843,6 @@ and \ref{sec:discussion} \\
 \subsection{AVAC verification}
 \label{sec:avac-verification}
 
-\paragraph{Checkpoint of the illustrated verification.}
-The two Coulomb panels and the water-limit appendix retain the supplied
-pre-1.0.0 calculations, identified in their companion JSON by AVAC executable
-SHA-256 beginning \texttt{6e85bee646c3}. The values below are synchronized
-with that JSON rather than mixed with later Windows runs. These illustrations
-are not a new full AMR verification of version \modelversion. For the final
-Voellmy stopping correction alone, paired native controls preserved uniform
-sloping Coulomb and frictionless water fields exactly; horizontal Kerswell AMR
-depth differed by at most \SI{1.15e-15}{\metre}, with unchanged reported
-analytical metrics. Earlier changes to the static-interface guard did alter
-some granular flat states. Thus the narrow stopping-fix regression is not
-evidence that every change since the illustrated checkpoint leaves all flat
-trajectories unchanged. No new simulations were run for this documentation
-and version-number update.
-
 The supplied manuscript illustrates AVAC verification with two finite-volume Coulomb dam-break problems derived
 from the exact shallow-layer solution of \citet{Kerswell2005} and with
 closed local tests of the curvature-dependent normal-load source. The horizontal
@@ -1408,10 +879,10 @@ edge of material whose depth remained within \SI{0.1}{\percent} of $H_0$; this
 finite tolerance prevents harmless AMR interpolation perturbations from being
 classified as motion.  Boundary errors are
 reported as root-mean-square errors (RMSEs) over the corresponding analytical
-moving interval.  Depth and velocity were sampled along the strip centreline,
+moving interval.  Depth and velocity were sampled along the strip centerline,
 and conservation was evaluated from the integral of flow depth per unit
 transverse width.  The notebook for each test records the complete controls,
-the solver checksum, the achieved AMR level, centreline fields, and boundary
+the solver checksum, the achieved AMR level, centerline fields, and boundary
 time series; consequently, Fig.~\ref{fig:avac-coulomb-verification} can be
 identified by the supplied diagnostic summary. The rendered figures and
 summaries are retained; regenerating any unavailable full native history
@@ -1441,7 +912,7 @@ motion, the front and rear RMSEs were \SI{0.1585}{\metre} and
 was at \SI{19.831}{\metre}, compared with the analytical
 \SI{20}{\metre}, and the maximum remaining speed was
 \SI{1.69e-4}{\metre\per\second}. The depth integral was initially
-\SI{10}{\metre\squared} per metre of transverse width and varied by
+\SI{10}{\metre\squared} per meter of transverse width and varied by
 \SI{6.15e-4}{\metre\squared}, or \SI{6.15e-3}{\percent}.  The agreement in
 the arrested state is especially relevant because no prescribed stopping time
 or fitted velocity threshold was used: arrest follows from the Coulomb and
@@ -1486,7 +957,7 @@ definitions, not a recomputation using the current release's controls.
   lower row the $5^\circ$ inclined-bed case.  Panels (a,d) compare the front
   (circles) and rear (squares) trajectories; panels (b,e) compare flow depth;
   and panels (c,f) compare downslope velocity at $t/T_0\simeq1$.  Dark lines
-  denote the analytical solution and orange symbols denote AVAC centreline
+  denote the analytical solution and orange symbols denote AVAC centerline
   results.  AMR provides finest longitudinal spacings of
   \SI{2.5}{\milli\metre} and \SI{1.875}{\milli\metre} in the two rows,
   respectively. These are the supplied pre-1.0.0 verification fields
@@ -1523,7 +994,7 @@ The maximum absolute speed errors were below
 eight equal source substeps changed the result only at machine precision.
 
 A zero-force test of the isolated \emph{scalar basal routine} leaves its input
-map speed unchanged. It must not be interpreted as the behaviour of the full
+map speed unchanged. It must not be interpreted as the behavior of the full
 current source step, which first performs the separate terrain-tangent
 transport. The production regression tests additionally exercise affine-bed
 identity, tangent-speed preservation, the differential connection limit,
@@ -1543,12 +1014,6 @@ separate scopes explicitly.
 
 \subsection{WAVE verification}
 \label{sec:wave-verification}
-
-The WAVE figures and their numerical summaries below are retained from the
-supplied manuscript. They were not rerun for version \modelversion; the
-Windows WAVE executable is unchanged from the preceding release. They remain
-component-verification evidence at their recorded configurations, not a new
-cross-platform equivalence experiment.
 
 \subsubsection{Lake at rest}
 
@@ -1583,8 +1048,8 @@ The calculation covers three complete oscillation periods, so that phase,
 amplitude, and repeated wetting and drying all contribute to the final error.
 
 Figure~\ref{fig:wave-analytical-verification}b compares the WAVE and
-analytical centreline free surfaces over the parabolic topography after the
-third period.  The WAVE centreline depth follows the analytical wet support
+analytical centerline free surfaces over the parabolic topography after the
+third period.  The WAVE centerline depth follows the analytical wet support
 and profile closely;
 the depth RMSE is \SI{1.27e-3}{\metre}, and the maximum absolute error is
 \SI{2.84e-3}{\metre}.  Together with the lake-at-rest result, this shows that
@@ -1596,7 +1061,7 @@ phase shift visible at the reported resolution.
   \centering
   \includegraphics[width=\textwidth]{wave_analytical_verification.pdf}
   \caption{WAVE verification.  (a) $L_\infty$ and $L_2$ free-surface errors
-  for the lake-at-rest test over a smooth bump.  (b) Centreline free surface
+  for the lake-at-rest test over a smooth bump.  (b) Centerline free surface
   after the third period of the planar Thacker oscillation in a parabolic
   basin.  Black is the analytical solution, blue open circles are WAVE, and
   orange dotted line is the topography.  Legends are placed outside the
@@ -1690,21 +1155,13 @@ maintained throughout this paper.
 \section{AVAC validation against observations}
 \label{sec:avac-validation}
 
-Before drafting this section, identify a comparable avalanche-model validation
+Before drafting this section, we must identify a comparable avalanche-model validation
 paper with accessible release geometry, terrain, material parameters, and
-observations of runout, front motion, velocity, or deposit.  Prefer an open
+observations of runout, front motion, velocity, or deposit. We should prefer an open
 dataset and a case that permits either independently prescribed parameters or
 calibration on one event followed by validation on another.  A single case
 fitted and assessed with the same outputs must be described as calibration or
 evaluation, not independent validation.
-
-Once data are selected, use the following subsection structure:
-\begin{enumerate}
-  \item observational or experimental case and uncertainty;
-  \item numerical setup and parameter-selection strategy;
-  \item runout, front, velocity, deposit, and volume results;
-  \item separation of input uncertainty from model-structure limitations.
-\end{enumerate}
 
 
 
@@ -1802,22 +1259,16 @@ resampled to improve agreement. Its dimensionless score is
  \label{eq:iseesnow-pft-score}
 \end{equation}
 using full-grid errors and the recorded common nodata treatment. It is not
-the unnormalized median RMSE in metres, nor an observational accuracy score.
+the unnormalized median RMSE in meters, nor an observational accuracy score.
 The broader scalar population must not be confused with this spatially
 aligned population.
 
-The current comparison uses the accepted executable whose SHA-256 begins
-\texttt{55a8c4baf0cc}; version \modelversion\ contains the same binary.
 All cases use a uniform \SI{5}{\metre} grid, second-order spatial updating,
 a \SI{1200}{\second} horizon and \SI{10}{\second} saved-state intervals.
 The two Voellmy cases use Van Leer and target CFL 0.50; Coulomb uses Minmod
 and target CFL 0.25. The correction-flux depth controls are respectively
 \SI{0.10}{\metre} and \SI{0.05}{\metre}; the solver dry tolerance is
-\SI{1e-4}{\metre} and the rejection ceiling is CFL 1.0. These are explicit
-benchmark controls, not an assertion that Van Leer or CFL 0.25 is the general
-plugin default. Physical friction coefficients and curvature treatment were
-not fitted to peer output, but the numerical choices were assessed using
-PFT agreement; this is therefore not a blind validation exercise.
+\SI{1e-4}{\metre} and the rejection ceiling is CFL 1.0.
 
 \subsection{Current fields and comparison with peers}
 
@@ -1952,9 +1403,8 @@ Draft once all evidence is available.  Planned subsections:
   \item accessibility and reproducibility through QGIS and managed runtimes;
   \item future two-way, multilayer, or dispersive developments.
 \end{enumerate}
-The multiplatform claim must be supported by a common-case scientific-
-equivalence test on every released platform, with declared numerical
-tolerances.
+Scientific equivalence across Windows, macOS, and Linux should be assessed
+with a common test case and declared numerical tolerances.
 
 \newpage
 \section{Conclusions}
@@ -1968,14 +1418,15 @@ scope-of-use statement.
 \section{Code and data availability}
 \label{sec:code-data}
 
-The source and Windows plugin are released together as version \modelversion
+The source code and plugins for Windows, macOS, and Linux are available as
+version \modelversion\
 at \url{https://github.com/cgotelli/AVAC-QGIS/releases/tag/v1.0.0}; the
 integrated development branch is \texttt{main}. The editable manuscript,
 bibliography, figures and replot script are stored under
 \codepath{docs/article}. The release also provides the compiled methods PDF,
-the installable Windows AMD64 plugin ZIP, its SHA-256 checksum and a runtime
-manifest. The main source tree retains the validation drivers and tests;
-third-party components and their supplied licences are described in
+platform-specific plugin ZIP files, SHA-256 checksums, and runtime manifests.
+The main source tree retains the validation drivers and tests;
+third-party components and their supplied licenses are described in
 \codepath{THIRD\_PARTY\_NOTICES.md}.
 
 The ISeeSnow input geometry and peer submissions originate from the common
@@ -2024,7 +1475,7 @@ The extended domain retained both moving boundaries throughout the complete
 were \SI{0.06266}{\metre} and \SI{0.08056}{\metre}, respectively. The
 maximum initial-depth discrepancy on
 the uniform diagnostic grid was \SI{3.31}{\milli\metre}.  The initial depth
-integral, \SI{2.83564}{\metre\squared} per metre of transverse width, differed
+integral, \SI{2.83564}{\metre\squared} per meter of transverse width, differed
 from the exact value by \SI{1.31e-7}{\metre\squared} and varied by
 \SI{4.15e-4}{\metre\squared} over the full simulation, or
 \SI{0.0146}{\percent}.  These errors include the interpolation from the
@@ -2040,7 +1491,7 @@ front-focused AMR hierarchy to the one-row diagnostic grid.
   simulation.  (b) AVAC depth profiles at approximately \SI{2.1}{\second},
   \SI{3.4}{\second}, and \SI{5}{\second};
   dashed and dotted vertical lines mark the corresponding analytical front
-  and rear positions.  The profiles are produced from saved centreline fields
+  and rear positions.  The profiles are produced from saved centerline fields
   and are not solver inputs. This is the supplied historical checkpoint,
   not a newly executed version \modelversion\ benchmark.}
   \label{fig:avac-wrr-water-limit}
@@ -2086,7 +1537,7 @@ the steady Baines bump and lake-at-rest configurations.
 
 \begin{table}[htbp]
   \centering
-  \caption{Additional WAVE analytical-verification results.  ``Centreline''
+  \caption{Additional WAVE analytical-verification results.  ``Centerline''
   applies to the two-dimensional Thacker basin, and ``section mean'' to the
   variable-width pseudo-2D channels.}
   \label{tab:wave-extra}
@@ -2098,7 +1549,7 @@ the steady Baines bump and lake-at-rest configurations.
     Transcritical bump with shock, depth & 0.05 & \num{4.26e-3} & \num{9.15e-2} \\
     MacDonald smooth shock, depth & 0.20 & \num{7.72e-3} & \num{1.68e-1} \\
     Ritter dry dam break, depth & 0.02 & \num{1.07e-5} & \num{7.15e-5} \\
-    Thacker paraboloid, centreline depth & 0.04 & \num{1.27e-3} & \num{2.84e-3} \\
+    Thacker paraboloid, centerline depth & 0.04 & \num{1.27e-3} & \num{2.84e-3} \\
     Pseudo-2D supercritical, section mean & 0.10 & \num{3.30e-2} & \num{1.05e-1} \\
     Pseudo-2D subcritical, section mean & 0.20 & \num{5.18e-2} & \num{8.36e-2} \\
     Baines steady bump, depth & 0.05 & \num{7.07e-5} & \num{7.80e-4} \\
@@ -2148,27 +1599,40 @@ because coincident curves alone cannot establish bitwise reproducibility.
 \section{Cross-platform reproducibility}
 \label{app:platforms}
 
-Version \modelversion\ publishes a Windows AMD64 build supporting QGIS 3.40
-or newer. The preceding isolated functional workflow used QGIS
-3.40.11-Bratislava: AVAC and WAVE runtimes installed automatically and an AVAC
+Version \modelversion\ provides plugin packages for Windows, macOS, and Linux.
+Each package includes native solvers, Clawpack 5.14.0, required libraries,
+and component licenses. Supported architectures, operating-system
+requirements, checksums, and runtime inventories are documented with the
+release.
+
+The Windows AMD64 build supports QGIS 3.40 or newer. Its earlier isolated
+functional test used QGIS 3.40.11-Bratislava: AVAC and WAVE runtimes
+installed automatically and an AVAC
 run completed. That offscreen QGIS process subsequently crashed at shutdown,
 so its functional pass is not a clean-exit certification. The version
 \modelversion\ packaging and isolated-runtime installation checks are separate
-from that earlier GUI run. No new complete scientific suite or interactive
-QGIS session was run solely to change the version label.
+from that earlier GUI run.
 
-The AVAC and WAVE numerical executable SHA-256 values are, respectively,
+For the Windows package, the AVAC and WAVE executable SHA-256 values are,
+respectively,
 \begin{quote}\small
 \path{55a8c4baf0cc74d9a8ca4c582f361eb85ab01817b0d16b63e1c824611144f2e3}\\
 \path{05bbcc28e71554cf13d1cc76c05329af1eb42a2966a8ec4738ef0310b9cbc555}.
 \end{quote}
-They are unchanged from the accepted Windows 0.6.1 package; runtime-version
-metadata and plugin release descriptors are updated to 1.0.0. Clawpack is
-5.14.0 and the required Windows libraries and component licences are bundled.
-The package checksum and full runtime inventories accompany the release.
-Previous macOS builds remain historical releases, and no macOS or Linux
-1.0.0 binary or new cross-platform scientific-equivalence claim is supplied
-by this Windows promotion.
+These executables are unchanged from the accepted Windows 0.6.1 package;
+runtime-version metadata and plugin release descriptors were updated to
+1.0.0.
+
+The macOS package targets Apple Silicon and macOS 14.0 or newer. A clean QGIS
+3.44.12-Solothurn profile test installed both runtimes, prepared an AVAC case,
+and completed the simulation with the expected time-dependent and peak
+outputs. This test was performed on the available Apple Silicon system,
+not on a separate macOS 14 installation.
+
+Linux is also supported by an installable package. Platform availability and
+installation tests do not establish numerical equivalence across operating
+systems. A common scientific test suite with stated tolerances is needed for
+that comparison.
 
 \newpage
 \bibliographystyle{plainnat}
