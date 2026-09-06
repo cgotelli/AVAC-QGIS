@@ -96,6 +96,10 @@ subroutine src2(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux,t,dt)
                 else
                     ! Apply friction source term only if in shallower water
                     if (q(1,i,j) <= friction_depth) then
+                        ! Manning drag leaves an exactly stationary wet cell
+                        ! unchanged.  Inflow was already applied above, so a
+                        ! cell receiving momentum still takes the full update.
+                        if (q(2,i,j) == 0.d0 .and. q(3,i,j) == 0.d0) cycle
                         if (.not.variable_friction) then
                             do nman = num_manning, 1, -1
                                 if (aux(1,i,j) .lt. manning_break(nman)) then

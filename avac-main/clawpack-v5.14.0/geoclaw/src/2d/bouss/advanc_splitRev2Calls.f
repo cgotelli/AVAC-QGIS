@@ -5,6 +5,7 @@ c
 c
       use amr_module
       use bouss_module
+      use fgmax_module, only: fgmax_finalize_aux
       !use fixedgrids_module
       use topo_module, only: topo_finalized
 
@@ -184,6 +185,7 @@ c         call to set up for finite volume update
 
       end do
 !$OMP END PARALLEL DO
+      call fgmax_finalize_aux(level)
       call system_clock(clock_finishStepgrid,clock_rate)
       call cpu_time(cpu_finishStepgrid)
       timeStepgrid = timeStepgrid +

@@ -225,12 +225,12 @@ contains
                 write(6,*) '+++ nqout = ',fg%nqout
 
                 ! Allocate new fixed grid data arrays at early, late time:
-                ! dimension (10,:,:) to work for either GeoClaw or D-Claw
+                ! Keep q, eta, bathymetry, and time for this equation count.
 
-                allocate(fg%early(10, fg%mx,fg%my))
+                allocate(fg%early(fg%time_index, fg%mx,fg%my))
                 fg%early = nan()
 
-                allocate(fg%late(10, fg%mx,fg%my))
+                allocate(fg%late(fg%time_index, fg%mx,fg%my))
                 fg%late = nan()
 
            enddo
@@ -268,6 +268,7 @@ contains
 
         ! Indices
         integer :: ifg,jfg,m,ic1,ic2,jc1,jc2
+        integer :: ifg_first,ifg_last,jfg_first,jfg_last
 
         ! Tolerances
         real(kind=8) :: total_depth,depth_indicator,nan_check
@@ -303,13 +304,35 @@ contains
         xhic = xlowc + dxc*mxc
         yhic = ylowc + dyc*myc
 
+        ! Visit only output centers near this patch.  Clamp before converting
+        ! to integer indices and pad for rounding at coincident edges.  Keep
+        ! the original coordinate predicate below as the final decision.
+        ! set_fgout uses zero spacing for a singleton axis; retain that axis
+        ! in full rather than dividing by zero.
+        ifg_first = 1
+        ifg_last = fgrid%mx
+        jfg_first = 1
+        jfg_last = fgrid%my
+        if (fgrid%dx > 0.d0) then
+            ifg_first = max(1, floor(max(0.d0, min(dble(fgrid%mx), &
+                (xlowc-fgrid%x_low)/fgrid%dx + 0.5d0))) - 1)
+            ifg_last = min(fgrid%mx, ceiling(max(0.d0, min(dble(fgrid%mx), &
+                (xhic-fgrid%x_low)/fgrid%dx + 0.5d0))) + 1)
+        endif
+        if (fgrid%dy > 0.d0) then
+            jfg_first = max(1, floor(max(0.d0, min(dble(fgrid%my), &
+                (ylowc-fgrid%y_low)/fgrid%dy + 0.5d0))) - 1)
+            jfg_last = min(fgrid%my, ceiling(max(0.d0, min(dble(fgrid%my), &
+                (yhic-fgrid%y_low)/fgrid%dy + 0.5d0))) + 1)
+        endif
+
 
         !write(59,*) '+++ ifg,jfg,eta,geometry at t = ',t
 
         ! Primary interpolation loops
-        do ifg=1,fgrid%mx
+        do ifg=ifg_first,ifg_last
             xfg=fgrid%x_low + (ifg-0.5d0)*fgrid%dx   ! cell centers
-            do jfg=1,fgrid%my
+            do jfg=jfg_first,jfg_last
                 yfg=fgrid%y_low + (jfg-0.5d0)*fgrid%dy   ! cell centers
 
                 ! Check to see if this coordinate is inside of this grid
@@ -445,7 +468,7 @@ contains
 
         ! Other locals
         integer :: i,j,m,iq,k,jq,num_eqn
-        real(kind=8) :: t0,tf,tau, qaug(10)
+        real(kind=8) :: t0,tf,tau, qaug(fgrid%time_index)
         real(kind=8), allocatable :: qeta(:,:,:)
         real(kind=4), allocatable :: qeta4(:,:,:)
         real(kind=8) :: h_early,h_late,topo_early,topo_late

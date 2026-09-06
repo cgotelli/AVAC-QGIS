@@ -38,6 +38,27 @@ with open(proj_dir / "impulse_configuration.yaml") as file:
 #avid        ='None'
 topo_dir    = proj_dir / "Topo"
 
+
+def _whole_cell_count(lower, upper, cell_size, axis):
+    """Validate a positive whole-cell span without truncating float roundoff."""
+    span = float(upper) - float(lower)
+    spacing = float(cell_size)
+    if not np.isfinite(span) or not np.isfinite(spacing) or spacing <= 0.0:
+        raise ValueError(f"WAVE {axis}-domain bounds and cell size must be finite, with positive spacing.")
+    raw_count = span / spacing
+    if not np.isfinite(raw_count):
+        raise ValueError(f"WAVE {axis}-domain cell count must be finite.")
+    count = int(round(raw_count))
+    # Match AVAC's whole-cell check. Prepared decimal-valued bounds can
+    # differ by roundoff; hand-written genuinely fractional grids must fail.
+    if span <= 0.0 or count < 1 or not np.isclose(raw_count, count, rtol=0.0, atol=1e-8):
+        raise ValueError(
+            f"WAVE {axis}-domain span {span:.12g} is not a whole number of "
+            f"{spacing:.12g} m computational cells."
+        )
+    return count
+
+
 #------------------------------
 def setrun(claw_pkg='geoclaw'):
 #------------------------------
@@ -93,8 +114,10 @@ def setrun(claw_pkg='geoclaw'):
     clawdata.upper[1] = lake['ymax'] 
 	 
     # Number of grid cells: Coarsest grid
-    clawdata.num_cells[0] = int((lake['xmax']-lake['xmin'])/computation['cell_size'])
-    clawdata.num_cells[1] = int((lake['ymax']-lake['ymin'])/computation['cell_size'])
+    nx = _whole_cell_count(lake['xmin'], lake['xmax'], computation['cell_size'], 'x')
+    ny = _whole_cell_count(lake['ymin'], lake['ymax'], computation['cell_size'], 'y')
+    clawdata.num_cells[0] = nx
+    clawdata.num_cells[1] = ny
 
     # ---------------
     # Size of system:
@@ -269,6 +292,11 @@ def setrun(claw_pkg='geoclaw'):
     # ---------------
     amrdata = rundata.amrdata
 
+    # Patch size includes the two-cell halo. Larger single-level patches
+    # reduce ghost and scheduling work while keeping the same physical mesh.
+    # Preserve GeoClaw's established patch partitioning for multilevel AMR.
+    amrdata.max1d = 250 if int(computation['refinement']) == 1 else 60
+
     # max number of refinement levels:
     amrdata.amr_levels_max = computation['refinement']
 
@@ -348,8 +376,8 @@ def setrun(claw_pkg='geoclaw'):
     fgout.fgno          = 1       # for listing the files see doc
     fgout.point_style   = 2       # will specify a 2d grid of points
     fgout.output_format = output['output_format']  # 4-byte, float32
-    fgout.nx = int((lake['xmax']-lake['xmin'])/computation['cell_size'])
-    fgout.ny = int((lake['ymax']-lake['ymin'])/computation['cell_size'])
+    fgout.nx = nx
+    fgout.ny = ny
     fgout.x1 = lake['xmin'] #+ dx_fine/2.  # specify edges (fgout pts will be cell centers)
     fgout.x2 = lake['xmax'] #- dx_fine/2.
     fgout.y1 = lake['ymin'] #+ dx_fine/2

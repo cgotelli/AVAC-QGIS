@@ -38,7 +38,9 @@ def test_accepted_physics_sources_are_stable():
         "b4step2.f90": "a352238a9a72d927385a65aaac9a39a7c4fdfe84372c8432862c04f29af52ca0",
         # Accepted 0.6.1 direct-head static-interface guard; not a claim of
         # numerical equivalence with the previous flat-case trajectories.
-        "rpn2_geoclaw.f": "11c13f650b299870c56a0bdb3d51ba75e9b511dad718951ae64ab3b641df5aae",
+        # The rc2 exact-rest fast path preserves that accepted physics;
+        # test_static_yield_fast_path.py checks the compiled old/new kernels.
+        "rpn2_geoclaw.f": "e0ddd2f11fe996bfc04c01e74854072e3a16a02e8a5433eac5a438188005d4d5",
     }
     for name, digest in expected.items():
         # Git may materialize CRLF working-tree files on Windows. The source

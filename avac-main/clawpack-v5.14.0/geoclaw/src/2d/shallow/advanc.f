@@ -87,10 +87,11 @@ c
       subroutine advanc_prepared(level,nvar,dtlevnew,vtime,naux)
 c
       use amr_module
+      use fgmax_module, only: fgmax_finalize_aux
 
       implicit double precision (a-h,o-z)
 
-      logical vtime
+      logical vtime,level_has_coarse_flux
       integer mythread/0/
       integer(kind=8) :: clock_start, clock_finish, clock_rate
       integer(kind=8) :: clock_startStepgrid
@@ -112,9 +113,21 @@ c
       call system_clock(clock_startStepgrid,clock_rate)
       call cpu_time(cpu_startStepgrid)
 
-c  set number of thrad to use. later will base on number of grids
-c     nt = 4
-c   ! $OMP PARALLEL DO num_threads(nt)
+c     Select ordering from the actual coarse/fine flux registers.  Even
+c     when no worker enters its ORDERED region, an ordered dynamic loop
+c     waits for earlier iterations before handing out more patches.
+c     Levels without coarse flux registers need the ordinary scheduler.
+      level_has_coarse_flux = .false.
+      levSt = listStart(level)
+      do j = 1, numgrids(level)
+          mptr = listOfGrids(levSt+j-1)
+          if (node(cfluxptr,mptr) .ne. 0) then
+              level_has_coarse_flux = .true.
+              exit
+          endif
+      enddo
+
+      if (level_has_coarse_flux) then
 
 !$OMP PARALLEL DO
 !$OMP&            PRIVATE(j,mptr,nx,ny,mitot,mjtot)
@@ -141,6 +154,37 @@ c
 
       end do
 !$OMP END PARALLEL DO
+      else
+!$OMP PARALLEL DO
+!$OMP&            PRIVATE(j,mptr,nx,ny,mitot,mjtot)
+!$OMP&            PRIVATE(mythread,dtnew,levSt)
+!$OMP&            SHARED(rvol,rvoll,level,nvar,mxnest,alloc,intrat)
+!$OMP&            SHARED(nghost,intratx,intraty,hx,hy,naux,listsp)
+!$OMP&            SHARED(node,rnode,dtlevnew,numgrids)
+!$OMP&            SHARED(listStart,listOfGrids)
+!$OMP&            SCHEDULE (DYNAMIC,1)
+!$OMP&            DEFAULT(none)
+      do j = 1, numgrids(level)
+          levSt = listStart(level)
+          mptr = listOfGrids(levSt+j-1)
+          nx = node(ndihi,mptr) - node(ndilo,mptr) + 1
+          ny = node(ndjhi,mptr) - node(ndjlo,mptr) + 1
+          mitot = nx + 2*nghost
+          mjtot = ny + 2*nghost
+
+          call par_advanc(mptr,mitot,mjtot,nvar,naux,dtnew)
+!$OMP CRITICAL (newdt)
+          dtlevnew = dmin1(dtlevnew,dtnew)
+!$OMP END CRITICAL (newdt)
+      enddo
+!$OMP END PARALLEL DO
+      endif
+c
+c     Check fixed-grid terrain completion once per level, after all patch
+c     workers have finished.  Once complete it remains immutable.  This
+c     replaces a full observation-grid scan in every patch interpolation
+c     and keeps the shared completion flag outside the parallel region.
+      call fgmax_finalize_aux(level)
 c
       call system_clock(clock_finish,clock_rate)
       call cpu_time(cpu_finish)
@@ -208,12 +252,21 @@ c
      &                             cfl_patch)
 c
       use amr_module
+#ifdef WAVE_CFL_FAST_PATH
+      use wave_cfl_buffer_module, only: get_wave_cfl_buffers
+#endif
 
       implicit double precision (a-h,o-z)
 
+#ifdef WAVE_CFL_FAST_PATH
+      external rpn2_cfl
+      double precision, pointer, contiguous :: qwork(:,:,:)
+      double precision, pointer, contiguous :: auxwork(:,:,:)
+#else
       external rpn2
-      double precision cfl_patch
       double precision, allocatable :: qwork(:,:,:),auxwork(:,:,:)
+#endif
+      double precision cfl_patch
 
       level = node(nestlevel,mptr)
       hx    = hxposs(level)
@@ -229,10 +282,18 @@ c
 c     Keep the additional trial storage on the heap.  Large AVAC patches and
 c     several OpenMP workers otherwise exceed the small default Windows
 c     thread stack.
+#ifdef WAVE_CFL_FAST_PATH
+c     Reuse worker-owned capacity, remapped to this exact active shape.
+      call get_wave_cfl_buffers(nvar,naux,mitot,mjtot,qwork,auxwork)
+c     Positive naux overwrites every active entry below. With no aux fields,
+c     preserve the old zero-filled dummy array passed to external routines.
+      if (naux .eq. 0) auxwork = 0.d0
+#else
       allocate(qwork(nvar,mitot,mjtot))
       allocate(auxwork(max(1,naux),mitot,mjtot))
 
       auxwork = 0.d0
+#endif
       do jj = 1,mjtot
           do ii = 1,mitot
               do m = 1,nvar
@@ -253,10 +314,15 @@ c     subsequently accepted call.
      &             rnode(cornxlo,mptr),rnode(cornylo,mptr),hx,hy,
      &             time,delt,naux,auxwork,.true.)
 
+#ifdef WAVE_CFL_FAST_PATH
+      call step2_cfl(maxm,nvar,naux,nghost,nx,ny,
+     &               qwork,auxwork,hx,hy,delt,cfl_patch,rpn2_cfl)
+#else
       call step2_cfl(maxm,nvar,naux,nghost,nx,ny,
      &               qwork,auxwork,hx,hy,delt,cfl_patch,rpn2)
 
       deallocate(qwork,auxwork)
+#endif
       return
       end
 c
@@ -386,13 +452,16 @@ c
 
 c     fluxsv writes coarse-patch fluxes into registers owned by adjacent
 c     fine patches.  Two coarse patches can touch the same fine patch, so
-c     save them in deterministic coarse-grid order.
+c     save them in deterministic coarse-grid order.  A patch without such
+c     registers has nothing to serialize, including every single-level
+c     patch; let it finish without waiting for earlier patch workers.
+      if (node(cfluxptr,mptr) .ne. 0) then
 !$OMP ORDERED
-      if (node(cfluxptr,mptr) .ne. 0)
-     2   call fluxsv(mptr,fm,fp,gm,gp,
+         call fluxsv(mptr,fm,fp,gm,gp,
      3               alloc(node(cfluxptr,mptr)),mitot,mjtot,
      4               nvar,listsp(level),delt,hx,hy)
 !$OMP END ORDERED
+      endif
       if (node(ffluxptr,mptr) .ne. 0) then
          lenbc = 2*(nx/intratx(level-1)+ny/intraty(level-1))
          locsvf = node(ffluxptr,mptr)

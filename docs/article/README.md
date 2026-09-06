@@ -21,4 +21,8 @@ historical checkpoints; their summaries were not relabelled as current runs.
 The numerical-method description distinguishes general plugin defaults from
 the explicit ISeeSnow protocol, incoming-state CFL acceptance from post-source
 stability, and transient Voellmy source stopping from static equilibrium.
-Runtime-version promotion does not change the accepted numerical binaries.
+The original Windows 1.0.0 promotion did not change its accepted numerical
+binaries. The replacement macOS 1.0.0 package includes the subsequently
+tested preparation and performance fixes documented in the
+[release notes](../releases/v1.0.0-macos-refresh.md). These regression checks
+do not replace the archived scientific runs used by this manuscript.

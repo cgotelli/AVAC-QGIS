@@ -15,7 +15,10 @@ from typing import Any
 import numpy as np
 import yaml
 
-from .preprocessing import AvacRaster, release_mask_from_rings, write_topography
+from .preprocessing import (
+    AvacRaster, release_mask_from_rings, trim_raster_to_computational_grid,
+    write_topography,
+)
 from .run_project import read_run_metadata
 from .time_utils import local_now_iso, local_run_stamp, temporal_origin_iso
 from .workspace import validate_workspace
@@ -118,8 +121,8 @@ def validate_wave_source_compatibility(
 def avac_computation_domain(avac_root: str | Path) -> dict[str, float]:
     """Return the exact rectangular domain of a completed AVAC run.
 
-    WAVE no longer owns a second user-defined calculation rectangle.  Both
-    solvers use these AVAC bounds, while their cell sizes may still differ.
+    WAVE starts from these bounds rather than a second user-defined rectangle.
+    Its preparation trims inward when its cell size does not divide this span.
     """
     avac_root = Path(avac_root).expanduser().resolve()
     _validate_source(avac_root)
@@ -150,14 +153,28 @@ def _source_timing(avac_root: Path) -> tuple[float, int]:
     return duration, outputs
 
 
-def _validated_domain(raster: AvacRaster, domain: dict[str, float], cell_size: float) -> dict[str, float]:
-    """Validate the explicit rectangular GeoClaw domain against the terrain."""
+def fit_wave_domain(
+    domain: dict[str, float], terrain_metadata: dict[str, Any], cell_size: float,
+) -> dict[str, float]:
+    """Fit WAVE inside the requested rectangle using AVAC's edge-trim rule.
+
+    Only metadata are needed, so the GUI can fit the domain before reading
+    terrain. Remove the minimum number of native DEM rows/columns, split
+    evenly across opposite edges (odd extras at north/east). The original
+    raster and AVAC domain are not modified. Terrain aggregation and its
+    topography-only halo are handled separately after fitting.
+    """
     try:
         result = {key: float(domain[key]) for key in ("xmin", "xmax", "ymin", "ymax")}
-        terrain = {key: float(raster.metadata[key]) for key in ("xmin", "xmax", "ymin", "ymax")}
-        terrain_cell = float(raster.metadata["cellsize"])
-    except (KeyError, TypeError, ValueError) as exc:
+        terrain = {key: float(terrain_metadata[key]) for key in ("xmin", "xmax", "ymin", "ymax")}
+        terrain_cell = float(terrain_metadata["cellsize"])
+        cell_size = float(cell_size)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"Wave domain or terrain metadata is invalid: {exc}") from exc
+    if not all(np.isfinite(value) for value in (*result.values(), *terrain.values())):
+        raise ValueError("Wave domain and terrain coordinates must be finite.")
+    if not np.isfinite(terrain_cell) or terrain_cell <= 0.0 or not np.isfinite(cell_size) or cell_size <= 0.0:
+        raise ValueError("Wave and DEM cell sizes must be positive finite values.")
     if result["xmax"] <= result["xmin"] or result["ymax"] <= result["ymin"]:
         raise ValueError("Wave domain maximum coordinates must be greater than their minimum coordinates.")
     if result["xmin"] < terrain["xmin"] or result["xmax"] > terrain["xmax"] or result["ymin"] < terrain["ymin"] or result["ymax"] > terrain["ymax"]:
@@ -169,14 +186,28 @@ def _validated_domain(raster: AvacRaster, domain: dict[str, float], cell_size: f
             f"Wave grid cell size ({cell_size:g} m) must equal the DEM resolution ({terrain_cell:g} m) "
             "or be a whole-number multiple of it."
         )
+    native_counts = {}
     for axis in ("x", "y"):
-        offset = (result[f"{axis}min"] - terrain[f"{axis}min"]) / terrain_cell
-        if not np.isclose(offset, round(offset), rtol=0.0, atol=1e-8):
-            raise ValueError(f"Wave {axis}-minimum must align with the terrain/bathymetry DEM grid.")
-        cells = (result[f"{axis}max"] - result[f"{axis}min"]) / cell_size
-        if cells < 2 or not np.isclose(cells, round(cells), rtol=0.0, atol=1e-8):
-            raise ValueError(f"Wave {axis}-extent must span an integer number of at least two {cell_size:g} m cells.")
-    return result
+        for edge in ("min", "max"):
+            offset = (result[f"{axis}{edge}"] - terrain[f"{axis}min"]) / terrain_cell
+            if not np.isclose(offset, round(offset), rtol=0.0, atol=1e-8):
+                raise ValueError(f"Wave {axis}-{edge}imum must align with the terrain/bathymetry DEM grid.")
+        native_cells = (result[f"{axis}max"] - result[f"{axis}min"]) / terrain_cell
+        native_counts[axis] = int(round(native_cells))
+        if native_counts[axis] // factor < 2:
+            raise ValueError(f"Wave {axis}-extent must retain at least two {cell_size:g} m cells after edge trimming.")
+    window = AvacRaster(
+        np.empty(0), np.empty(0), np.empty((0, 0)),
+        {**result, "ncols": native_counts["x"], "nrows": native_counts["y"], "cellsize": terrain_cell},
+        "", 1,
+    )
+    fitted = trim_raster_to_computational_grid(window, cell_size)
+    return {key: float(fitted.metadata[key]) for key in result}
+
+
+def _validated_domain(raster: AvacRaster, domain: dict[str, float], cell_size: float) -> dict[str, float]:
+    """Apply the same metadata-only fit as the QGIS preview and preparation."""
+    return fit_wave_domain(domain, raster.metadata, cell_size)
 
 
 def terrain_for_wave_domain(raster: AvacRaster, domain: dict[str, float], cell_size: float) -> AvacRaster:
@@ -585,15 +616,15 @@ def prepare_wave_scenario(workspace: str | Path, avac_root: str | Path, lake_ras
     are copied, modified, or deleted.
     """
     avac_root = Path(avac_root).expanduser().resolve()
-    source = validate_wave_source_compatibility(avac_root, lake_raster.crs_authid, domain)
+    if not np.isfinite(lake_raster.z).any():
+        raise ValueError("Lake/bathymetry DEM has no finite elevation cells.")
+    wave_domain = _validated_domain(lake_raster, domain, float(cell_size))
+    source = validate_wave_source_compatibility(avac_root, lake_raster.crs_authid, wave_domain)
     # The Wave run is a continuation of this AVAC simulation.  It must use
     # the identical civil-time origin so QGIS can display AVAC and Wave bands
     # at the same elapsed simulation time in one Temporal Controller frame.
     source_temporal_origin = temporal_origin_iso(source, avac_root / ".avac_qgis_run.json")
     duration, output_count = _source_timing(avac_root)
-    if not np.isfinite(lake_raster.z).any():
-        raise ValueError("Lake/bathymetry DEM has no finite elevation cells.")
-    wave_domain = _validated_domain(lake_raster, domain, float(cell_size))
     defaults = {"damping": .3, "cfl_target": .5, "cfl_max": 1.0, "limiter": "vanleer", "dry_limit": .0001,
                 "land_strickler": 10.0, "water_strickler": 30.0, "friction_depth_limit": 20.0, "wave_tolerance_flag": .2}
     settings = {**defaults, **(parameters or {})}

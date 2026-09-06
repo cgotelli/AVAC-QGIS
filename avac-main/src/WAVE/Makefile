@@ -25,10 +25,9 @@ PLOTDIR = _plots               # Directory for plots
 # LAPACK/BLAS are link libraries, not compiler flags.  Keep OpenMP at link
 # time too: Clawpack objects are compiled with it.
 FFLAGS ?= -O2 -fopenmp
-# The shared GeoClaw step2 source contains an AVAC-only conditional. WAVE
-# preprocesses that source without defining the AVAC macro, retaining the
-# upstream relimiter setting.
-FFLAGS += -cpp
+# Keep the upstream water relimiter; enable only WAVE's exact CFL-speed
+# callback and reusable private probe buffers in the shared advance driver.
+FFLAGS += -cpp -DWAVE_CFL_FAST_PATH
 LFLAGS ?= -fopenmp -llapack -lblas
 OMP_NUM_THREADS = 8
 
@@ -58,13 +57,15 @@ EXCLUDE_SOURCES = \
 # ----------------------------------------
 
 MODULES = \
-	./internal_inflow_module.f90 \
+  ./wave_cfl_buffer_module.f90 \
+  ./internal_inflow_module.f90 \
 	./hydraulic_bc_module.f90 \
 	./fgout_module.f90 \
 	./qinit_module.f90 \
 
 
 SOURCES = \
+  ./rpn2_geoclaw_cfl.f90 \
   ./setprob.f90 \
   ./src2.f90 \
   ./b4step2.f90 \

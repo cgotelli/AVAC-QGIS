@@ -99,6 +99,14 @@ subroutine step2(maxm,meqn,maux,mbc,mx,my, &
     gm = 0.d0
     gp = 0.d0
 
+    ! An exactly empty patch, including every ghost cell, has zero normal
+    ! and transverse waves and no CFL restriction.  Checking the whole state
+    ! also retains the ordinary path for residual momentum or shallow films.
+    ! Wet neighboring ghosts must still drive inundation into a dry interior.
+    ! Only the flux calculation is skipped: stepgrid still handles source
+    ! terms, observations, dry-state cleanup, and the accepted patch time.
+    if (all(qold == 0.d0)) return
+
     ! ==========================================================================
     ! Perform X-Sweeps
     do j = sweep_lo,my+sweep_pad

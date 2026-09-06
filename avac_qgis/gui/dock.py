@@ -49,7 +49,7 @@ from ..core.avac_lake_depth import AVAC_LAKE_DEPTH_MANIFEST, wave_source_avac_ru
 from ..core.run_project import read_run_metadata, validate_prepared_run
 from ..core.workspace import completed_runs, create_run_root, materialize_layer_sources, validate_workspace
 from ..core.wave_project import (
-    PreparedWaveLake, avac_computation_domain, prepare_wave_lake,
+    PreparedWaveLake, avac_computation_domain, fit_wave_domain, prepare_wave_lake,
     prepare_wave_scenario, validate_wave_source_compatibility,
 )
 from ..core.profiles import ProfileDataset, bilinear_sample, extract_profile, write_profile_csv
@@ -786,7 +786,7 @@ class AvacDockWidget(QDockWidget):
         )
         lake_form.addRow(self.wave_create_lake_polygon_button)
         lake_form.addRow(self.wave_preview_water_button)
-        self.wave_cell_size.setToolTip("Use the DEM resolution or a larger whole-number multiple. A coarser grid reduces Wave runtime and memory use.")
+        self.wave_cell_size.setToolTip("Use the DEM resolution or a larger whole-number multiple. Domain edges are trimmed inward by the minimum number of DEM cells to fit the chosen spacing. A coarser grid reduces Wave runtime and memory use.")
         lake_form.addRow("Wave grid cell size", self.wave_cell_size)
         lake_group.setTitle(""); self.wave_parameter_toolbox.addItem(lake_group, "Terrain and Lake Inputs")
 
@@ -1102,7 +1102,7 @@ class AvacDockWidget(QDockWidget):
             half_cells *= 2
 
     def _validated_wave_domain(self) -> dict[str, float]:
-        """Validate the completed AVAC domain against the selected WAVE grid."""
+        """Fit the completed AVAC rectangle inward to the selected WAVE grid."""
         terrain = self.wave_lake_dem.currentLayer() if hasattr(self, "wave_lake_dem") else None
         if terrain is None or not terrain.isValid():
             raise ValueError("Choose a valid terrain/bathymetry DEM.")
@@ -1111,28 +1111,30 @@ class AvacDockWidget(QDockWidget):
         source_y = float(terrain.rasterUnitsPerPixelY())
         cell_size = float(self.wave_cell_size.value())
         tolerance = max(source_x, source_y, cell_size, 1.0) * 1e-8
-        if source_x <= 0.0 or source_y <= 0.0 or not np.isclose(source_x, source_y, rtol=0.0, atol=tolerance):
-            raise ValueError("Terrain/bathymetry DEM must have positive square cells.")
-        ratio = cell_size / source_x
-        if round(ratio) < 1 or not np.isclose(ratio, round(ratio), rtol=0.0, atol=1e-8):
-            raise ValueError(
-                f"Wave grid cell size ({cell_size:g} m) must equal the DEM resolution ({source_x:g} m) "
-                "or be a whole-number multiple of it."
-            )
-        for axis in ("x", "y"):
-            cells = (domain[f"{axis}max"] - domain[f"{axis}min"]) / cell_size
-            if cells < 2 or not np.isclose(cells, round(cells), rtol=0.0, atol=1e-8):
-                raise ValueError(
-                    f"The completed AVAC {axis.upper()} span is not divisible into at least two "
-                    f"{cell_size:g} m WAVE cells. Choose a compatible coarser cell size."
-                )
+        if (not np.isfinite(source_x) or not np.isfinite(source_y)
+                or source_x <= 0.0 or source_y <= 0.0
+                or not np.isclose(source_x, source_y, rtol=0.0, atol=tolerance)):
+            raise ValueError("Terrain/bathymetry DEM must have positive finite square cells.")
         extent = terrain.extent()
-        if (
-            domain["xmin"] < extent.xMinimum() - tolerance or domain["xmax"] > extent.xMaximum() + tolerance
-            or domain["ymin"] < extent.yMinimum() - tolerance or domain["ymax"] > extent.yMaximum() + tolerance
-        ):
-            raise ValueError("Terrain/bathymetry DEM must fully cover the completed AVAC computation domain.")
-        return domain
+        return fit_wave_domain(domain, {
+            "xmin": float(extent.xMinimum()), "xmax": float(extent.xMaximum()),
+            "ymin": float(extent.yMinimum()), "ymax": float(extent.yMaximum()),
+            "cellsize": source_x,
+        }, cell_size)
+
+    def _wave_grid_summary(self, domain: dict[str, float], cell_size: float) -> str:
+        """Describe the retained solver grid, including any inward edge trim."""
+        original = self._wave_domain()
+        trimmed = any(not np.isclose(domain[key], original[key], rtol=0.0, atol=1e-8)
+                      for key in ("xmin", "xmax", "ymin", "ymax"))
+        nx = int(round((domain["xmax"] - domain["xmin"]) / cell_size))
+        ny = int(round((domain["ymax"] - domain["ymin"]) / cell_size))
+        label = "WAVE domain trimmed inward" if trimmed else "WAVE grid"
+        return (
+            f"{label}: {nx} × {ny} cells at {cell_size:g} m; "
+            f"X [{domain['xmin']:.12g}, {domain['xmax']:.12g}], "
+            f"Y [{domain['ymin']:.12g}, {domain['ymax']:.12g}] m."
+        )
 
     @staticmethod
     def _remove_wave_preview_layers(property_name: str) -> None:
@@ -1147,7 +1149,7 @@ class AvacDockWidget(QDockWidget):
         return preview_dir / filename
 
     def _wave_setup_terrain(self, terrain, domain: dict[str, float], cell_size: float):
-        """Read only the native DEM window needed for GeoClaw terrain."""
+        """Read the fitted domain and its one-cell GeoClaw terrain halo."""
         source_x = float(terrain.rasterUnitsPerPixelX())
         source_y = float(terrain.rasterUnitsPerPixelY())
         if source_x <= 0.0 or source_y <= 0.0 or not np.isclose(source_x, source_y, rtol=0.0, atol=max(source_x, source_y, 1.0) * 1e-8):
@@ -1177,12 +1179,13 @@ class AvacDockWidget(QDockWidget):
             geometry_digest.update(str(feature.id()).encode("ascii", errors="replace"))
             geometry_digest.update(bytes(feature.geometry().asWkb()))
         extent = terrain.extent()
+        domain = self._validated_wave_domain()
         return (
             str(Path(self.workspace_root.text()).expanduser()),
             terrain.id(), terrain.source(), terrain.width(), terrain.height(), terrain.bandCount(),
             extent.xMinimum(), extent.xMaximum(), extent.yMinimum(), extent.yMaximum(),
             boundary.id(), boundary.source(), boundary.featureCount(), geometry_digest.hexdigest(),
-            *(self._wave_domain()[key] for key in ("xmin", "xmax", "ymin", "ymax")),
+            *(domain[key] for key in ("xmin", "xmax", "ymin", "ymax")),
             self.wave_cell_size.value(), self.wave_water_level.value(), self.wave_dry_limit.value(),
         )
 
@@ -1237,6 +1240,7 @@ class AvacDockWidget(QDockWidget):
         self._wave_lake_preview_signature = signature
         self.wave_setup_status.setText(
             f"Water-level preview: {wet_cells} wet cells; maximum depth {maximum:g} m. "
+            f"{self._wave_grid_summary(prepared.domain, prepared.cell_size)} "
             "This prepared lake state will be reused by Prepare Wave Run."
         )
         return prepared
@@ -1383,10 +1387,11 @@ class AvacDockWidget(QDockWidget):
             signature = self._wave_water_preview_input_signature()
             preview_ready = self._wave_lake_preview is not None and self._wave_lake_preview_signature == signature
             suffix = " The current water-level preview is ready and will be reused." if preview_ready else " Preview Water Level will be calculated once during preparation and then reused."
-            self.wave_run_status.setText("WAVE inputs valid." + suffix)
+            grid_summary = self._wave_grid_summary(domain, self.wave_cell_size.value())
+            self.wave_run_status.setText("WAVE inputs valid. " + grid_summary + suffix)
             self._append_wave_log(
                 f"WAVE inputs valid. AVAC source: {avac_run}; terrain: {terrain.name()}; "
-                f"lake polygons: {len(rings)}; cell size: {self.wave_cell_size.value():g} m."
+                f"lake polygons: {len(rings)}. {grid_summary}"
             )
         except Exception as exc:  # noqa: BLE001 - complete user-facing validation
             self.wave_run_status.setText(f"WAVE input validation failed: {exc}")
@@ -1438,7 +1443,10 @@ class AvacDockWidget(QDockWidget):
             return
         self.wave_run_root = wave_root
         self.wave_results_run_root.setText(str(wave_root))
-        self.wave_prepared_summary.setText(f"Prepared Simulation\nScenario: {wave_root.name}; AVAC source: {Path(str(avac_run)).name}")
+        grid_summary = self._wave_grid_summary(prepared_lake.domain, wave_cell)
+        self.wave_prepared_summary.setText(
+            f"Prepared Simulation\nScenario: {wave_root.name}; AVAC source: {Path(str(avac_run)).name}\n{grid_summary}"
+        )
         try:
             self.wave_runtime_root = ensure_bundled_wave_runtime()
             self.wave_prepare_progress.setValue(70); QgsApplication.processEvents()
@@ -1463,6 +1471,7 @@ class AvacDockWidget(QDockWidget):
         wave_timing = wave_configuration["computation"]
         self._append_wave_log(
             f"Scenario prepared: {wave_root}\nWave runtime: {self.wave_runtime_root}\n"
+            f"{grid_summary}\n"
             f"Wave duration/output intervals inherited from AVAC: "
             f"{float(wave_timing['t_max']):g} s / {int(wave_timing['nb_simul'])}.\n"
             f"Wet shoreline faces: {boundary.shoreline_faces}; active source cells: {boundary.active_source_cells}; "

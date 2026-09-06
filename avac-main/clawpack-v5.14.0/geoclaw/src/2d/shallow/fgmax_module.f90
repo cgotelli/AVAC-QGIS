@@ -104,6 +104,26 @@ module fgmax_module
 
 contains
 
+    subroutine fgmax_finalize_aux(level)
+
+        ! Call once after every patch worker on this level has finished.
+        ! Terrain is sampled only once at each fixed-grid point and level.
+        ! A partially covered level must remain open for future patches;
+        ! completed levels need no further full observation-grid scans.
+        integer, intent(in) :: level
+        integer :: ifg
+
+        do ifg=1,FG_num_fgrids
+            if (.not. FG_fgrids(ifg)%auxdone(level)) then
+                if (minval(FG_fgrids(ifg)%aux(level,1,:)) > FG_NOTSET) then
+                    FG_fgrids(ifg)%auxdone(level) = .true.
+                endif
+            endif
+        enddo
+
+    end subroutine fgmax_finalize_aux
+
+
     subroutine set_fgmax(fname)
 
         use amr_module, only: parmunit

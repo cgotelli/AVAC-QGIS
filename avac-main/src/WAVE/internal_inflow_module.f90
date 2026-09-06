@@ -8,6 +8,9 @@ module internal_inflow_module
     real(kind=8), allocatable :: inflow_times(:)
     real(kind=8), allocatable :: inflow_x(:), inflow_y(:)
     real(kind=8), allocatable :: inflow_rates(:,:,:)
+    ! Source locations are immutable after loading.  Their bounding box lets
+    ! patches outside the shoreline skip both the time and source searches.
+    real(kind=8), private :: inflow_xmin, inflow_xmax, inflow_ymin, inflow_ymax
 
 contains
 
@@ -63,6 +66,12 @@ contains
             end do
         end do
         close(unit)
+        if (inflow_ncells > 0) then
+            inflow_xmin = minval(inflow_x)
+            inflow_xmax = maxval(inflow_x)
+            inflow_ymin = minval(inflow_y)
+            inflow_ymax = maxval(inflow_y)
+        end if
         write(6,*) "Internal shoreline inflow cells: ", inflow_ncells
     end subroutine read_internal_inflow
 
@@ -71,10 +80,14 @@ contains
         integer, intent(in) :: meqn, mbc, mx, my
         real(kind=8), intent(in) :: xlower, ylower, dx, dy, t, dt
         real(kind=8), intent(inout) :: q(meqn,1-mbc:mx+mbc,1-mbc:my+mbc)
-        integer :: it, icell, i, j
+        integer :: it, icell, i, j, lo, hi, midpoint
         real(kind=8) :: sample_time, weight, rate(3)
 
         if (inflow_ncells == 0 .or. dt <= 0.d0) return
+        ! Match the existing half-open membership test below: lower edges
+        ! belong to the patch, upper edges belong to its neighbor.
+        if (inflow_xmax < xlower .or. inflow_xmin >= xlower + mx*dx) return
+        if (inflow_ymax < ylower .or. inflow_ymin >= ylower + my*dy) return
         sample_time = t + 0.5d0*dt
         if (sample_time < inflow_times(1) .or. sample_time > inflow_times(inflow_ntimes)) return
 
@@ -82,9 +95,19 @@ contains
             it = inflow_ntimes - 1
             weight = 1.d0
         else
-            do it = 1, inflow_ntimes - 1
-                if (sample_time >= inflow_times(it) .and. sample_time < inflow_times(it+1)) exit
+            ! Stateless binary search also supports rejected/repeated times,
+            ! AMR subcycling, and concurrent patch workers without a cache.
+            lo = 1
+            hi = inflow_ntimes
+            do while (hi-lo > 1)
+                midpoint = lo + (hi-lo)/2
+                if (sample_time < inflow_times(midpoint)) then
+                    hi = midpoint
+                else
+                    lo = midpoint
+                end if
             end do
+            it = lo
             weight = (sample_time - inflow_times(it)) / (inflow_times(it+1) - inflow_times(it))
         end if
 

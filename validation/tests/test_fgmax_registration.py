@@ -150,6 +150,23 @@ def test_default_fgmax_samples_are_solver_cell_centres(monkeypatch: pytest.Monke
     assert geometry_from_axes(x, y) == GridGeometry(5, 4, 0.0, 10.0, 20.0, 28.0, 2.0, 2.0)
 
 
+@pytest.mark.parametrize("zoom, expected_limit", [(False, 250), (True, 60)])
+def test_patch_limit_reduces_fixed_grid_overhead_without_changing_mesh(
+    monkeypatch: pytest.MonkeyPatch, zoom: bool, expected_limit: int,
+) -> None:
+    module = _load_setrun(monkeypatch)
+    _configure(module, zoom=zoom)
+
+    rundata = module.setrun()
+
+    assert rundata.amrdata.max1d == expected_limit
+    assert rundata.clawdata.num_cells == [5, 4]
+    assert rundata.clawdata.lower == [0.0, 20.0]
+    assert rundata.clawdata.upper == [10.0, 28.0]
+    assert rundata.clawdata.cfl_desired == 0.5
+    assert rundata.clawdata.cfl_max == 1.0
+
+
 def test_explicit_result_grid_remains_cell_centre_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_setrun(monkeypatch)
     _configure(module, result_grid={

@@ -178,12 +178,11 @@ subroutine fgmax_interpolate(mx,my,meqn,mbc,maux,q,aux,dx,dy, &
 
         enddo ! loop on indexk
 
-    ! note computing minval checks all fg%npts points, better way?
-    if (minval(fg%aux(level,1,:)) > FG_NOTSET) then
-        ! Done with aux arrays at all fgrid points on this level
-        !print *, '+++ level,fg%aux:',level,fg%aux(level,1,1)
-        fg%auxdone(level) = .true.
-        endif
+    ! fgmax_finalize_aux checks completion once after all patch workers on
+    ! this level have finished.  Scanning fg%npts here
+    ! costs one full observation-grid traversal per patch, even after every
+    ! auxiliary value is initialized.  The per-point FG_NOTSET check above
+    ! still prevents overwriting any previously sampled terrain.
         
     !deallocate(ik,jk,mask_patch)
 

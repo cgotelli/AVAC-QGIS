@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -55,6 +57,45 @@ def metadata_version() -> str:
     return version
 
 
+def release_plugin_version(value: str) -> str:
+    """Validate an override used in both QGIS metadata and package filenames."""
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*(?:[-+][A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", value):
+        raise ValueError("plugin version must be a single release-version token, such as 1.0.1-rc2")
+    if re.search(r"(?:[-+.])dev(?:[.-]?[0-9]+)?$", value, re.IGNORECASE):
+        raise ValueError("plugin version must be a non-development release version")
+    return value
+
+
+def stage_metadata_overrides(
+    plugin_root: Path, plugin_version: str | None, experimental: bool | None,
+) -> None:
+    """Apply optional candidate metadata only to an already copied plugin."""
+    if plugin_version is None and experimental is None:
+        return
+    if plugin_version is not None:
+        release_plugin_version(plugin_version)
+    if experimental is not None and not isinstance(experimental, bool):
+        raise ValueError("experimental must be a boolean")
+    path = plugin_root / "metadata.txt"
+    metadata = configparser.ConfigParser(interpolation=None)
+    metadata.optionxform = str
+    metadata.read_string(path.read_text(encoding="utf-8"))
+    if not metadata.has_section("general"):
+        raise ValueError("metadata.txt must contain a [general] section")
+    if plugin_version is not None:
+        metadata.set("general", "version", plugin_version)
+    if experimental is not None:
+        # QGIS reads this flag from [general].  Older source metadata placed
+        # it in a separate section; remove that duplicate only in staging.
+        metadata.set("general", "experimental", str(experimental))
+        if metadata.has_section("experimental"):
+            metadata.remove_option("experimental", "experimental")
+            if not metadata.items("experimental"):
+                metadata.remove_section("experimental")
+    with path.open("w", encoding="utf-8") as stream:
+        metadata.write(stream, space_around_delimiters=False)
+
+
 def runtime_manifest(archive: Path, version: str) -> dict:
     with tarfile.open(archive, "r:gz") as bundle:
         members = bundle.getmembers()
@@ -95,11 +136,17 @@ def copy_plugin(
     wave_runtime_archive: Path,
     wave_runtime_version: str,
     wave_manifest_payload: dict,
+    *,
+    plugin_version: str | None = None,
+    experimental: bool | None = None,
 ) -> Path:
+    if plugin_version is not None:
+        release_plugin_version(plugin_version)
     destination = staging / "avac_qgis"
     def ignore(directory: str, names: list[str]) -> set[str]:
         return {name for name in names if name in EXCLUDED_DIRS or Path(name).suffix in EXCLUDED_SUFFIXES or name == ".DS_Store"}
     shutil.copytree(PLUGIN, destination, ignore=ignore)
+    stage_metadata_overrides(destination, plugin_version, experimental)
     shutil.copy2(ROOT / "README.md", destination / "README.md")
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", destination / "THIRD_PARTY_NOTICES.md")
     documentation = destination / "documentation"
@@ -164,9 +211,13 @@ def main() -> None:
     parser.add_argument("--runtime-version", required=True)
     parser.add_argument("--wave-runtime-archive", type=Path, required=True)
     parser.add_argument("--wave-runtime-version", required=True)
+    parser.add_argument("--plugin-version", type=release_plugin_version,
+                        help="Override the plugin version in staging only; source metadata is unchanged.")
+    parser.add_argument("--experimental", action=argparse.BooleanOptionalAction, default=None,
+                        help="Set the staged plugin's experimental flag; use --no-experimental for stable releases.")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
-    version = metadata_version()
+    version = args.plugin_version if args.plugin_version is not None else metadata_version()
     archive = args.runtime_archive.resolve()
     if not archive.is_file():
         raise SystemExit(f"runtime archive not found: {archive}")
@@ -184,6 +235,7 @@ def main() -> None:
         staged = copy_plugin(
             Path(temporary), archive, args.runtime_version, manifest,
             wave_archive, args.wave_runtime_version, wave_manifest,
+            plugin_version=args.plugin_version, experimental=args.experimental,
         )
         assert_no_forbidden(staged)
         contents = write_zip(staged, output)

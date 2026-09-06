@@ -381,8 +381,12 @@ def setrun(claw_pkg='geoclaw'):
     # ---------------
     amrdata = rundata.amrdata
     
-    # maximum size of patches in each direction (matters in parallel):
-    amrdata.max1d = 60
+    # Maximum patch side INCLUDING ghost cells. A 60-cell limit leaves only
+    # 50 interior cells for AVAC's five-cell halo and fragments large fixed
+    # domains into thousands of patches. Larger single-level patches reduce
+    # halo, observation, and scheduling work without changing resolution.
+    # Keep the established AMR partitioning when finer levels are enabled.
+    amrdata.max1d = 250 if int(Param['refinement']) == 1 else 60
 
     # max number of refinement levels:
     amrdata.amr_levels_max = Param['refinement']

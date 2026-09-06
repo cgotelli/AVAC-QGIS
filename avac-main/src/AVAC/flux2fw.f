@@ -329,6 +329,9 @@ c
       integer sweep_lo,sweep_pad,icom,jcom
 
       cflgrid = 0.d0
+c     Match step2's empty-patch shortcut, including all ghost cells and
+c     momentum components.  A wet ghost must still contribute its CFL.
+      if (all(qold .eq. 0.d0)) return
       dtdx = dt/dx
       dtdy = dt/dy
 

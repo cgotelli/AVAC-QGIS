@@ -306,6 +306,10 @@ c
       integer sweep_lo,sweep_pad,icom,jcom
 
       cflgrid = 0.d0
+c     A patch with exactly zero state, including every ghost cell, has
+c     zero normal wave speeds.  Match the empty-patch guard in step2.
+c     Do not skip shallow films, residual momentum, or wet ghost cells.
+      if (all(qold .eq. 0.d0)) return
       dtdx = dt/dx
       dtdy = dt/dy
 

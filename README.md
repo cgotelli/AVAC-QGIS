@@ -5,8 +5,10 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current Windows release is **1.0.0**, supports **QGIS 3.40 or newer**, and
-was tested with **QGIS 3.40.11-Bratislava**.
+The current release is **1.0.0**, with separate Windows AMD64 and macOS
+Apple Silicon packages. It supports **QGIS 3.40 or newer**; Windows was
+tested with **QGIS 3.40.11-Bratislava**, and macOS with **QGIS 3.44 LTS**.
+The macOS package requires **macOS 26.0 or newer**.
 This checkout contains the **1.0.0** source and reproducible validation suite.
 
 ## Interface overview
@@ -26,9 +28,8 @@ WAVE pages, and a shared Results page.
    [AVAC4QGIS 1.0.0 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v1.0.0).
    The 64-bit Windows package is
    [`avac_qgis-1.0.0-windows-amd64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-windows-amd64.zip).
-   The previous macOS Apple Silicon build remains available from the
-   [AVAC4QGIS 0.6.0 release](https://github.com/cgotelli/AVAC-QGIS/releases/tag/v0.6.0);
-   it does not include the current Windows solver changes.
+   The macOS Apple Silicon package is
+   [`avac_qgis-1.0.0-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-macos-arm64.zip).
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.
 3. Select the downloaded ZIP and open **AVAC4QGIS** from the Plugins menu.
 
@@ -40,8 +41,14 @@ The GitHub source-code ZIP does **not** contain the managed solver runtimes and
 is not an installable QGIS package. Use the release asset linked above when
 installing AVAC4QGIS on another computer.
 
-See the [Windows 1.0.0 release notes](docs/releases/v1.0.0-windows.md) for
-the accepted numerical checkpoint and validation scope.
+The [replacement 1.0.0 release notes](docs/releases/v1.0.0-macos-refresh.md)
+describe the tested macOS performance and grid-fitting updates. Windows
+retains its previously published binary and
+[numerical checkpoint](docs/releases/v1.0.0-windows.md); it has not been
+rebuilt with these updates. No Linux binary is attached to this release.
+To replace an existing 1.0.0 or local release-candidate installation, install
+the new ZIP explicitly and restart QGIS; the unchanged public version number
+does not trigger an automatic update.
 
 ## Documentation
 

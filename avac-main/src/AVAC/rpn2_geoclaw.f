@@ -307,8 +307,14 @@ c        would itself cause unphysical mass creep.
          spd_L = dsqrt(uL**2 + vL**2)
          spd_R = dsqrt(uR**2 + vR**2)
 
+c        Exact rest is already required by the final suppression test below.
+c        A moving interface cannot pass it, regardless of the predicted
+c        friction impulse.  Avoid the four local source integrations and
+c        static-gradient calculations in that case.  The skipped quantities
+c        are local to this static test; the dynamic Riemann inputs are intact.
          if (imodel_rh .ge. 1 .and.
-     &       hL .gt. drytol .and. hR .gt. drytol) then
+     &       hL .gt. drytol .and. hR .gt. drytol .and.
+     &       spd_L .eq. 0.d0 .and. spd_R .eq. 0.d0) then
 
             call get_mu_xi(0.5d0*(bL+bR),mu_rp,xi_rp,C_rp)
             if (mu_rp .gt. 0.d0 .or. C_rp .gt. 0.d0) then
