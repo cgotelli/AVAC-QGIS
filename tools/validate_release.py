@@ -238,7 +238,13 @@ def validate_embedded_runtime(
             and runtime_manifest.get("architecture") == "arm64"
         ):
             raise SystemExit(f"embedded runtime has the wrong platform: {zip_name}")
-        expected_architecture = "amd64" if platform == "windows-amd64" else "arm64"
+        expected_architecture = {
+            "windows-amd64": "amd64",
+            "macos-arm64": "arm64",
+            "linux-x86_64": "x86_64",
+        }.get(platform)
+        if expected_architecture is None:
+            raise SystemExit(f"unsupported release platform: {platform}")
         if runtime_manifest.get("architecture") != expected_architecture:
             raise SystemExit(f"embedded runtime has the wrong architecture: {zip_name}")
         if runtime_manifest.get("runtime_version") != record.get("runtime_version"):

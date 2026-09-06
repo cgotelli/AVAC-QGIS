@@ -5,11 +5,9 @@ lake-wave modeling into QGIS. The plugin provides case preparation, managed
 solver execution, temporal visualization, profiles, gauges, and map export
 without requiring users to configure Clawpack or a compiler.
 
-The current release is **1.0.0**, with separate Windows AMD64 and macOS
-Apple Silicon packages. It supports **QGIS 3.40 or newer**; Windows was
-tested with **QGIS 3.40.11-Bratislava**, and macOS with **QGIS 3.44 LTS**.
-The macOS package requires **macOS 26.0 or newer**.
-This checkout contains the **1.0.0** source and reproducible validation suite.
+AVAC4QGIS **1.0.0** is available for Windows AMD64, macOS Apple Silicon, and
+Linux x86_64. It supports QGIS 3.40 or newer. The macOS package requires
+macOS 26.0 or newer; the Linux package requires glibc 2.43 or newer.
 
 ## Interface overview
 
@@ -30,25 +28,20 @@ WAVE pages, and a shared Results page.
    [`avac_qgis-1.0.0-windows-amd64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-windows-amd64.zip).
    The macOS Apple Silicon package is
    [`avac_qgis-1.0.0-macos-arm64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-macos-arm64.zip).
+   The Linux x86_64 package is
+   [`avac_qgis-1.0.0-linux-x86_64.zip`](https://github.com/cgotelli/AVAC-QGIS/releases/download/v1.0.0/avac_qgis-1.0.0-linux-x86_64.zip).
 2. In QGIS, open **Plugins → Manage and Install Plugins → Install from ZIP**.
 3. Select the downloaded ZIP and open **AVAC4QGIS** from the Plugins menu.
 
-Each release ZIP contains a managed solver runtime. Running the installed
-plugin does not require GNU Make, a Fortran compiler, or a separate Clawpack
-installation.
+Each release ZIP includes the AVAC and WAVE solvers and their managed runtime.
+Running the installed plugin does not require GNU Make, a Fortran compiler,
+Clawpack, BLAS, or LAPACK.
 
 The GitHub source-code ZIP does **not** contain the managed solver runtimes and
 is not an installable QGIS package. Use the release asset linked above when
 installing AVAC4QGIS on another computer.
 
-The [replacement 1.0.0 release notes](docs/releases/v1.0.0-macos-refresh.md)
-describe the tested macOS performance and grid-fitting updates. Windows
-retains its previously published binary and
-[numerical checkpoint](docs/releases/v1.0.0-windows.md); it has not been
-rebuilt with these updates. No Linux binary is attached to this release.
-To replace an existing 1.0.0 or local release-candidate installation, install
-the new ZIP explicitly and restart QGIS; the unchanged public version number
-does not trigger an automatic update.
+See the release page for the package downloads and platform requirements.
 
 ## Documentation
 
