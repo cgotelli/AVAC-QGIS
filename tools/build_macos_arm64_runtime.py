@@ -32,6 +32,7 @@ RUNTIME_LIBRARIES = (
     "libquadmath.0.dylib",
     "libgcc_s.1.1.dylib",
 )
+_MACOS_VERSION = re.compile(r"^\d+(?:\.\d+){0,2}$")
 
 # Direct packaged execution needs only the tested Python data writer.  The
 # compiled Fortran sources/Makefile are intentionally not copied: normal runs
@@ -47,6 +48,11 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def file_record(root: Path, path: Path) -> dict[str, str]:
+    """Return one manifest record relative to the runtime root."""
+    return {"path": path.relative_to(root).as_posix(), "sha256": sha256(path)}
+
+
 def command(*args: str) -> str:
     return subprocess.run(args, text=True, capture_output=True, check=True).stdout
 
@@ -55,6 +61,30 @@ def require_arm64(path: Path) -> None:
     description = command("file", str(path))
     if "arm64" not in description:
         raise RuntimeError(f"Expected an arm64 Mach-O artifact, got: {description.strip()}")
+
+
+def macos_deployment_target(path: Path) -> str:
+    """Return the minimum macOS version encoded in one Mach-O artifact."""
+    output = command("otool", "-l", str(path))
+    match = re.search(
+        r"cmd LC_BUILD_VERSION\s+cmdsize \d+\s+platform \d+\s+minos ([0-9.]+)",
+        output,
+    )
+    if match is None:
+        match = re.search(
+            r"cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version ([0-9.]+)",
+            output,
+        )
+    if match is None or not _MACOS_VERSION.fullmatch(match.group(1)):
+        raise RuntimeError(f"Could not determine the macOS deployment target for {path}")
+    return match.group(1)
+
+
+def macos_version_key(value: str) -> tuple[int, int, int]:
+    if not _MACOS_VERSION.fullmatch(value):
+        raise ValueError(f"Invalid macOS deployment target: {value!r}")
+    parts = [int(part) for part in value.split(".")]
+    return tuple((parts + [0, 0, 0])[:3])  # type: ignore[return-value]
 
 
 def copy_clawpack_source(source: Path, destination: Path) -> None:
@@ -194,6 +224,10 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
         for artifact in (copied_solver, *(lib_dir / name for name in RUNTIME_LIBRARIES)):
             subprocess.run(("codesign", "--force", "--sign", "-", str(artifact)), check=True)
             subprocess.run(("codesign", "--verify", "--strict", str(artifact)), check=True)
+        minimum_macos_version = max(
+            (macos_deployment_target(artifact) for artifact in (copied_solver, *(lib_dir / name for name in RUNTIME_LIBRARIES))),
+            key=macos_version_key,
+        )
 
         packaged_clawpack = python_dir / "clawpack-src"
         copy_clawpack_source(claw_root, packaged_clawpack)
@@ -212,6 +246,7 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
             "runtime_version": args.version,
             "platform": "macos-arm64",
             "architecture": "arm64",
+            "minimum_macos_version": minimum_macos_version,
             "build_timestamp_utc": datetime.now(timezone.utc).isoformat(),
             # The archive must not disclose or depend on the builder's local
             # Homebrew prefix.  Its copied binaries use package-local loader
@@ -235,7 +270,14 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
                 ],
             },
             "backend": backend_records,
-            "licenses": [path.name for path in sorted(licenses.iterdir())],
+            # Keep licenses in the same closed, hash-attested manifest as the
+            # solver, libraries, backend and Clawpack payload.  The release
+            # validator rejects filename-only license lists.
+            "licenses": [
+                file_record(staging, path)
+                for path in sorted(licenses.iterdir())
+                if path.is_file()
+            ],
         }
         (staging / "runtime-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         # Fail the build rather than emitting an artifact with a Homebrew loader path.

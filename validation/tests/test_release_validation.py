@@ -51,6 +51,7 @@ def _runtime_archive(
     *,
     fault: tuple[str, str] | None = None,
     modern_macos: bool = False,
+    minimum_macos_version: object = "14.0",
 ) -> tuple[bytes, dict[str, object]]:
     """Build a minimal format-1 runtime entirely in memory.
 
@@ -100,6 +101,7 @@ def _runtime_archive(
         ]
     elif modern_macos:
         manifest["platform"] = platform
+        manifest["minimum_macos_version"] = minimum_macos_version
         manifest["clawpack"]["files"] = [  # type: ignore[index]
             _record(clawpack_init, files[clawpack_init]),
             _record(clawpack_module, files[clawpack_module]),
@@ -147,10 +149,13 @@ def _write_release(
     descriptor_record_overrides: dict[str, dict[str, object]] | None = None,
     include_wave: bool = True,
     modern_macos: bool = False,
+    macos_minimum_versions: dict[str, object] | None = None,
+    release_macos_minimum_version: object = "14.0",
 ) -> Path:
     faults = faults or {}
     descriptor_overrides = descriptor_overrides or {}
     descriptor_record_overrides = descriptor_record_overrides or {}
+    macos_minimum_versions = macos_minimum_versions or {}
     dist = tmp_path / "dist"
     dist.mkdir()
     resources: dict[str, bytes] = {}
@@ -164,6 +169,7 @@ def _write_release(
             product,
             fault=faults.get(product),
             modern_macos=modern_macos,
+            minimum_macos_version=macos_minimum_versions.get(product, "14.0"),
         )
         archive_name = f"{prefix}-runtime-{platform}-test.tar.gz"
         resources[archive_name] = payload
@@ -220,6 +226,8 @@ def _write_release(
             "wave_solver_sha256": wave_manifest["solver"]["sha256"],  # type: ignore[index]
             "wave_runtime_version": wave_manifest["runtime_version"],
         })
+    if platform == "macos-arm64" and modern_macos:
+        release["minimum_macos_version"] = release_macos_minimum_version
     (dist / "RELEASE_MANIFEST.json").write_text(
         json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8",
     )
@@ -338,6 +346,56 @@ def test_modern_macos_avac_and_wave_package_is_valid(
     _validate(monkeypatch, dist, "macos-arm64")
 
     assert "release validation: PASS" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("invalid_target", [None, "14..0", "macOS-14"])
+def test_modern_macos_package_rejects_invalid_runtime_minimum_version(
+    invalid_target: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dist = _write_release(
+        tmp_path,
+        "macos-arm64",
+        modern_macos=True,
+        macos_minimum_versions={"AVAC": invalid_target},
+    )
+
+    with pytest.raises(SystemExit, match="minimum_macos_version"):
+        _validate(monkeypatch, dist, "macos-arm64")
+
+
+@pytest.mark.parametrize("release_target", [None, "14.1"])
+def test_modern_macos_package_requires_release_minimum_version_to_match_maximum(
+    release_target: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dist = _write_release(
+        tmp_path,
+        "macos-arm64",
+        modern_macos=True,
+        macos_minimum_versions={"AVAC": "13.0", "WAVE": "14.2"},
+        release_macos_minimum_version=release_target,
+    )
+
+    with pytest.raises(SystemExit, match="minimum_macos_version"):
+        _validate(monkeypatch, dist, "macos-arm64")
+
+
+def test_modern_macos_package_accepts_equivalent_release_minimum_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dist = _write_release(
+        tmp_path,
+        "macos-arm64",
+        modern_macos=True,
+        macos_minimum_versions={"AVAC": "13.0", "WAVE": "14.2"},
+        release_macos_minimum_version="14.2.0",
+    )
+
+    _validate(monkeypatch, dist, "macos-arm64")
 
 
 def test_macos_package_rejects_orphaned_wave_descriptor(
@@ -471,9 +529,13 @@ def test_new_macos_runtime_manifest_is_platform_explicit_and_complete() -> None:
     source = MAC_RUNTIME_PATH.read_text(encoding="utf-8")
 
     assert '"platform": "macos-arm64"' in source
+    assert '"minimum_macos_version": minimum_macos_version' in source
+    assert 'macos_deployment_target(artifact)' in source
     assert 'for path in sorted(packaged_clawpack.rglob("*"))' in source
     assert '"path": path.relative_to(staging).as_posix()' in source
     assert '"sha256": sha256(path)' in source
+    assert '"licenses": [' in source
+    assert 'file_record(staging, path)' in source
 
 
 @pytest.mark.parametrize(

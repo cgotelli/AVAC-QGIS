@@ -23,6 +23,16 @@ EXCLUDED_DIRS = {"__pycache__", ".pytest_cache", ".git", ".github", "tests"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
 
 
+def macos_version_key(value: object) -> tuple[int, int, int]:
+    if not isinstance(value, str):
+        raise ValueError("runtime archive has no macOS deployment target")
+    parts = value.split(".")
+    if not 1 <= len(parts) <= 3 or any(not part.isdecimal() for part in parts):
+        raise ValueError(f"invalid macOS deployment target: {value!r}")
+    values = [int(part) for part in parts]
+    return tuple((values + [0, 0, 0])[:3])  # type: ignore[return-value]
+
+
 def digest(path: Path) -> str:
     value = hashlib.sha256()
     with path.open("rb") as stream:
@@ -58,6 +68,7 @@ def runtime_manifest(archive: Path, version: str) -> dict:
         raise ValueError("runtime archive is not format-1 arm64")
     if payload.get("runtime_version") != version:
         raise ValueError(f"runtime version mismatch: expected {version}, found {payload.get('runtime_version')}")
+    macos_version_key(payload.get("minimum_macos_version"))
     return payload
 
 
@@ -183,6 +194,10 @@ def main() -> None:
         "plugin_version": version, "runtime_version": args.runtime_version, "runtime_format": manifest["format"],
         "runtime_manifest_sha256": manifest_digest(manifest),
         "supported_os": "macOS", "supported_architecture": "arm64", "tested_qgis": "3.44 LTS",
+        "minimum_macos_version": max(
+            (manifest["minimum_macos_version"], wave_manifest["minimum_macos_version"]),
+            key=macos_version_key,
+        ),
         "clawpack_version": manifest["clawpack"]["version"],
         "solver_sha256": manifest["solver"]["sha256"],
         "solver_source_sha256": manifest["solver"]["source_sha256"],

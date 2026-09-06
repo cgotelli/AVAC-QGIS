@@ -7,10 +7,14 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import tarfile
 import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
+
+
+_MACOS_VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){0,2}$")
 
 
 def sha256(path: Path) -> str:
@@ -49,6 +53,19 @@ def _safe_relative_path(value: object, *, label: str) -> str:
     if path.is_absolute() or ".." in path.parts:
         raise SystemExit(f"{label} contains an unsafe path: {value}")
     return path.as_posix()
+
+
+def _macos_version_key(value: object, *, label: str) -> tuple[int, int, int]:
+    """Return a comparable, validated macOS deployment target.
+
+    Keep the accepted spelling deliberately narrow: these values are emitted
+    from Mach-O load commands and need to remain portable, human-readable
+    release metadata rather than arbitrary version strings.
+    """
+    if not isinstance(value, str) or _MACOS_VERSION.fullmatch(value) is None:
+        raise SystemExit(f"{label} has no valid minimum_macos_version")
+    parts = [int(part) for part in value.split(".")]
+    return tuple((parts + [0, 0, 0])[:3])  # type: ignore[return-value]
 
 
 def _canonical_archive_name(value: object, *, platform: str, label: str) -> str:
@@ -143,7 +160,7 @@ def validate_embedded_runtime(
     release_version_key: str,
     backend_name: str,
     allow_legacy_macos_runtime: bool = False,
-) -> None:
+) -> str | None:
     record = _runtime_record(
         descriptor,
         release,
@@ -226,6 +243,19 @@ def validate_embedded_runtime(
             raise SystemExit(f"embedded runtime has the wrong architecture: {zip_name}")
         if runtime_manifest.get("runtime_version") != record.get("runtime_version"):
             raise SystemExit(f"embedded runtime has the wrong version: {zip_name}")
+
+        # Older format-1 macOS archives did not identify their platform and
+        # have no deployment-target record. Continue to permit those only
+        # through the explicit legacy path. Any modern, platform-labelled
+        # macOS runtime must attest the minimum OS encoded in its Mach-O files.
+        minimum_macos_version: str | None = None
+        if platform == "macos-arm64" and declared_platform == platform:
+            candidate = runtime_manifest.get("minimum_macos_version")
+            _macos_version_key(
+                candidate,
+                label=f"embedded runtime manifest in {zip_name}",
+            )
+            minimum_macos_version = str(candidate)
 
         solver_record = runtime_manifest.get("solver")
         solver_relative = _safe_relative_path(
@@ -371,6 +401,7 @@ def validate_embedded_runtime(
                 f"embedded {platform} runtime contains undeclared payload: "
                 + ", ".join(sorted(undeclared)[:5])
             )
+        return minimum_macos_version
 
 
 def main() -> None:
@@ -462,6 +493,7 @@ def main() -> None:
         if not wave_release_keys.issubset(manifest):
             raise SystemExit("release has an incomplete WAVE runtime declaration")
 
+        modern_macos_targets: list[str] = []
         for (
             descriptor_name,
             release_key,
@@ -480,7 +512,7 @@ def main() -> None:
                 raise SystemExit(f"{descriptor_name} has no runtime manifest identity")
             if fingerprint != manifest.get(release_key):
                 raise SystemExit(f"{descriptor_name} differs from release manifest")
-            validate_embedded_runtime(
+            minimum_macos_version = validate_embedded_runtime(
                 archive,
                 descriptor,
                 manifest,
@@ -492,6 +524,32 @@ def main() -> None:
                 backend_name=backend_name,
                 allow_legacy_macos_runtime=args.allow_legacy_macos_runtime,
             )
+            if minimum_macos_version is not None:
+                modern_macos_targets.append(minimum_macos_version)
+        if args.platform == "macos-arm64" and modern_macos_targets:
+            if len(modern_macos_targets) != len(runtime_specs):
+                raise SystemExit(
+                    "macOS release mixes modern and legacy runtime manifests"
+                )
+            expected_target = max(
+                modern_macos_targets,
+                key=lambda value: _macos_version_key(
+                    value,
+                    label="embedded runtime manifest",
+                ),
+            )
+            release_target = manifest.get("minimum_macos_version")
+            if _macos_version_key(
+                release_target,
+                label="release manifest",
+            ) != _macos_version_key(
+                expected_target,
+                label="embedded runtime manifest",
+            ):
+                raise SystemExit(
+                    "release manifest minimum_macos_version differs from the "
+                    "maximum embedded macOS runtime deployment target"
+                )
     print(f"release validation: PASS ({package.name})")
 
 

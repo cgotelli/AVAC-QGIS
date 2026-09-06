@@ -97,8 +97,11 @@ def after_run(code: int, normal: bool) -> None:
             wave_manifest = validate_runtime(wave_runtime)
             if not (wave_runtime / "backend" / "WAVE" / "setrun.py").is_file():
                 raise RuntimeError("automatic Wave runtime install has no WAVE backend")
-            if wave_manifest["solver"]["path"] != "bin/xgeoclaw.exe":
-                raise RuntimeError("automatic Wave runtime installed an unexpected solver")
+            wave_solver = wave_runtime / str(wave_manifest["solver"]["path"])
+            if not wave_solver.is_file():
+                raise RuntimeError(
+                    f"automatic Wave runtime installed no solver at {wave_solver}"
+                )
             wave_note = f" wave_runtime={wave_runtime}"
         print(
             f"QGIS_RUNTIME_NORMAL=PASS runtime={installed} output={output} "
