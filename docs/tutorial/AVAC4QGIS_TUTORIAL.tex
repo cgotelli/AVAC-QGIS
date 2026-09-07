@@ -33,7 +33,7 @@
   urlcolor=avacblue,
   pdftitle={AVAC4QGIS Tutorial},
   pdfauthor={LHE--EPFL},
-  pdfsubject={Tutorial for AVAC4QGIS 0.6.1}
+  pdfsubject={Tutorial for AVAC4QGIS 1.0.0}
 }
 \setlist[itemize]{leftmargin=*,itemsep=3pt,topsep=4pt}
 \setlist[enumerate]{leftmargin=*,itemsep=5pt,topsep=4pt}
@@ -44,7 +44,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small AVAC4QGIS Tutorial}
-\fancyhead[R]{\small Version 0.6.1}
+\fancyhead[R]{\small Version 1.0.0}
 \fancyfoot[C]{\thepage}
 
 \newcommand{\control}[1]{\textbf{#1}}
@@ -81,27 +81,19 @@
 \title{\textbf{AVAC4QGIS Tutorial}\\[6pt]
        \large From an avalanche release to an optional lake impulse wave}
 \author{LHE--EPFL, Switzerland}
-\date{September 2, 2026}
+\date{September 6, 2026}
 
 \begin{document}
 \maketitle
 \thispagestyle{empty}
 
 \begin{notebox}
-This tutorial follows the interface distributed with AVAC4QGIS 0.6.1. It
+This tutorial follows the interface distributed with AVAC4QGIS 1.0.0. It
 uses the public demonstration terrain and avalanche-release layer supplied in
 the repository. The values visible in screenshots belong to one demonstration
 workspace; they are not recommended values for another site. Choose scientific
 parameters from the data and objectives of the case being studied.
 \end{notebox}
-
-\vfill
-\begin{center}
-\includegraphics[width=.92\textwidth,height=.48\textheight,keepaspectratio]{images/tutorial_input_layers.png}
-
-\small The tutorial terrain DEM displayed as hillshade, with the release polygons in red.
-\end{center}
-\vfill
 
 \clearpage
 \tableofcontents
@@ -128,6 +120,16 @@ sources. WAVE then propagates the resulting impulse wave. Enabling WAVE does
 not change or rerun AVAC.
 
 \section{Tutorial data and preparation}
+
+\begin{importantbox}
+\control{Load input layers into QGIS before selecting them in AVAC4QGIS.}
+The plugin's input-layer lists show only compatible layers already loaded in
+the current QGIS project. Files stored on disk do not appear in these lists
+until you add them to QGIS. Drag the input files into QGIS or use
+\control{Layer $>$ Add Layer}, then confirm that they appear in the
+\control{Layers} panel before selecting them in the plugin. This applies to
+the terrain DEM, release polygons, and any existing lake polygon used by WAVE.
+\end{importantbox}
 
 Load the following two solver inputs from the repository's
 \pathcode{tutorial/} directory into the QGIS project:
@@ -192,6 +194,10 @@ before reviewing the four accordions, because loaded values replace their
 current contents.
 
 \section{AVAC Inputs accordion}
+
+First load the terrain DEM and release-polygon layer into the current QGIS
+project. \control{If an input is not loaded into QGIS, it will not appear in
+the corresponding selection list.}
 
 \begin{enumerate}
   \item Select \control{Tutorial terrain DEM} as the \control{DEM raster
@@ -382,6 +388,11 @@ confirm the intended source, duration, and output availability.
 \uiscreenshot{tutorial_wave_source.png}{AVAC Source accordion. WAVE preparation always begins from a completed AVAC run.}
 
 \section{Terrain and Lake Inputs accordion}
+
+Load the terrain DEM and any existing lake-polygon layer into the current
+QGIS project before selecting them here. \control{Layers that are not loaded
+into QGIS do not appear in the input selection lists.} A lake polygon created
+with the plugin is loaded and selected automatically, as described below.
 
 \begin{enumerate}
   \item Select the terrain DEM. It must cover the AVAC calculation bounds.
