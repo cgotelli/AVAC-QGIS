@@ -47,8 +47,6 @@ See the release page for the package downloads and platform requirements.
 
 The [version 1.0.0 methods manuscript](docs/article/AVAC4QGIS_GMD.pdf)
 documents the implemented equations, numerical methods, and validation scope.
-Its [editable LaTeX source](docs/article/AVAC4QGIS_GMD.tex), bibliography, and
-figures are included alongside the PDF.
 
 The [AVAC4QGIS User Interface Reference](docs/ui_reference/AVAC_QGIS_UI_REFERENCE.pdf)
 explains the simulation workflow and every control in the graphical interface.
